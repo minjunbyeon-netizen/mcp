@@ -8,6 +8,7 @@ __pycache__/
 .env
 .env.local
 .env.*
+mcp_config.json
 
 # IDE
 .vscode/
