@@ -1,0 +1,13 @@
+[project]
+name = "persona-manager"
+version = "0.1.0"
+description = "광고주 텍스트 페르소나 관리 MCP"
+requires-python = ">=3.10"
+dependencies = [
+    "mcp>=0.9.0",
+    "anthropic>=0.39.0",
+    "python-dotenv>=1.0.0"
+]
+
+[project.scripts]
+persona-manager = "server:main"
