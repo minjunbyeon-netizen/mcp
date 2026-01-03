@@ -1,0 +1,31 @@
+{
+    "mcpServers": {
+        "persona-manager": {
+            "command": "C:/xampp/htdocs/00_dev/03_mcp test/venv/Scripts/python.exe",
+            "args": [
+                "C:/xampp/htdocs/00_dev/03_mcp test/persona-manager/server.py"
+            ],
+            "env": {
+                "ANTHROPIC_API_KEY": "YOUR_ANTHROPIC_API_KEY_HERE"
+            }
+        },
+        "visual-persona-extractor": {
+            "command": "C:/xampp/htdocs/00_dev/03_mcp test/venv/Scripts/python.exe",
+            "args": [
+                "C:/xampp/htdocs/00_dev/03_mcp test/mcp-servers/visual-persona-extractor/server.py"
+            ],
+            "env": {
+                "ANTHROPIC_API_KEY": "YOUR_ANTHROPIC_API_KEY_HERE"
+            }
+        },
+        "content-automation": {
+            "command": "C:/xampp/htdocs/00_dev/03_mcp test/venv/Scripts/python.exe",
+            "args": [
+                "C:/xampp/htdocs/00_dev/03_mcp test/mcp-servers/content-automation/server.py"
+            ],
+            "env": {
+                "ANTHROPIC_API_KEY": "YOUR_ANTHROPIC_API_KEY_HERE"
+            }
+        }
+    }
+}
