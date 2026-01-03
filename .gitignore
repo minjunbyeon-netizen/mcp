@@ -20,3 +20,6 @@ Thumbs.db
 
 # MCP 데이터 (로컬 전용)
 mcp-data/
+output/
+input/kakao/*.txt
+!input/kakao/README.txt
