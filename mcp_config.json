@@ -1,0 +1,31 @@
+{
+    "mcpServers": {
+        "persona-manager": {
+            "command": "C:/xampp/htdocs/00_dev/03_mcp_test/venv/Scripts/python.exe",
+            "args": [
+                "C:/xampp/htdocs/00_dev/03_mcp_test/persona-manager/server.py"
+            ],
+            "env": {
+                "ANTHROPIC_API_KEY": "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"
+            }
+        },
+        "visual-persona-extractor": {
+            "command": "C:/xampp/htdocs/00_dev/03_mcp_test/venv/Scripts/python.exe",
+            "args": [
+                "C:/xampp/htdocs/00_dev/03_mcp_test/mcp-servers/visual-persona-extractor/server.py"
+            ],
+            "env": {
+                "ANTHROPIC_API_KEY": "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"
+            }
+        },
+        "content-automation": {
+            "command": "C:/xampp/htdocs/00_dev/03_mcp_test/venv/Scripts/python.exe",
+            "args": [
+                "C:/xampp/htdocs/00_dev/03_mcp_test/mcp-servers/content-automation/server.py"
+            ],
+            "env": {
+                "ANTHROPIC_API_KEY": "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"
+            }
+        }
+    }
+}
