@@ -23,11 +23,19 @@ if config_path.exists() and not os.getenv("ANTHROPIC_API_KEY"):
             os.environ["ANTHROPIC_API_KEY"] = api_key
 
 import anthropic
+from docx import Document
+from docx.shared import Pt, Inches
+from docx.enum.text import WD_ALIGN_PARAGRAPH
 
 # 경로 설정
-PERSONA_DIR = Path.home() / "mcp-data" / "personas"
+PERSONA_DIR = Path(__file__).parent / "output" / "personas"
+PERSONA_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUT_DIR = Path.home() / "mcp-data" / "outputs"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+# Word 파일 전용 저장 위치
+WORD_OUTPUT_DIR = Path(__file__).parent / "output" / "blog"
+WORD_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 # 입력 폴더 (보도자료 텍스트 파일 넣는 곳)
 INPUT_DIR = Path(__file__).parent / "input" / "press_release"
@@ -37,15 +45,19 @@ INPUT_DIR.mkdir(parents=True, exist_ok=True)
 def list_personas():
     """저장된 페르소나 목록"""
     personas = []
-    for file_path in PERSONA_DIR.glob("CLI_*.json"):
-        with open(file_path, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-            personas.append({
-                "client_id": data["client_id"],
-                "client_name": data["client_name"],
-                "organization": data["organization"],
-                "formality": data["persona_analysis"]["formality_level"]["score"]
-            })
+    for file_path in PERSONA_DIR.glob("*.json"):
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                if "client_id" in data and "persona_analysis" in data:
+                    personas.append({
+                        "client_id": data["client_id"],
+                        "client_name": data["client_name"],
+                        "organization": data["organization"],
+                        "formality": data["persona_analysis"]["formality_level"]["score"]
+                    })
+        except:
+            pass
     return personas
 
 
@@ -192,7 +204,79 @@ def generate_blog_post(client_id: str, press_release: str, target_keywords: list
         f.write(f"{blog_content['content']}\n\n")
         f.write(f"**태그:** {', '.join(blog_content['tags'])}\n")
     
-    return blog_data, md_path
+    # Word 파일 생성 (별도 위치에 페르소나명_제목_날짜 형식으로)
+    # 파일명에 사용할 수 없는 문자 제거
+    safe_title = blog_content['title'][:30].replace('/', '_').replace('\\', '_').replace(':', '_').replace('*', '_').replace('?', '_').replace('"', '_').replace('<', '_').replace('>', '_').replace('|', '_').strip()
+    safe_client_name = client_name.replace(' ', '_')
+    date_str = datetime.now().strftime('%Y%m%d')
+    docx_filename = f"{safe_client_name}_{safe_title}_{date_str}.docx"
+    docx_path = WORD_OUTPUT_DIR / docx_filename
+    doc = Document()
+    
+    # 기본 스타일에 한글 폰트 설정
+    style = doc.styles['Normal']
+    font = style.font
+    font.name = '맑은 고딕'
+    font.size = Pt(11)
+    
+    # 제목 추가
+    title = doc.add_heading(blog_content['title'], level=1)
+    title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    # 제목에도 한글 폰트 적용
+    for run in title.runs:
+        run.font.name = '맑은 고딕'
+    
+    # 본문 추가 (마크다운 파싱 간소화)
+    content = blog_content['content']
+    paragraphs = content.split('\n\n')
+    
+    for para in paragraphs:
+        if para.strip():
+            # 소제목 처리 (「 」)
+            if para.strip().startswith('「') and para.strip().endswith('」'):
+                p = doc.add_heading(para.strip()[1:-1].strip(), level=2)
+                for run in p.runs:
+                    run.font.name = '맑은 고딕'
+            # 구분선 처리
+            elif para.strip() == '• • • • •':
+                p = doc.add_paragraph('─' * 30)
+                p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                for run in p.runs:
+                    run.font.name = '맑은 고딕'
+            # 이미지 자리 표시
+            elif para.strip().startswith('[이미지'):
+                p = doc.add_paragraph(para.strip())
+                p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                run = p.runs[0]
+                run.italic = True
+                run.font.name = '맑은 고딕'
+            else:
+                # 일반 본문 - **굵게** 처리
+                p = doc.add_paragraph()
+                parts = para.split('**')
+                for i, part in enumerate(parts):
+                    run = p.add_run(part)
+                    run.font.name = '맑은 고딕'
+                    run.font.size = Pt(11)
+                    if i % 2 == 1:  # 홀수 인덱스는 굵게
+                        run.bold = True
+    
+    # 태그 추가
+    doc.add_paragraph()
+    tags_para = doc.add_paragraph()
+    tags_run = tags_para.add_run(f"태그: {', '.join(blog_content['tags'])}")
+    tags_run.italic = True
+    tags_run.font.name = '맑은 고딕'
+    
+    # 메타 설명 추가
+    meta_para = doc.add_paragraph()
+    meta_run = meta_para.add_run(f"메타 설명: {blog_content['meta_description']}")
+    meta_run.italic = True
+    meta_run.font.name = '맑은 고딕'
+    
+    doc.save(str(docx_path))
+    
+    return blog_data, md_path, docx_path
 
 
 def main():
@@ -279,7 +363,7 @@ def main():
     result = generate_blog_post(client_id, press_release, keywords)
     
     if result:
-        blog_data, md_path = result
+        blog_data, md_path, docx_path = result
         blog = blog_data["content"]
         
         print("\n" + "=" * 60)
@@ -299,6 +383,7 @@ def main():
         print(f"\n💾 저장 위치:")
         print(f"   - JSON: {OUTPUT_DIR / f'{blog_data['output_id']}.json'}")
         print(f"   - Markdown: {md_path}")
+        print(f"   - Word: {docx_path}")
     else:
         print("\n❌ 블로그 생성에 실패했습니다.")
 

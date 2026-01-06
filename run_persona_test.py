@@ -28,8 +28,8 @@ if config_path.exists() and not os.getenv("ANTHROPIC_API_KEY"):
 import anthropic
 from datetime import datetime
 
-# 데이터 저장 경로
-DATA_DIR = Path.home() / "mcp-data" / "personas"
+# 데이터 저장 경로 (프로젝트 폴더)
+DATA_DIR = Path(__file__).parent / "output" / "personas"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 def analyze_persona(client_name: str, organization: str, kakao_chat_log: str, category: str = "general"):
@@ -151,8 +151,10 @@ def analyze_persona(client_name: str, organization: str, kakao_chat_log: str, ca
 - 길이: {persona_analysis['content_preferences']['length_preference']}
 """
     
-    # 저장
-    client_id = f"CLI_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    # 저장 (파일명: 소속_이름)
+    safe_org = organization.replace(' ', '_').replace('/', '_')
+    safe_name = client_name.replace(' ', '_').replace('/', '_')
+    client_id = f"{safe_org}_{safe_name}"
     
     persona_data = {
         "client_id": client_id,
