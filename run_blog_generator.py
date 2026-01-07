@@ -7,8 +7,16 @@
 import sys
 import os
 import json
+import io
+import threading
+import time
+import subprocess
 from datetime import datetime
 from pathlib import Path
+
+# Windows 터미널 UTF-8 출력 설정
+if sys.platform == 'win32':
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
 
 # mcp_config.json에서 API 키 로드
 from dotenv import load_dotenv
@@ -26,6 +34,33 @@ import anthropic
 from docx import Document
 from docx.shared import Pt, Inches
 from docx.enum.text import WD_ALIGN_PARAGRAPH
+
+
+class LoadingSpinner:
+    """로딩 스피너 애니메이션"""
+    def __init__(self, message="처리 중"):
+        self.message = message
+        self.running = False
+        self.thread = None
+    
+    def start(self):
+        self.running = True
+        self.thread = threading.Thread(target=self._animate)
+        self.thread.start()
+    
+    def _animate(self):
+        frames = ['|', '/', '-', '\\']
+        i = 0
+        while self.running:
+            print(f"\r  {frames[i % 4]} {self.message}...", end="", flush=True)
+            time.sleep(0.2)
+            i += 1
+    
+    def stop(self, success_msg="완료"):
+        self.running = False
+        if self.thread:
+            self.thread.join()
+        print(f"\r  [OK] {success_msg}" + " " * 20)
 
 # 경로 설정
 PERSONA_DIR = Path(__file__).parent / "output" / "personas"
@@ -64,7 +99,9 @@ def list_personas():
 def generate_blog_post(client_id: str, press_release: str, target_keywords: list = None):
     """블로그 글 생성"""
     
-    print(f"\n📝 블로그 글 생성 중...")
+    print(f"\n{'='*50}")
+    print(f"  AI 블로그 글 생성 시작")
+    print(f"{'='*50}")
     
     # 페르소나 로드
     persona_path = PERSONA_DIR / f"{client_id}.json"
@@ -78,11 +115,17 @@ def generate_blog_post(client_id: str, press_release: str, target_keywords: list
     custom_prompt = persona_data["custom_prompt"]
     client_name = persona_data["client_name"]
     
-    print(f"👤 페르소나: {client_name}")
-    print(f"📄 보도자료 길이: {len(press_release)} 글자")
-    print("-" * 50)
+    print(f"  페르소나: {client_name}")
+    print(f"  보도자료: {len(press_release):,} 글자")
+    print(f"{'='*50}\n")
     
+    # Step 1: API 연결
+    print("[1/3] API 연결 준비")
+    spinner = LoadingSpinner("Claude AI 연결 중")
+    spinner.start()
+    time.sleep(0.5)
     client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+    spinner.stop("API 연결 완료")
     
     # 블로그 글 생성 프롬프트 (부산시 블로그 스타일)
     keywords_str = ", ".join(target_keywords) if target_keywords else ""
@@ -160,12 +203,23 @@ def generate_blog_post(client_id: str, press_release: str, target_keywords: list
 }}
 """
     
+    # Step 2: AI 블로그 생성
+    print("\n[2/3] 블로그 글 생성 중")
+    spinner = LoadingSpinner("AI가 페르소나 스타일로 글을 작성하고 있습니다")
+    spinner.start()
+    
     try:
         response = client.messages.create(
             model="claude-sonnet-4-20250514",
             max_tokens=3000,
             messages=[{"role": "user", "content": blog_prompt}]
         )
+        spinner.stop("블로그 글 생성 완료")
+        
+        # Step 3: 결과 처리
+        print("\n[3/3] 파일 저장 중")
+        spinner = LoadingSpinner("Word/Markdown 파일 생성 중")
+        spinner.start()
         
         response_text = response.content[0].text
         
@@ -178,7 +232,8 @@ def generate_blog_post(client_id: str, press_release: str, target_keywords: list
         blog_content = json.loads(response_text.strip())
         
     except Exception as e:
-        print(f"❌ 블로그 생성 실패: {e}")
+        spinner.stop("오류 발생")
+        print(f"\n❌ 블로그 생성 실패: {e}")
         return None
     
     # 저장
@@ -275,84 +330,53 @@ def generate_blog_post(client_id: str, press_release: str, target_keywords: list
     meta_run.font.name = '맑은 고딕'
     
     doc.save(str(docx_path))
+    spinner.stop("파일 저장 완료")
     
     return blog_data, md_path, docx_path
 
 
-def main():
-    print("=" * 60)
+def generate_blog_with_persona(client_id: str):
+    """페르소나 추출 후 바로 블로그 생성 (연계 호출용)"""
+    print("\n" + "=" * 60)
     print("📝 페르소나 기반 블로그 글 생성기")
     print("=" * 60)
     
-    # 페르소나 목록 표시
-    personas = list_personas()
-    if not personas:
-        print("\n❌ 저장된 페르소나가 없습니다.")
-        print("   먼저 run_persona_test.py로 페르소나를 생성해주세요.")
+    # 보도자료 폴더 스캔
+    press_files = [f for f in INPUT_DIR.glob("*.txt") if f.name.lower() != "readme.txt"]
+    
+    if not press_files:
+        print("\n❌ 보도자료 파일이 없습니다.")
+        print(f"   📂 이 폴더에 .txt 파일을 넣어주세요:")
+        print(f"   {INPUT_DIR}")
         return
     
-    print("\n📋 사용 가능한 페르소나:")
+    # 파일 목록 표시
+    print("\n📂 사용 가능한 보도자료:")
     print("-" * 50)
-    for i, p in enumerate(personas, 1):
-        print(f"  {i}. [{p['client_id']}]")
-        print(f"     {p['client_name']} ({p['organization']}) - 격식도: {p['formality']}/10")
+    for i, f in enumerate(press_files, 1):
+        size_kb = f.stat().st_size / 1024
+        print(f"  {i}. {f.stem}")
+        print(f"     ({f.name}, {size_kb:.1f}KB)")
     
-    # 페르소나 선택
-    print("\n🔢 사용할 페르소나 번호를 입력하세요:")
+    # 번호로 선택
+    print("\n🔢 사용할 보도자료 번호를 입력하세요:")
     try:
         choice = int(input(">>> ").strip())
-        selected = personas[choice - 1]
-        client_id = selected["client_id"]
-    except:
-        print("❌ 잘못된 선택입니다.")
-        return
-    
-    print(f"\n✅ 선택된 페르소나: {selected['client_name']}")
-    
-    # 보도자료 입력 방법 선택
-    print("\n📄 보도자료 입력 방법을 선택하세요:")
-    print("  1. 텍스트 파일 경로 입력")
-    print("  2. 직접 입력 (여러 줄, 빈 줄 2번으로 종료)")
-    
-    method = input("\n>>> ").strip()
-    
-    if method == "1":
-        print("\n📂 보도자료 텍스트 파일 경로를 입력하세요:")
-        print(f"   (또는 {INPUT_DIR} 폴더에 파일을 넣고 파일명만 입력)")
-        file_path = input(">>> ").strip().strip('"')
-        
-        # 상대 경로면 INPUT_DIR 기준
-        if not os.path.isabs(file_path):
-            file_path = INPUT_DIR / file_path
-        
-        if not os.path.exists(file_path):
-            print(f"❌ 파일을 찾을 수 없습니다: {file_path}")
+        if choice < 1 or choice > len(press_files):
+            print("❌ 잘못된 번호입니다.")
             return
-        
-        with open(file_path, 'r', encoding='utf-8') as f:
-            press_release = f.read()
-    else:
-        print("\n📝 보도자료 내용을 입력하세요 (빈 줄 2번으로 종료):")
-        print("-" * 50)
-        lines = []
-        empty_count = 0
-        while True:
-            line = input()
-            if line == "":
-                empty_count += 1
-                if empty_count >= 2:
-                    break
-                lines.append("")
-            else:
-                empty_count = 0
-                lines.append(line)
-        press_release = "\n".join(lines).strip()
-    
-    if not press_release:
-        print("❌ 보도자료 내용이 비어있습니다.")
+        selected_file = press_files[choice - 1]
+    except ValueError:
+        print("❌ 숫자를 입력해주세요.")
         return
     
-    print(f"\n✅ 보도자료 로드 완료: {len(press_release)} 글자")
+    print(f"\n✅ 선택: {selected_file.name}")
+    
+    # 파일 읽기
+    with open(selected_file, 'r', encoding='utf-8') as f:
+        press_release = f.read()
+    
+    print(f"📄 보도자료 길이: {len(press_release):,} 글자")
     
     # SEO 키워드 (선택)
     print("\n🔑 SEO 키워드를 입력하세요 (쉼표로 구분, 없으면 엔터):")
@@ -370,20 +394,117 @@ def main():
         print("✅ 블로그 글 생성 완료!")
         print("=" * 60)
         
-        print(f"\n📌 제목:\n{blog['title']}")
-        
-        print(f"\n📝 본문 (미리보기):")
-        print("-" * 50)
-        print(blog['content'][:500] + "..." if len(blog['content']) > 500 else blog['content'])
-        
-        print(f"\n🏷️ 태그: {', '.join(blog['tags'])}")
-        
-        print(f"\n📊 메타 설명:\n{blog['meta_description']}")
-        
+        print(f"\n📌 제목: {blog['title']}")
+        print(f"🏷️ 태그: {', '.join(blog['tags'])}")
         print(f"\n💾 저장 위치:")
-        print(f"   - JSON: {OUTPUT_DIR / f'{blog_data['output_id']}.json'}")
-        print(f"   - Markdown: {md_path}")
         print(f"   - Word: {docx_path}")
+        
+        # 폴더 열기 옵션
+        print("\n" + "=" * 60)
+        print("📂 블로그 폴더를 여시겠습니까? (Y/n): ", end="")
+        open_folder = input().strip().lower()
+        if open_folder != 'n':
+            subprocess.run(['explorer', str(WORD_OUTPUT_DIR)])
+            print("   폴더를 열었습니다.")
+    else:
+        print("\n❌ 블로그 생성에 실패했습니다.")
+
+
+def main():
+    print("=" * 60)
+    print("📝 페르소나 기반 블로그 글 생성기")
+    print("=" * 60)
+    
+    # 페르소나 목록 표시
+    personas = list_personas()
+    if not personas:
+        print("\n❌ 저장된 페르소나가 없습니다.")
+        print("   먼저 run_persona_test.py로 페르소나를 생성해주세요.")
+        return
+    
+    print("\n📋 사용 가능한 페르소나:")
+    print("-" * 50)
+    for i, p in enumerate(personas, 1):
+        print(f"  {i}. {p['client_name']}")
+        print(f"     ({p['organization']}) - 격식도: {p['formality']}/10")
+    
+    # 페르소나 선택
+    print("\n🔢 사용할 페르소나 번호를 입력하세요:")
+    try:
+        choice = int(input(">>> ").strip())
+        selected = personas[choice - 1]
+        client_id = selected["client_id"]
+    except:
+        print("❌ 잘못된 선택입니다.")
+        return
+    
+    print(f"\n✅ 선택된 페르소나: {selected['client_name']}")
+    
+    # 보도자료 폴더 스캔
+    press_files = [f for f in INPUT_DIR.glob("*.txt") if f.name.lower() != "readme.txt"]
+    
+    if not press_files:
+        print("\n❌ 보도자료 파일이 없습니다.")
+        print(f"   📂 이 폴더에 .txt 파일을 넣어주세요:")
+        print(f"   {INPUT_DIR}")
+        return
+    
+    # 파일 목록 표시
+    print("\n📂 사용 가능한 보도자료:")
+    print("-" * 50)
+    for i, f in enumerate(press_files, 1):
+        size_kb = f.stat().st_size / 1024
+        print(f"  {i}. {f.stem}")
+        print(f"     ({f.name}, {size_kb:.1f}KB)")
+    
+    # 번호로 선택
+    print("\n🔢 사용할 보도자료 번호를 입력하세요:")
+    try:
+        choice = int(input(">>> ").strip())
+        if choice < 1 or choice > len(press_files):
+            print("❌ 잘못된 번호입니다.")
+            return
+        selected_file = press_files[choice - 1]
+    except ValueError:
+        print("❌ 숫자를 입력해주세요.")
+        return
+    
+    print(f"\n✅ 선택: {selected_file.name}")
+    
+    # 파일 읽기
+    with open(selected_file, 'r', encoding='utf-8') as f:
+        press_release = f.read()
+    
+    print(f"📄 보도자료 길이: {len(press_release):,} 글자")
+    
+    # SEO 키워드 (선택)
+    print("\n🔑 SEO 키워드를 입력하세요 (쉼표로 구분, 없으면 엔터):")
+    keywords_input = input(">>> ").strip()
+    keywords = [k.strip() for k in keywords_input.split(",")] if keywords_input else None
+    
+    # 블로그 생성
+    result = generate_blog_post(client_id, press_release, keywords)
+    
+    if result:
+        blog_data, md_path, docx_path = result
+        blog = blog_data["content"]
+        
+        print("\n" + "=" * 60)
+        print("✅ 블로그 글 생성 완료!")
+        print("=" * 60)
+        
+        print(f"\n📌 제목: {blog['title']}")
+        print(f"🏷️ 태그: {', '.join(blog['tags'])}")
+        print(f"\n💾 저장 위치:")
+        print(f"   - Word: {docx_path}")
+        
+        # 폴더 열기 옵션
+        print("\n" + "=" * 60)
+        print("📂 블로그 폴더를 여시겠습니까? (Y/n): ", end="")
+        open_folder = input().strip().lower()
+        if open_folder != 'n':
+            subprocess.run(['explorer', str(WORD_OUTPUT_DIR)])
+            print("   폴더를 열었습니다.")
     else:
         print("\n❌ 블로그 생성에 실패했습니다.")
 

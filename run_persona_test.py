@@ -7,7 +7,12 @@
 import sys
 import os
 import json
+import io
 from pathlib import Path
+
+# Windows 터미널 UTF-8 출력 설정
+if sys.platform == 'win32':
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
 
 # 프로젝트 루트 추가
 sys.path.insert(0, str(Path(__file__).parent / "persona-manager"))
@@ -26,21 +31,58 @@ if config_path.exists() and not os.getenv("ANTHROPIC_API_KEY"):
             os.environ["ANTHROPIC_API_KEY"] = api_key
 
 import anthropic
+import threading
+import time
 from datetime import datetime
 
 # 데이터 저장 경로 (프로젝트 폴더)
 DATA_DIR = Path(__file__).parent / "output" / "personas"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
+class LoadingSpinner:
+    """로딩 스피너 애니메이션"""
+    def __init__(self, message="처리 중"):
+        self.message = message
+        self.running = False
+        self.thread = None
+    
+    def start(self):
+        self.running = True
+        self.thread = threading.Thread(target=self._animate)
+        self.thread.start()
+    
+    def _animate(self):
+        frames = ['|', '/', '-', '\\']
+        i = 0
+        while self.running:
+            print(f"\r  {frames[i % 4]} {self.message}...", end="", flush=True)
+            time.sleep(0.2)
+            i += 1
+    
+    def stop(self, success_msg="완료"):
+        self.running = False
+        if self.thread:
+            self.thread.join()
+        print(f"\r  [OK] {success_msg}" + " " * 20)
+
 def analyze_persona(client_name: str, organization: str, kakao_chat_log: str, category: str = "general"):
     """카카오톡 대화로 페르소나 분석"""
     
-    print(f"\n🔍 {client_name}님의 페르소나 분석 중...")
-    print(f"📁 소속: {organization}")
-    print(f"📄 대화 길이: {len(kakao_chat_log)} 글자")
-    print("-" * 50)
+    print(f"\n{'='*50}")
+    print(f"  AI 페르소나 분석 시작")
+    print(f"{'='*50}")
+    print(f"  담당자: {client_name}")
+    print(f"  소속: {organization}")
+    print(f"  대화량: {len(kakao_chat_log):,} 글자")
+    print(f"{'='*50}\n")
     
+    # Step 1: API 연결
+    print("[1/3] API 연결 준비")
+    spinner = LoadingSpinner("Claude AI 연결 중")
+    spinner.start()
+    time.sleep(0.5)  # 짧은 딜레이
     client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+    spinner.stop("API 연결 완료")
     
     analysis_prompt = f"""
 당신은 고객 페르소나 분석 전문가입니다.
@@ -90,12 +132,23 @@ def analyze_persona(client_name: str, organization: str, kakao_chat_log: str, ca
 }}
 """
     
+    # Step 2: AI 분석 요청
+    print("\n[2/3] 페르소나 분석 중")
+    spinner = LoadingSpinner("AI가 대화 패턴을 분석하고 있습니다")
+    spinner.start()
+    
     try:
         response = client.messages.create(
             model="claude-sonnet-4-20250514",
             max_tokens=2000,
             messages=[{"role": "user", "content": analysis_prompt}]
         )
+        spinner.stop("대화 분석 완료")
+        
+        # Step 3: 결과 처리
+        print("\n[3/3] 분석 결과 정리")
+        spinner = LoadingSpinner("페르소나 프로필 생성 중")
+        spinner.start()
         
         response_text = response.content[0].text
         
@@ -106,9 +159,11 @@ def analyze_persona(client_name: str, organization: str, kakao_chat_log: str, ca
             response_text = response_text.split("```")[1].split("```")[0]
         
         persona_analysis = json.loads(response_text.strip())
+        spinner.stop("프로필 생성 완료")
         
     except Exception as e:
-        print(f"❌ 페르소나 분석 실패: {e}")
+        spinner.stop("오류 발생")
+        print(f"\n❌ 페르소나 분석 실패: {e}")
         return None
     
     # 맞춤 프롬프트 생성
@@ -179,29 +234,63 @@ def main():
     print("🎯 카카오톡 페르소나 추출기")
     print("=" * 60)
     
-    # 카톡 파일 경로 입력
-    if len(sys.argv) > 1:
-        kakao_file = sys.argv[1]
-    else:
-        print("\n📂 카카오톡 텍스트 파일 경로를 입력하세요")
-        print("   (예: C:\\Users\\...\\KakaoTalk_대화.txt)")
-        kakao_file = input("\n>>> ").strip().strip('"')
+    # 입력 폴더 자동 스캔
+    input_folder = Path(__file__).parent / "input" / "1_personas"
+    input_folder.mkdir(parents=True, exist_ok=True)
     
-    if not os.path.exists(kakao_file):
-        print(f"❌ 파일을 찾을 수 없습니다: {kakao_file}")
+    # txt 파일 목록 가져오기 (README 제외)
+    kakao_files = [f for f in input_folder.glob("*.txt") if f.name.lower() != "readme.txt"]
+    
+    if not kakao_files:
+        print("\n❌ 카카오톡 파일이 없습니다.")
+        print(f"   📂 이 폴더에 .txt 파일을 넣어주세요:")
+        print(f"   {input_folder}")
         return
+    
+    # 파일 목록 표시
+    print("\n📂 사용 가능한 카카오톡 파일:")
+    print("-" * 50)
+    for i, f in enumerate(kakao_files, 1):
+        size_kb = f.stat().st_size / 1024
+        # 파일명에서 이름 추출 시도
+        name_part = f.stem.split("_")[-1] if "_" in f.stem else f.stem
+        print(f"  {i}. {name_part}")
+        print(f"     ({f.name}, {size_kb:.1f}KB)")
+    
+    # 번호로 선택
+    print("\n🔢 분석할 파일 번호를 입력하세요:")
+    try:
+        choice = int(input(">>> ").strip())
+        if choice < 1 or choice > len(kakao_files):
+            print("❌ 잘못된 번호입니다.")
+            return
+        kakao_file = kakao_files[choice - 1]
+    except ValueError:
+        print("❌ 숫자를 입력해주세요.")
+        return
+    
+    # 파일명에서 정보 자동 추출
+    filename = kakao_file.stem
+    name_guess = filename.split("_")[-1] if "_" in filename else "담당자"
+    
+    print(f"\n✅ 선택: {kakao_file.name}")
     
     # 파일 읽기
     with open(kakao_file, 'r', encoding='utf-8') as f:
         kakao_chat = f.read()
     
-    print(f"\n✅ 파일 로드 완료: {len(kakao_chat)} 글자")
+    print(f"📄 대화 길이: {len(kakao_chat):,} 글자")
     
-    # 광고주 정보 입력
-    print("\n📝 광고주 정보를 입력하세요:")
-    client_name = input("담당자 이름 (예: 김철수 주무관): ").strip() or "테스트 담당자"
-    organization = input("소속 기관 (예: 부산시청): ").strip() or "테스트 기관"
-    category = input("업종 (government/fitness/cosmetics/general): ").strip() or "general"
+    # 광고주 정보 입력 (자동 추천)
+    print("\n📝 광고주 정보를 입력하세요 (엔터시 기본값):")
+    print(f"   담당자 이름 [{name_guess}]: ", end="")
+    client_name = input().strip() or name_guess
+    
+    print(f"   소속 기관 [하이브미디어]: ", end="")
+    organization = input().strip() or "하이브미디어"
+    
+    print(f"   업종 (government/fitness/cosmetics/general) [general]: ", end="")
+    category = input().strip() or "general"
     
     # 분석 실행
     result = analyze_persona(client_name, organization, kakao_chat, category)
@@ -237,17 +326,36 @@ def main():
         
         print(f"\n✅ 적극 활용할 것들:")
         for flag in persona_data['persona_analysis'].get('green_flags', []):
-            print(f"   • {flag}")
+            print(f"   - {flag}")
         
         print(f"\n❌ 피해야 할 것들:")
         for flag in persona_data['persona_analysis'].get('red_flags', []):
-            print(f"   • {flag}")
-        
-        print(f"\n📁 맞춤 프롬프트:")
-        print("-" * 40)
-        print(persona_data['custom_prompt'])
+            print(f"   - {flag}")
         
         print(f"\n💾 저장 위치: {save_path}")
+        
+        # 폴더 열기 옵션
+        print("\n" + "=" * 60)
+        print("📂 페르소나 폴더를 여시겠습니까? (Y/n): ", end="")
+        open_folder = input().strip().lower()
+        if open_folder != 'n':
+            import subprocess
+            subprocess.run(['explorer', str(DATA_DIR)])
+            print("   폴더를 열었습니다.")
+        
+        # 블로그 작성 옵션
+        print("\n" + "=" * 60)
+        print("📝 이 페르소나로 블로그 글을 작성하시겠습니까? (Y/n): ", end="")
+        do_blog = input().strip().lower()
+        if do_blog != 'n':
+            # run_blog_generator 호출
+            client_id = persona_data['client_id']
+            try:
+                from run_blog_generator import generate_blog_with_persona
+                generate_blog_with_persona(client_id)
+            except ImportError:
+                print("\n블로그 생성기를 별도로 실행해주세요:")
+                print(f"   python run_blog_generator.py")
     else:
         print("❌ 분석에 실패했습니다.")
 
