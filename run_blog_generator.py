@@ -14,8 +14,8 @@ import subprocess
 from datetime import datetime
 from pathlib import Path
 
-# Windows 터미널 UTF-8 출력 설정
-if sys.platform == 'win32':
+# Windows 터미널 UTF-8 출력 설정 (중복 래핑 방지)
+if sys.platform == 'win32' and not isinstance(sys.stdout, io.TextIOWrapper):
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
 
 # mcp_config.json에서 API 키 로드
@@ -73,7 +73,7 @@ WORD_OUTPUT_DIR = Path(__file__).parent / "output" / "blog"
 WORD_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 # 입력 폴더 (보도자료 텍스트 파일 넣는 곳)
-INPUT_DIR = Path(__file__).parent / "input" / "press_release"
+INPUT_DIR = Path(__file__).parent / "input" / "2_blog_writhing"
 INPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 
