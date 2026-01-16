@@ -124,6 +124,107 @@ def get_file_type_icon(ext: str) -> str:
     return icons.get(ext.lower(), '📁 FILE')
 
 
+def select_press_release():
+    """폴더 및 파일 선택 (공용 함수)"""
+    
+    # 하위 폴더 목록 가져오기
+    subfolders = [f for f in INPUT_DIR.iterdir() if f.is_dir()]
+    
+    # 현재 폴더의 파일도 가져오기
+    root_files = [
+        f for f in INPUT_DIR.iterdir() 
+        if f.is_file() and f.suffix.lower() in SUPPORTED_EXTENSIONS and f.name.lower() != "readme.txt"
+    ]
+    
+    # 폴더가 있으면 먼저 폴더 선택
+    if subfolders:
+        print("\n📁 사용 가능한 폴더:")
+        print("-" * 50)
+        
+        # 0번: 현재 폴더 (루트)
+        if root_files:
+            print(f"  0. [현재 폴더] 📂 ({len(root_files)}개 파일)")
+        
+        # 하위 폴더 목록
+        for i, folder in enumerate(subfolders, 1):
+            # 폴더 내 파일 수 계산
+            folder_files = [
+                f for f in folder.iterdir() 
+                if f.is_file() and f.suffix.lower() in SUPPORTED_EXTENSIONS
+            ]
+            print(f"  {i}. {folder.name} 📂 ({len(folder_files)}개 파일)")
+        
+        print("\n🔢 폴더 번호를 입력하세요 (0: 현재 폴더):")
+        try:
+            folder_choice = int(input(">>> ").strip())
+            
+            if folder_choice == 0:
+                if not root_files:
+                    print("❌ 현재 폴더에 파일이 없습니다.")
+                    return None
+                target_dir = INPUT_DIR
+            elif 1 <= folder_choice <= len(subfolders):
+                target_dir = subfolders[folder_choice - 1]
+                print(f"\n✅ 선택된 폴더: {target_dir.name}")
+            else:
+                print("❌ 잘못된 번호입니다.")
+                return None
+        except ValueError:
+            print("❌ 숫자를 입력해주세요.")
+            return None
+    else:
+        target_dir = INPUT_DIR
+    
+    # 선택된 폴더에서 파일 목록 가져오기
+    press_files = [
+        f for f in target_dir.iterdir() 
+        if f.is_file() and f.suffix.lower() in SUPPORTED_EXTENSIONS and f.name.lower() != "readme.txt"
+    ]
+    
+    if not press_files:
+        print("\n❌ 보도자료 파일이 없습니다.")
+        print(f"   📂 이 폴더에 파일을 넣어주세요:")
+        print(f"   {target_dir}")
+        print(f"   지원 형식: {', '.join(SUPPORTED_EXTENSIONS)}")
+        return None
+    
+    # 파일 목록 표시
+    print("\n📂 사용 가능한 보도자료:")
+    print("-" * 50)
+    for i, f in enumerate(press_files, 1):
+        size_kb = f.stat().st_size / 1024
+        file_icon = get_file_type_icon(f.suffix)
+        print(f"  {i}. {f.stem} {file_icon}")
+        print(f"     ({f.name}, {size_kb:.1f}KB)")
+    
+    # 번호로 선택
+    print("\n🔢 사용할 보도자료 번호를 입력하세요:")
+    try:
+        choice = int(input(">>> ").strip())
+        if choice < 1 or choice > len(press_files):
+            print("❌ 잘못된 번호입니다.")
+            return None
+        selected_file = press_files[choice - 1]
+    except ValueError:
+        print("❌ 숫자를 입력해주세요.")
+        return None
+    
+    print(f"\n✅ 선택: {selected_file.name}")
+    
+    # 파일 읽기 (다양한 형식 지원)
+    try:
+        press_release = extract_text_from_file(selected_file)
+        if not press_release.strip():
+            print("❌ 파일에서 텍스트를 추출할 수 없습니다.")
+            return None
+    except Exception as e:
+        print(f"❌ 파일 읽기 실패: {e}")
+        return None
+    
+    print(f"📄 보도자료 길이: {len(press_release):,} 글자")
+    return press_release
+
+
 class LoadingSpinner:
     """로딩 스피너 애니메이션"""
     def __init__(self, message="처리 중"):
@@ -435,53 +536,10 @@ def generate_blog_with_persona(client_id: str):
     print("📝 페르소나 기반 블로그 글 생성기")
     print("=" * 60)
     
-    # 보도자료 폴더 스캔 (다양한 파일 형식 지원)
-    press_files = [
-        f for f in INPUT_DIR.iterdir() 
-        if f.suffix.lower() in SUPPORTED_EXTENSIONS and f.name.lower() != "readme.txt"
-    ]
-    
-    if not press_files:
-        print("\n❌ 보도자료 파일이 없습니다.")
-        print(f"   📂 이 폴더에 파일을 넣어주세요:")
-        print(f"   {INPUT_DIR}")
-        print(f"   지원 형식: {', '.join(SUPPORTED_EXTENSIONS)}")
+    # 보도자료 선택 (폴더 및 파일)
+    press_release = select_press_release()
+    if not press_release:
         return
-    
-    # 파일 목록 표시
-    print("\n📂 사용 가능한 보도자료:")
-    print("-" * 50)
-    for i, f in enumerate(press_files, 1):
-        size_kb = f.stat().st_size / 1024
-        file_icon = get_file_type_icon(f.suffix)
-        print(f"  {i}. {f.stem} {file_icon}")
-        print(f"     ({f.name}, {size_kb:.1f}KB)")
-    
-    # 번호로 선택
-    print("\n🔢 사용할 보도자료 번호를 입력하세요:")
-    try:
-        choice = int(input(">>> ").strip())
-        if choice < 1 or choice > len(press_files):
-            print("❌ 잘못된 번호입니다.")
-            return
-        selected_file = press_files[choice - 1]
-    except ValueError:
-        print("❌ 숫자를 입력해주세요.")
-        return
-    
-    print(f"\n✅ 선택: {selected_file.name}")
-    
-    # 파일 읽기 (다양한 형식 지원)
-    try:
-        press_release = extract_text_from_file(selected_file)
-        if not press_release.strip():
-            print("❌ 파일에서 텍스트를 추출할 수 없습니다.")
-            return
-    except Exception as e:
-        print(f"❌ 파일 읽기 실패: {e}")
-        return
-    
-    print(f"📄 보도자료 길이: {len(press_release):,} 글자")
     
     # SEO 키워드 (선택)
     print("\n🔑 SEO 키워드를 입력하세요 (쉼표로 구분, 없으면 엔터):")
@@ -545,53 +603,10 @@ def main():
     
     print(f"\n✅ 선택된 페르소나: {selected['client_name']}")
     
-    # 보도자료 폴더 스캔 (다양한 파일 형식 지원)
-    press_files = [
-        f for f in INPUT_DIR.iterdir() 
-        if f.suffix.lower() in SUPPORTED_EXTENSIONS and f.name.lower() != "readme.txt"
-    ]
-    
-    if not press_files:
-        print("\n❌ 보도자료 파일이 없습니다.")
-        print(f"   📂 이 폴더에 파일을 넣어주세요:")
-        print(f"   {INPUT_DIR}")
-        print(f"   지원 형식: {', '.join(SUPPORTED_EXTENSIONS)}")
+    # 보도자료 선택 (폴더 및 파일)
+    press_release = select_press_release()
+    if not press_release:
         return
-    
-    # 파일 목록 표시
-    print("\n📂 사용 가능한 보도자료:")
-    print("-" * 50)
-    for i, f in enumerate(press_files, 1):
-        size_kb = f.stat().st_size / 1024
-        file_icon = get_file_type_icon(f.suffix)
-        print(f"  {i}. {f.stem} {file_icon}")
-        print(f"     ({f.name}, {size_kb:.1f}KB)")
-    
-    # 번호로 선택
-    print("\n🔢 사용할 보도자료 번호를 입력하세요:")
-    try:
-        choice = int(input(">>> ").strip())
-        if choice < 1 or choice > len(press_files):
-            print("❌ 잘못된 번호입니다.")
-            return
-        selected_file = press_files[choice - 1]
-    except ValueError:
-        print("❌ 숫자를 입력해주세요.")
-        return
-    
-    print(f"\n✅ 선택: {selected_file.name}")
-    
-    # 파일 읽기 (다양한 형식 지원)
-    try:
-        press_release = extract_text_from_file(selected_file)
-        if not press_release.strip():
-            print("❌ 파일에서 텍스트를 추출할 수 없습니다.")
-            return
-    except Exception as e:
-        print(f"❌ 파일 읽기 실패: {e}")
-        return
-    
-    print(f"📄 보도자료 길이: {len(press_release):,} 글자")
     
     # SEO 키워드 (선택)
     print("\n🔑 SEO 키워드를 입력하세요 (쉼표로 구분, 없으면 엔터):")
