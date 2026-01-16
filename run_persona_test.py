@@ -30,7 +30,7 @@ if config_path.exists() and not os.getenv("GEMINI_API_KEY"):
         if api_key:
             os.environ["GEMINI_API_KEY"] = api_key
 
-import google.generativeai as genai
+from google import genai
 import threading
 import time
 from datetime import datetime
@@ -87,8 +87,7 @@ def analyze_persona(client_name: str, organization: str, kakao_chat_log: str, ca
         print("❌ GEMINI_API_KEY 환경 변수가 없습니다.")
         return None
     
-    genai.configure(api_key=api_key)
-    model = genai.GenerativeModel('gemini-2.0-flash')
+    client = genai.Client(api_key=api_key)
     spinner.stop("API 연결 완료")
     
     analysis_prompt = f"""
@@ -145,7 +144,10 @@ def analyze_persona(client_name: str, organization: str, kakao_chat_log: str, ca
     spinner.start()
     
     try:
-        response = model.generate_content(analysis_prompt)
+        response = client.models.generate_content(
+            model='gemini-2.0-flash',
+            contents=analysis_prompt
+        )
         spinner.stop("대화 분석 완료")
         
         # Step 3: 결과 처리

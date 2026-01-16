@@ -41,7 +41,7 @@ SAMPLE_KAKAO_CHAT = """
 # 테스트 실행
 from pathlib import Path
 import json
-import google.generativeai as genai
+from google import genai
 
 DATA_DIR = Path.home() / "mcp-data" / "personas"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -51,8 +51,7 @@ if not api_key:
     print("ERROR: Gemini API 키가 없습니다!")
     sys.exit(1)
 
-genai.configure(api_key=api_key)
-model = genai.GenerativeModel('gemini-2.0-flash')
+client = genai.Client(api_key=api_key)
 
 print("\n[1] 카톡 대화 분석 중...")
 
@@ -106,7 +105,10 @@ analysis_prompt = f"""
 """
 
 try:
-    response = model.generate_content(analysis_prompt)
+    response = client.models.generate_content(
+        model='gemini-2.0-flash',
+        contents=analysis_prompt
+    )
     
     response_text = response.text
     

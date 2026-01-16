@@ -5,7 +5,7 @@ visual-persona-extractor MCP Server
 """
 
 from mcp.server.fastmcp import FastMCP
-import google.generativeai as genai
+from google import genai
 import os
 import json
 import base64
@@ -28,11 +28,10 @@ DATA_DIR.mkdir(parents=True, exist_ok=True)
 # Gemini API 설정
 api_key = os.getenv("GEMINI_API_KEY")
 if api_key:
-    genai.configure(api_key=api_key)
-    model = genai.GenerativeModel('gemini-2.0-flash')
+    client = genai.Client(api_key=api_key)
 else:
     print("⚠️ GEMINI_API_KEY가 설정되지 않았습니다.")
-    model = None
+    client = None
 
 
 @mcp.tool()
@@ -187,12 +186,15 @@ def analyze_images_with_gemini(
 """
     
     try:
-        if not model:
+        if not client:
             raise ValueError("Gemini API가 구성되지 않았습니다.")
             
         full_content = [prompt] + image_contents
         
-        response = model.generate_content(full_content)
+        response = client.models.generate_content(
+            model='gemini-2.0-flash',
+            contents=full_content
+        )
         response_text = response.text
         
         if "```json" in response_text:

@@ -33,13 +33,15 @@ print("\n[STEP 1/3] Gemini API 테스트")
 print("-" * 40)
 
 try:
-    import google.generativeai as genai
+    from google import genai
     
-    genai.configure(api_key=api_key)
-    model = genai.GenerativeModel('gemini-2.0-flash')
+    client = genai.Client(api_key=api_key)
     
     # 간단한 API 호출 테스트
-    response = model.generate_content("안녕! 한 문장으로 테스트 성공이라고 말해줘.")
+    response = client.models.generate_content(
+        model='gemini-2.0-flash',
+        contents="안녕! 한 문장으로 테스트 성공이라고 말해줘."
+    )
     
     print(f"[OK] Gemini API 연결 성공!")
     print(f"   응답: {response.text}")

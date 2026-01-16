@@ -30,7 +30,7 @@ if config_path.exists() and not os.getenv("GEMINI_API_KEY"):
         if api_key:
             os.environ["GEMINI_API_KEY"] = api_key
 
-import google.generativeai as genai
+from google import genai
 from docx import Document
 from docx.shared import Pt, Inches
 from docx.enum.text import WD_ALIGN_PARAGRAPH
@@ -130,8 +130,7 @@ def generate_blog_post(client_id: str, press_release: str, target_keywords: list
         print("❌ GEMINI_API_KEY 환경 변수가 없습니다.")
         return None
     
-    genai.configure(api_key=api_key)
-    model = genai.GenerativeModel('gemini-2.0-flash')
+    client = genai.Client(api_key=api_key)
     spinner.stop("API 연결 완료")
     
     # 블로그 글 생성 프롬프트 (부산시 블로그 스타일)
@@ -217,7 +216,10 @@ def generate_blog_post(client_id: str, press_release: str, target_keywords: list
     spinner.start()
     
     try:
-        response = model.generate_content(blog_prompt)
+        response = client.models.generate_content(
+            model='gemini-2.0-flash',
+            contents=blog_prompt
+        )
         spinner.stop("블로그 글 생성 완료")
         
         # Step 3: 결과 처리

@@ -5,7 +5,7 @@ content-automation MCP Server
 """
 
 from mcp.server.fastmcp import FastMCP
-import google.generativeai as genai
+from google import genai
 import os
 import json
 from datetime import datetime
@@ -27,11 +27,10 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 # Gemini API 설정
 api_key = os.getenv("GEMINI_API_KEY")
 if api_key:
-    genai.configure(api_key=api_key)
-    model = genai.GenerativeModel('gemini-2.0-flash')
+    client = genai.Client(api_key=api_key)
 else:
     print("⚠️ GEMINI_API_KEY가 설정되지 않았습니다.")
-    model = None
+    client = None
 
 
 @mcp.tool()
@@ -92,10 +91,13 @@ JSON으로 반환:
 """
     
     try:
-        if not model:
+        if not client:
             raise ValueError("Gemini API가 구성되지 않았습니다.")
             
-        response = model.generate_content(blog_prompt)
+        response = client.models.generate_content(
+            model='gemini-2.0-flash',
+            contents=blog_prompt
+        )
         response_text = response.text
         
         if "```json" in response_text:
@@ -214,10 +216,13 @@ JSON으로:
 """
     
     try:
-        if not model:
+        if not client:
             raise ValueError("Gemini API가 구성되지 않았습니다.")
             
-        response = model.generate_content(script_prompt)
+        response = client.models.generate_content(
+            model='gemini-2.0-flash',
+            contents=script_prompt
+        )
         response_text = response.text
         
         if "```json" in response_text:
