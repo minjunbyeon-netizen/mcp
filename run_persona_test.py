@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """
-카카오톡 텍스트 파일로 페르소나 추출 테스트
-사용법: python run_persona_test.py [카톡파일경로]
+카카오톡 텍스트 파일 또는 PDF로 페르소나 추출
+사용법: python run_persona_test.py
 """
+
+import pdfplumber
 
 import sys
 import os
@@ -243,48 +245,68 @@ def main():
     input_folder = Path(__file__).parent / "input" / "1_personas"
     input_folder.mkdir(parents=True, exist_ok=True)
     
-    # txt 파일 목록 가져오기 (README 제외)
-    kakao_files = [f for f in input_folder.glob("*.txt") if f.name.lower() != "readme.txt"]
+    # txt 및 pdf 파일 목록 가져오기 (README 제외)
+    persona_files = [
+        f for f in input_folder.iterdir() 
+        if f.suffix.lower() in ['.txt', '.pdf'] and f.name.lower() != "readme.txt"
+    ]
     
-    if not kakao_files:
-        print("\n❌ 카카오톡 파일이 없습니다.")
-        print(f"   📂 이 폴더에 .txt 파일을 넣어주세요:")
+    if not persona_files:
+        print("\n❌ 카카오톡/PDF 파일이 없습니다.")
+        print(f"   📂 이 폴더에 .txt 또는 .pdf 파일을 넣어주세요:")
         print(f"   {input_folder}")
         return
     
     # 파일 목록 표시
-    print("\n📂 사용 가능한 카카오톡 파일:")
+    print("\n📂 사용 가능한 파일:")
     print("-" * 50)
-    for i, f in enumerate(kakao_files, 1):
+    for i, f in enumerate(persona_files, 1):
         size_kb = f.stat().st_size / 1024
+        file_type = "📄 PDF" if f.suffix.lower() == '.pdf' else "💬 TXT"
         # 파일명에서 이름 추출 시도
         name_part = f.stem.split("_")[-1] if "_" in f.stem else f.stem
-        print(f"  {i}. {name_part}")
+        print(f"  {i}. {name_part} {file_type}")
         print(f"     ({f.name}, {size_kb:.1f}KB)")
     
     # 번호로 선택
     print("\n🔢 분석할 파일 번호를 입력하세요:")
     try:
         choice = int(input(">>> ").strip())
-        if choice < 1 or choice > len(kakao_files):
+        if choice < 1 or choice > len(persona_files):
             print("❌ 잘못된 번호입니다.")
             return
-        kakao_file = kakao_files[choice - 1]
+        selected_file = persona_files[choice - 1]
     except ValueError:
         print("❌ 숫자를 입력해주세요.")
         return
     
     # 파일명에서 정보 자동 추출
-    filename = kakao_file.stem
+    filename = selected_file.stem
     name_guess = filename.split("_")[-1] if "_" in filename else "담당자"
     
-    print(f"\n✅ 선택: {kakao_file.name}")
+    print(f"\n✅ 선택: {selected_file.name}")
     
-    # 파일 읽기
-    with open(kakao_file, 'r', encoding='utf-8') as f:
-        kakao_chat = f.read()
+    # 파일 읽기 (TXT 또는 PDF)
+    if selected_file.suffix.lower() == '.pdf':
+        print("📄 PDF 파일에서 텍스트 추출 중...")
+        try:
+            with pdfplumber.open(selected_file) as pdf:
+                text_content = ""
+                for page in pdf.pages:
+                    page_text = page.extract_text()
+                    if page_text:
+                        text_content += page_text + "\n"
+            if not text_content.strip():
+                print("❌ PDF에서 텍스트를 추출할 수 없습니다.")
+                return
+        except Exception as e:
+            print(f"❌ PDF 읽기 실패: {e}")
+            return
+    else:
+        with open(selected_file, 'r', encoding='utf-8') as f:
+            text_content = f.read()
     
-    print(f"📄 대화 길이: {len(kakao_chat):,} 글자")
+    print(f"📄 내용 길이: {len(text_content):,} 글자")
     
     # 광고주 정보 입력 (자동 추천)
     print("\n📝 광고주 정보를 입력하세요 (엔터시 기본값):")
@@ -298,7 +320,7 @@ def main():
     category = input().strip() or "general"
     
     # 분석 실행
-    result = analyze_persona(client_name, organization, kakao_chat, category)
+    result = analyze_persona(client_name, organization, text_content, category)
     
     if result:
         persona_data, save_path = result
