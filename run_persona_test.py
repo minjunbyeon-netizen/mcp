@@ -620,19 +620,24 @@ def main():
             subprocess.run(['explorer', str(DATA_DIR)])
             print("   폴더를 열었습니다.")
         
-        # 블로그 작성 옵션
-        print("\n" + "=" * 60)
-        print("📝 이 페르소나로 블로그 글을 작성하시겠습니까? (Y/n): ", end="")
-        do_blog = input().strip().lower()
-        if do_blog != 'n':
+        # 블로그 작성 자동 실행 (SKIP_BLOG 환경변수로 건너뛰기 가능)
+        if os.getenv("SKIP_BLOG"):
+            print("\n💡 페르소나만 분석 완료! (블로그 생성 건너뜀)")
+        else:
+            print("\n" + "=" * 60)
+            print("📝 블로그 글 자동 생성을 시작합니다...")
+            print("=" * 60)
+            
             # run_blog_generator 호출
             client_id = persona_data['client_id']
             try:
                 from run_blog_generator import generate_blog_with_persona
                 generate_blog_with_persona(client_id)
-            except ImportError:
-                print("\n블로그 생성기를 별도로 실행해주세요:")
-                print(f"   python run_blog_generator.py")
+            except ImportError as ie:
+                print(f"\n❌ 블로그 생성기 로드 실패: {ie}")
+                print("   python run_blog_generator.py 로 별도 실행하세요.")
+            except Exception as e:
+                print(f"\n❌ 블로그 생성 오류: {e}")
     else:
         print("❌ 분석에 실패했습니다.")
 

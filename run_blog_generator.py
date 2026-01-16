@@ -296,8 +296,8 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 WORD_OUTPUT_DIR = Path(__file__).parent / "output" / "blog"
 WORD_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-# Google Drive 자동 동기 폴더 (선택 사항)
-GDRIVE_DIR = Path(r"G:\ub0b4 드라이브\Archive_to_blog")
+# Google Drive 자동 동기 폴더
+GDRIVE_DIR = Path(r"G:\내 드라이브\01_auto_system\02_Archive_to_blog")
 
 # 입력 폴더 (보도자료 텍스트 파일 넣는 곳)
 INPUT_DIR = Path(__file__).parent / "input" / "2_blog_writhing"
@@ -462,7 +462,19 @@ def generate_blog_post(client_id: str, press_release: str, target_keywords: list
         elif "```" in response_text:
             response_text = response_text.split("```")[1].split("```")[0]
         
-        blog_content = json.loads(response_text.strip())
+        # 잘못된 이스케이프 문자 정리
+        import re
+        response_text = response_text.strip()
+        # 잘못된 백슬래시 이스케이프 수정 (예: \escape -> \\escape)
+        response_text = re.sub(r'\\(?!["\\/bfnrtu])', r'\\\\', response_text)
+        
+        try:
+            blog_content = json.loads(response_text)
+        except json.JSONDecodeError as je:
+            # 마지막 시도: 더 공격적인 정리
+            response_text = response_text.replace('\\"', '"').replace('\\n', '\n')
+            response_text = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', response_text)
+            blog_content = json.loads(response_text)
         
     except Exception as e:
         spinner.stop("오류 발생")
