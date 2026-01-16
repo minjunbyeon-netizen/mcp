@@ -299,6 +299,9 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 WORD_OUTPUT_DIR = Path(__file__).parent / "output" / "blog"
 WORD_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
+# Google Drive 자동 동기 폴더 (선택 사항)
+GDRIVE_DIR = Path(r"G:\ub0b4 드라이브\Archive_to_blog")
+
 # 입력 폴더 (보도자료 텍스트 파일 넣는 곳)
 INPUT_DIR = Path(__file__).parent / "input" / "2_blog_writhing"
 INPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -563,9 +566,21 @@ def generate_blog_post(client_id: str, press_release: str, target_keywords: list
     meta_run.font.name = '맑은 고딕'
     
     doc.save(str(docx_path))
+    
+    # Google Drive에도 복사 (폴더가 있으면)
+    gdrive_docx_path = None
+    if GDRIVE_DIR.exists():
+        import shutil
+        try:
+            gdrive_docx_path = GDRIVE_DIR / docx_filename
+            shutil.copy2(docx_path, gdrive_docx_path)
+            print(f"\r  [☁️] Google Drive 업로드 완료" + " " * 20)
+        except Exception as e:
+            print(f"\r  [⚠️] Google Drive 복사 실패: {e}")
+    
     spinner.stop("파일 저장 완료")
     
-    return blog_data, md_path, docx_path
+    return blog_data, md_path, docx_path, gdrive_docx_path
 
 
 def generate_blog_with_persona(client_id: str):
@@ -588,7 +603,7 @@ def generate_blog_with_persona(client_id: str):
     result = generate_blog_post(client_id, press_release, keywords)
     
     if result:
-        blog_data, md_path, docx_path = result
+        blog_data, md_path, docx_path, gdrive_path = result
         blog = blog_data["content"]
         
         print("\n" + "=" * 60)
@@ -599,6 +614,8 @@ def generate_blog_with_persona(client_id: str):
         print(f"🏷️ 태그: {', '.join(blog['tags'])}")
         print(f"\n💾 저장 위치:")
         print(f"   - Word: {docx_path}")
+        if gdrive_path:
+            print(f"   - ☁️ Google Drive: {gdrive_path}")
         
         # 폴더 열기 옵션
         print("\n" + "=" * 60)
@@ -655,7 +672,7 @@ def main():
     result = generate_blog_post(client_id, press_release, keywords)
     
     if result:
-        blog_data, md_path, docx_path = result
+        blog_data, md_path, docx_path, gdrive_path = result
         blog = blog_data["content"]
         
         print("\n" + "=" * 60)
@@ -666,6 +683,8 @@ def main():
         print(f"🏷️ 태그: {', '.join(blog['tags'])}")
         print(f"\n💾 저장 위치:")
         print(f"   - Word: {docx_path}")
+        if gdrive_path:
+            print(f"   - ☁️ Google Drive: {gdrive_path}")
         
         # 폴더 열기 옵션
         print("\n" + "=" * 60)
