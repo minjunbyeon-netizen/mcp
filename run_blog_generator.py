@@ -35,6 +35,94 @@ from docx import Document
 from docx.shared import Pt, Inches
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 
+# 다중 파일 형식 지원
+import pdfplumber
+from PIL import Image
+import base64
+
+# HWP 지원 (설치된 경우)
+try:
+    from hwp_extract import extract as hwp_extract
+    HWP_SUPPORTED = True
+except ImportError:
+    HWP_SUPPORTED = False
+
+# 지원 파일 확장자
+SUPPORTED_EXTENSIONS = ['.txt', '.pdf', '.hwp', '.jpg', '.jpeg', '.png']
+
+
+def extract_text_from_file(file_path: Path) -> str:
+    """다양한 파일 형식에서 텍스트 추출"""
+    ext = file_path.suffix.lower()
+    
+    if ext == '.txt':
+        with open(file_path, 'r', encoding='utf-8') as f:
+            return f.read()
+    
+    elif ext == '.pdf':
+        text = ""
+        with pdfplumber.open(file_path) as pdf:
+            for page in pdf.pages:
+                page_text = page.extract_text()
+                if page_text:
+                    text += page_text + "\n"
+        return text
+    
+    elif ext == '.hwp':
+        if not HWP_SUPPORTED:
+            raise ValueError("HWP 지원을 위해 'pip install hwp-extract'를 실행하세요.")
+        # hwp-extract는 파일 객체 추출 용도로, 텍스트 추출은 제한적
+        # olefile을 직접 사용하여 텍스트 추출 시도
+        import olefile
+        import zlib
+        
+        text_parts = []
+        try:
+            ole = olefile.OleFileIO(str(file_path))
+            # 텍스트 스트림 찾기
+            for stream in ole.listdir():
+                if 'BodyText' in stream or 'Section' in stream:
+                    try:
+                        data = ole.openstream(stream).read()
+                        # 압축 해제 시도
+                        try:
+                            decompressed = zlib.decompress(data, -15)
+                            # 한글 디코딩 시도
+                            text = decompressed.decode('utf-16-le', errors='ignore')
+                            # 제어 문자 제거
+                            text = ''.join(c for c in text if c.isprintable() or c in '\n\r\t')
+                            if text.strip():
+                                text_parts.append(text)
+                        except:
+                            pass
+                    except:
+                        pass
+            ole.close()
+        except Exception as e:
+            raise ValueError(f"HWP 파일 읽기 실패: {e}")
+        
+        return "\n".join(text_parts) if text_parts else ""
+    
+    elif ext in ['.jpg', '.jpeg', '.png']:
+        # 이미지는 Gemini Vision으로 처리 (base64 인코딩)
+        return f"[IMAGE_FILE:{file_path}]"
+    
+    else:
+        raise ValueError(f"지원되지 않는 파일 형식: {ext}")
+
+
+def get_file_type_icon(ext: str) -> str:
+    """파일 확장자에 따른 아이콘 반환"""
+    icons = {
+        '.txt': '📄 TXT',
+        '.pdf': '📕 PDF',
+        '.hwp': '📘 HWP',
+        '.jpg': '🖼️ JPG',
+        '.jpeg': '🖼️ JPEG',
+        '.png': '🖼️ PNG',
+    }
+    return icons.get(ext.lower(), '📁 FILE')
+
 
 class LoadingSpinner:
     """로딩 스피너 애니메이션"""
@@ -347,13 +435,17 @@ def generate_blog_with_persona(client_id: str):
     print("📝 페르소나 기반 블로그 글 생성기")
     print("=" * 60)
     
-    # 보도자료 폴더 스캔
-    press_files = [f for f in INPUT_DIR.glob("*.txt") if f.name.lower() != "readme.txt"]
+    # 보도자료 폴더 스캔 (다양한 파일 형식 지원)
+    press_files = [
+        f for f in INPUT_DIR.iterdir() 
+        if f.suffix.lower() in SUPPORTED_EXTENSIONS and f.name.lower() != "readme.txt"
+    ]
     
     if not press_files:
         print("\n❌ 보도자료 파일이 없습니다.")
-        print(f"   📂 이 폴더에 .txt 파일을 넣어주세요:")
+        print(f"   📂 이 폴더에 파일을 넣어주세요:")
         print(f"   {INPUT_DIR}")
+        print(f"   지원 형식: {', '.join(SUPPORTED_EXTENSIONS)}")
         return
     
     # 파일 목록 표시
@@ -361,7 +453,8 @@ def generate_blog_with_persona(client_id: str):
     print("-" * 50)
     for i, f in enumerate(press_files, 1):
         size_kb = f.stat().st_size / 1024
-        print(f"  {i}. {f.stem}")
+        file_icon = get_file_type_icon(f.suffix)
+        print(f"  {i}. {f.stem} {file_icon}")
         print(f"     ({f.name}, {size_kb:.1f}KB)")
     
     # 번호로 선택
@@ -378,9 +471,15 @@ def generate_blog_with_persona(client_id: str):
     
     print(f"\n✅ 선택: {selected_file.name}")
     
-    # 파일 읽기
-    with open(selected_file, 'r', encoding='utf-8') as f:
-        press_release = f.read()
+    # 파일 읽기 (다양한 형식 지원)
+    try:
+        press_release = extract_text_from_file(selected_file)
+        if not press_release.strip():
+            print("❌ 파일에서 텍스트를 추출할 수 없습니다.")
+            return
+    except Exception as e:
+        print(f"❌ 파일 읽기 실패: {e}")
+        return
     
     print(f"📄 보도자료 길이: {len(press_release):,} 글자")
     
@@ -446,13 +545,17 @@ def main():
     
     print(f"\n✅ 선택된 페르소나: {selected['client_name']}")
     
-    # 보도자료 폴더 스캔
-    press_files = [f for f in INPUT_DIR.glob("*.txt") if f.name.lower() != "readme.txt"]
+    # 보도자료 폴더 스캔 (다양한 파일 형식 지원)
+    press_files = [
+        f for f in INPUT_DIR.iterdir() 
+        if f.suffix.lower() in SUPPORTED_EXTENSIONS and f.name.lower() != "readme.txt"
+    ]
     
     if not press_files:
         print("\n❌ 보도자료 파일이 없습니다.")
-        print(f"   📂 이 폴더에 .txt 파일을 넣어주세요:")
+        print(f"   📂 이 폴더에 파일을 넣어주세요:")
         print(f"   {INPUT_DIR}")
+        print(f"   지원 형식: {', '.join(SUPPORTED_EXTENSIONS)}")
         return
     
     # 파일 목록 표시
@@ -460,7 +563,8 @@ def main():
     print("-" * 50)
     for i, f in enumerate(press_files, 1):
         size_kb = f.stat().st_size / 1024
-        print(f"  {i}. {f.stem}")
+        file_icon = get_file_type_icon(f.suffix)
+        print(f"  {i}. {f.stem} {file_icon}")
         print(f"     ({f.name}, {size_kb:.1f}KB)")
     
     # 번호로 선택
@@ -477,9 +581,15 @@ def main():
     
     print(f"\n✅ 선택: {selected_file.name}")
     
-    # 파일 읽기
-    with open(selected_file, 'r', encoding='utf-8') as f:
-        press_release = f.read()
+    # 파일 읽기 (다양한 형식 지원)
+    try:
+        press_release = extract_text_from_file(selected_file)
+        if not press_release.strip():
+            print("❌ 파일에서 텍스트를 추출할 수 없습니다.")
+            return
+    except Exception as e:
+        print(f"❌ 파일 읽기 실패: {e}")
+        return
     
     print(f"📄 보도자료 길이: {len(press_release):,} 글자")
     
