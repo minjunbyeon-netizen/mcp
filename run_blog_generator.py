@@ -197,30 +197,68 @@ def select_press_release():
         print(f"  {i}. {f.stem} {file_icon}")
         print(f"     ({f.name}, {size_kb:.1f}KB)")
     
-    # 번호로 선택
+    # 번호로 선택 (다중 선택 지원)
     print("\n🔢 사용할 보도자료 번호를 입력하세요:")
+    print("   💡 여러 파일: 1,2,3 또는 1-3 또는 all")
     try:
-        choice = int(input(">>> ").strip())
-        if choice < 1 or choice > len(press_files):
-            print("❌ 잘못된 번호입니다.")
-            return None
-        selected_file = press_files[choice - 1]
+        choice_input = input(">>> ").strip().lower()
+        
+        selected_indices = []
+        
+        if choice_input == "all":
+            # 전체 선택
+            selected_indices = list(range(1, len(press_files) + 1))
+        elif "-" in choice_input and "," not in choice_input:
+            # 범위 선택 (예: 1-3)
+            parts = choice_input.split("-")
+            start, end = int(parts[0]), int(parts[1])
+            selected_indices = list(range(start, end + 1))
+        elif "," in choice_input:
+            # 개별 선택 (예: 1,3,5)
+            selected_indices = [int(x.strip()) for x in choice_input.split(",")]
+        else:
+            # 단일 선택
+            selected_indices = [int(choice_input)]
+        
+        # 유효성 검사
+        for idx in selected_indices:
+            if idx < 1 or idx > len(press_files):
+                print(f"❌ 잘못된 번호입니다: {idx}")
+                return None
+        
+        selected_files = [press_files[i - 1] for i in selected_indices]
+        
     except ValueError:
-        print("❌ 숫자를 입력해주세요.")
+        print("❌ 올바른 형식으로 입력해주세요. (예: 1 또는 1,2,3 또는 1-3)")
         return None
     
-    print(f"\n✅ 선택: {selected_file.name}")
+    # 선택된 파일 표시
+    if len(selected_files) == 1:
+        print(f"\n✅ 선택: {selected_files[0].name}")
+    else:
+        print(f"\n✅ 선택: {len(selected_files)}개 파일")
+        for f in selected_files:
+            print(f"   - {f.name}")
     
-    # 파일 읽기 (다양한 형식 지원)
-    try:
-        press_release = extract_text_from_file(selected_file)
-        if not press_release.strip():
-            print("❌ 파일에서 텍스트를 추출할 수 없습니다.")
-            return None
-    except Exception as e:
-        print(f"❌ 파일 읽기 실패: {e}")
+    # 모든 파일 읽기 및 합치기
+    all_texts = []
+    for selected_file in selected_files:
+        try:
+            text = extract_text_from_file(selected_file)
+            if text.strip():
+                if len(selected_files) > 1:
+                    # 여러 파일인 경우 구분선 추가
+                    all_texts.append(f"\n\n===== {selected_file.name} =====\n\n{text}")
+                else:
+                    all_texts.append(text)
+        except Exception as e:
+            print(f"⚠️ 파일 읽기 실패: {selected_file.name} - {e}")
+    
+    if not all_texts:
+        print("❌ 파일에서 텍스트를 추출할 수 없습니다.")
         return None
     
+    press_release = "\n".join(all_texts)
     print(f"📄 보도자료 길이: {len(press_release):,} 글자")
     return press_release
 
