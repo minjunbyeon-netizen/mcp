@@ -520,22 +520,22 @@ def main():
             empty = bar_length - filled
             return f"[{'█' * filled}{'░' * empty}]"
         
-        # 📊 전체 요약
+        # 전체 요약
         print("\n" + "━" * 60)
-        print("📊 페르소나 요약")
+        print("[1] 페르소나 요약")
         print("━" * 60)
         summary = pa.get('overall_summary', {})
-        print(f"  🎯 유형: {summary.get('persona_type', '분석 중')}")
-        print(f"  📋 핵심 특성:")
+        print(f"  유형: {summary.get('persona_type', '분석 중')}")
+        print(f"  핵심 특성:")
         for i, char in enumerate(summary.get('key_characteristics', [])[:3], 1):
             print(f"     {i}. {char}")
         difficulty = summary.get('content_creation_difficulty', 5)
-        print(f"  ⚙️ 콘텐츠 제작 난이도: {score_bar(difficulty)} {difficulty}/10")
-        print(f"  ⚠️ 핵심 주의점: {summary.get('primary_caution', '-')}")
+        print(f"  콘텐츠 제작 난이도: {score_bar(difficulty)} {difficulty}/10")
+        print(f"  핵심 주의점: {summary.get('primary_caution', '-')}")
         
-        # 📝 격식도 분석
+        # 격식도 분석
         print("\n" + "━" * 60)
-        print("📝 격식도 분석")
+        print("[2] 격식도 분석")
         print("━" * 60)
         formality = pa.get('formality_analysis', {})
         overall = get_score(formality, 'overall_score')
@@ -544,9 +544,9 @@ def main():
         print(f"  경어 레벨:         {score_bar(get_score(formality, 'honorifics_level', 'score'))} {get_score(formality, 'honorifics_level', 'score')}/10")
         print(f"  비즈니스 격식:     {score_bar(get_score(formality, 'business_formality', 'score'))} {get_score(formality, 'business_formality', 'score')}/10")
         
-        # 💬 커뮤니케이션 스타일
+        # 커뮤니케이션 스타일
         print("\n" + "━" * 60)
-        print("💬 커뮤니케이션 스타일")
+        print("[3] 커뮤니케이션 스타일")
         print("━" * 60)
         comm = pa.get('communication_style', {})
         print(f"  직접성:            {score_bar(get_score(comm, 'directness', 'score'))} {get_score(comm, 'directness', 'score')}/10 ({get_score(comm, 'directness', 'style', default='?')})")
@@ -556,9 +556,9 @@ def main():
         print(f"  감정 표현:         {score_bar(get_score(comm, 'emotional_expression', 'score'))} {get_score(comm, 'emotional_expression', 'score')}/10")
         print(f"  이모지 사용:       {score_bar(get_score(comm, 'emotional_expression', 'emoji_usage'))} {get_score(comm, 'emotional_expression', 'emoji_usage')}/10")
         
-        # ✍️ 글쓰기 DNA
+        # 글쓰기 DNA
         print("\n" + "━" * 60)
-        print("✍️ 글쓰기 DNA")
+        print("[4] 글쓰기 DNA")
         print("━" * 60)
         writing = pa.get('writing_dna', {})
         print(f"  문장 복잡도:       {score_bar(get_score(writing, 'sentence_structure', 'complexity_score'))} {get_score(writing, 'sentence_structure', 'complexity_score')}/10")
@@ -568,9 +568,9 @@ def main():
         print(f"  간결성:            {score_bar(get_score(writing, 'paragraph_style', 'brevity_score'))} {get_score(writing, 'paragraph_style', 'brevity_score')}/10")
         print(f"  리스트 선호:       {score_bar(get_score(writing, 'paragraph_style', 'list_preference'))} {get_score(writing, 'paragraph_style', 'list_preference')}/10")
         
-        # 🧠 성격 지표
+        # 성격 지표
         print("\n" + "━" * 60)
-        print("🧠 성격 지표")
+        print("[5] 성격 지표")
         print("━" * 60)
         personality = pa.get('personality_metrics', {})
         print(f"  완벽주의:          {score_bar(get_score(personality, 'perfectionism', 'score'))} {get_score(personality, 'perfectionism', 'score')}/10")
@@ -580,9 +580,9 @@ def main():
         print(f"  리스크 수용도:     {score_bar(get_score(personality, 'risk_tolerance', 'score'))} {get_score(personality, 'risk_tolerance', 'score')}/10")
         print(f"  자율성 선호:       {score_bar(get_score(personality, 'autonomy_preference', 'score'))} {get_score(personality, 'autonomy_preference', 'score')}/10")
         
-        # 🎨 콘텐츠 선호도
+        # 콘텐츠 선호도
         print("\n" + "━" * 60)
-        print("🎨 콘텐츠 선호도")
+        print("[6] 콘텐츠 선호도")
         print("━" * 60)
         content = pa.get('content_preferences', {})
         print(f"  선호 톤: {get_score(content, 'tone_preference', 'primary', default='?')}")
@@ -591,25 +591,25 @@ def main():
         print(f"  불릿포인트 선호:   {score_bar(get_score(content, 'structure_preference', 'bullet_points'))} {get_score(content, 'structure_preference', 'bullet_points')}/10")
         print(f"  제목 중요도:       {score_bar(get_score(content, 'structure_preference', 'headers_importance'))} {get_score(content, 'structure_preference', 'headers_importance')}/10")
         
-        # ✅ 긍정 트리거
+        # 긍정 트리거
         print("\n" + "━" * 60)
-        print("✅ 긍정 반응 트리거")
+        print("[7] 긍정 반응 트리거")
         print("━" * 60)
         triggers = pa.get('positive_triggers', {})
         for expr in triggers.get('favorite_expressions', [])[:3]:
-            print(f"  ✓ {expr}")
+            print(f"  + {expr}")
         
-        # ❌ 민감 영역
+        # 민감 영역
         print("\n" + "━" * 60)
-        print("❌ 절대 금지 사항")
+        print("[8] 절대 금지 사항")
         print("━" * 60)
         sensitive = pa.get('sensitive_areas', {}).get('absolute_dont', {})
         for expr in sensitive.get('expressions', [])[:3]:
-            print(f"  ✗ {expr}")
+            print(f"  - {expr}")
         
-        # 📁 저장 정보
+        # 저장 정보
         print("\n" + "━" * 60)
-        print(f"💾 저장 위치: {save_path}")
+        print(f"저장 위치: {save_path}")
         
         # 폴더 열기 옵션
         print("\n" + "=" * 60)
