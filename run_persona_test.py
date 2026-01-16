@@ -495,40 +495,121 @@ def main():
         persona_data, save_path = result
         
         print("\n" + "=" * 60)
-        print("✅ 페르소나 분석 완료!")
+        print("✅ 페르소나 심층 분석 완료!")
         print("=" * 60)
         
-        print(f"\n📊 분석 결과:")
-        print(f"   - 격식도: {persona_data['persona_analysis']['formality_level']['score']}/10")
-        print(f"   - 설명: {persona_data['persona_analysis']['formality_level']['description']}")
+        pa = persona_data['persona_analysis']
         
-        print(f"\n💬 커뮤니케이션 스타일:")
-        style = persona_data['persona_analysis']['communication_style']
-        print(f"   - 직접성: {style['directness']}")
-        print(f"   - 감정 톤: {style['emotional_tone']}")
-        print(f"   - 의사결정: {style['decision_making']}")
+        # 헬퍼 함수: 안전하게 점수 추출
+        def get_score(d, *keys, default="-"):
+            try:
+                result = d
+                for key in keys:
+                    result = result[key]
+                if isinstance(result, (int, float)):
+                    return result
+                return default
+            except:
+                return default
         
-        print(f"\n✍️ 글쓰기 특성:")
-        writing = persona_data['persona_analysis']['writing_characteristics']
-        print(f"   - 문장 길이: {writing['sentence_length']}")
-        print(f"   - 존댓말: {writing['honorifics_usage']}")
-        print(f"   - 이모지: {writing['emoji_usage']}")
+        def score_bar(score, max_score=10, bar_length=10):
+            """점수를 시각적 바로 표시"""
+            if score == "-":
+                return "[---------]"
+            filled = int((score / max_score) * bar_length)
+            empty = bar_length - filled
+            return f"[{'█' * filled}{'░' * empty}]"
         
-        print(f"\n🎯 성격 특성:")
-        traits = persona_data['persona_analysis']['personality_traits']
-        print(f"   - 디테일 지향: {traits['detail_oriented']}/10")
-        print(f"   - 급박함 정도: {traits['urgency_level']}/10")
-        print(f"   - 완벽주의: {traits['perfectionism']}/10")
+        # 📊 전체 요약
+        print("\n" + "━" * 60)
+        print("📊 페르소나 요약")
+        print("━" * 60)
+        summary = pa.get('overall_summary', {})
+        print(f"  🎯 유형: {summary.get('persona_type', '분석 중')}")
+        print(f"  📋 핵심 특성:")
+        for i, char in enumerate(summary.get('key_characteristics', [])[:3], 1):
+            print(f"     {i}. {char}")
+        difficulty = summary.get('content_creation_difficulty', 5)
+        print(f"  ⚙️ 콘텐츠 제작 난이도: {score_bar(difficulty)} {difficulty}/10")
+        print(f"  ⚠️ 핵심 주의점: {summary.get('primary_caution', '-')}")
         
-        print(f"\n✅ 적극 활용할 것들:")
-        for flag in persona_data['persona_analysis'].get('green_flags', []):
-            print(f"   - {flag}")
+        # 📝 격식도 분석
+        print("\n" + "━" * 60)
+        print("📝 격식도 분석")
+        print("━" * 60)
+        formality = pa.get('formality_analysis', {})
+        overall = get_score(formality, 'overall_score')
+        print(f"  전체 격식도:       {score_bar(overall)} {overall}/10")
+        print(f"  격식 언어 사용:    {score_bar(get_score(formality, 'formal_language_usage', 'score'))} {get_score(formality, 'formal_language_usage', 'score')}/10")
+        print(f"  경어 레벨:         {score_bar(get_score(formality, 'honorifics_level', 'score'))} {get_score(formality, 'honorifics_level', 'score')}/10")
+        print(f"  비즈니스 격식:     {score_bar(get_score(formality, 'business_formality', 'score'))} {get_score(formality, 'business_formality', 'score')}/10")
         
-        print(f"\n❌ 피해야 할 것들:")
-        for flag in persona_data['persona_analysis'].get('red_flags', []):
-            print(f"   - {flag}")
+        # 💬 커뮤니케이션 스타일
+        print("\n" + "━" * 60)
+        print("💬 커뮤니케이션 스타일")
+        print("━" * 60)
+        comm = pa.get('communication_style', {})
+        print(f"  직접성:            {score_bar(get_score(comm, 'directness', 'score'))} {get_score(comm, 'directness', 'score')}/10 ({get_score(comm, 'directness', 'style', default='?')})")
+        print(f"  응답 속도 기대:    {score_bar(get_score(comm, 'response_speed_expectation', 'score'))} {get_score(comm, 'response_speed_expectation', 'score')}/10")
+        print(f"  피드백 스타일:     {score_bar(get_score(comm, 'feedback_style', 'score'))} {get_score(comm, 'feedback_style', 'score')}/10 ({get_score(comm, 'feedback_style', 'type', default='?')})")
+        print(f"  의사결정 방식:     {score_bar(get_score(comm, 'decision_making', 'score'))} {get_score(comm, 'decision_making', 'score')}/10 ({get_score(comm, 'decision_making', 'type', default='?')})")
+        print(f"  감정 표현:         {score_bar(get_score(comm, 'emotional_expression', 'score'))} {get_score(comm, 'emotional_expression', 'score')}/10")
+        print(f"  이모지 사용:       {score_bar(get_score(comm, 'emotional_expression', 'emoji_usage'))} {get_score(comm, 'emotional_expression', 'emoji_usage')}/10")
         
-        print(f"\n💾 저장 위치: {save_path}")
+        # ✍️ 글쓰기 DNA
+        print("\n" + "━" * 60)
+        print("✍️ 글쓰기 DNA")
+        print("━" * 60)
+        writing = pa.get('writing_dna', {})
+        print(f"  문장 복잡도:       {score_bar(get_score(writing, 'sentence_structure', 'complexity_score'))} {get_score(writing, 'sentence_structure', 'complexity_score')}/10")
+        print(f"  어휘 수준:         {score_bar(get_score(writing, 'vocabulary_level', 'score'))} {get_score(writing, 'vocabulary_level', 'score')}/10")
+        print(f"  전문용어 빈도:     {score_bar(get_score(writing, 'vocabulary_level', 'industry_jargon_frequency'))} {get_score(writing, 'vocabulary_level', 'industry_jargon_frequency')}/10")
+        print(f"  느낌표 사용:       {score_bar(get_score(writing, 'punctuation_habits', 'exclamation_frequency'))} {get_score(writing, 'punctuation_habits', 'exclamation_frequency')}/10")
+        print(f"  간결성:            {score_bar(get_score(writing, 'paragraph_style', 'brevity_score'))} {get_score(writing, 'paragraph_style', 'brevity_score')}/10")
+        print(f"  리스트 선호:       {score_bar(get_score(writing, 'paragraph_style', 'list_preference'))} {get_score(writing, 'paragraph_style', 'list_preference')}/10")
+        
+        # 🧠 성격 지표
+        print("\n" + "━" * 60)
+        print("🧠 성격 지표")
+        print("━" * 60)
+        personality = pa.get('personality_metrics', {})
+        print(f"  완벽주의:          {score_bar(get_score(personality, 'perfectionism', 'score'))} {get_score(personality, 'perfectionism', 'score')}/10")
+        print(f"  디테일 지향:       {score_bar(get_score(personality, 'detail_orientation', 'score'))} {get_score(personality, 'detail_orientation', 'score')}/10")
+        print(f"  긴급성 민감도:     {score_bar(get_score(personality, 'urgency_sensitivity', 'score'))} {get_score(personality, 'urgency_sensitivity', 'score')}/10")
+        print(f"  유연성:            {score_bar(get_score(personality, 'flexibility', 'score'))} {get_score(personality, 'flexibility', 'score')}/10")
+        print(f"  리스크 수용도:     {score_bar(get_score(personality, 'risk_tolerance', 'score'))} {get_score(personality, 'risk_tolerance', 'score')}/10")
+        print(f"  자율성 선호:       {score_bar(get_score(personality, 'autonomy_preference', 'score'))} {get_score(personality, 'autonomy_preference', 'score')}/10")
+        
+        # 🎨 콘텐츠 선호도
+        print("\n" + "━" * 60)
+        print("🎨 콘텐츠 선호도")
+        print("━" * 60)
+        content = pa.get('content_preferences', {})
+        print(f"  선호 톤: {get_score(content, 'tone_preference', 'primary', default='?')}")
+        print(f"  긴 콘텐츠 수용도:  {score_bar(get_score(content, 'length_preference', 'tolerance_for_long'))} {get_score(content, 'length_preference', 'tolerance_for_long')}/10")
+        print(f"  이미지 중요도:     {score_bar(get_score(content, 'visual_preference', 'image_importance'))} {get_score(content, 'visual_preference', 'image_importance')}/10")
+        print(f"  불릿포인트 선호:   {score_bar(get_score(content, 'structure_preference', 'bullet_points'))} {get_score(content, 'structure_preference', 'bullet_points')}/10")
+        print(f"  제목 중요도:       {score_bar(get_score(content, 'structure_preference', 'headers_importance'))} {get_score(content, 'structure_preference', 'headers_importance')}/10")
+        
+        # ✅ 긍정 트리거
+        print("\n" + "━" * 60)
+        print("✅ 긍정 반응 트리거")
+        print("━" * 60)
+        triggers = pa.get('positive_triggers', {})
+        for expr in triggers.get('favorite_expressions', [])[:3]:
+            print(f"  ✓ {expr}")
+        
+        # ❌ 민감 영역
+        print("\n" + "━" * 60)
+        print("❌ 절대 금지 사항")
+        print("━" * 60)
+        sensitive = pa.get('sensitive_areas', {}).get('absolute_dont', {})
+        for expr in sensitive.get('expressions', [])[:3]:
+            print(f"  ✗ {expr}")
+        
+        # 📁 저장 정보
+        print("\n" + "━" * 60)
+        print(f"💾 저장 위치: {save_path}")
         
         # 폴더 열기 옵션
         print("\n" + "=" * 60)
