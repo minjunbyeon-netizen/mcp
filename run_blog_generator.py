@@ -40,9 +40,10 @@ import pdfplumber
 from PIL import Image
 import base64
 
-# HWP 지원 (설치된 경우)
+# HWP 지원 (olefile 사용)
 try:
-    from hwp_extract import extract as hwp_extract
+    import olefile
+    import zlib
     HWP_SUPPORTED = True
 except ImportError:
     HWP_SUPPORTED = False
@@ -70,11 +71,7 @@ def extract_text_from_file(file_path: Path) -> str:
     
     elif ext == '.hwp':
         if not HWP_SUPPORTED:
-            raise ValueError("HWP 지원을 위해 'pip install hwp-extract'를 실행하세요.")
-        # hwp-extract는 파일 객체 추출 용도로, 텍스트 추출은 제한적
-        # olefile을 직접 사용하여 텍스트 추출 시도
-        import olefile
-        import zlib
+            raise ValueError("HWP 지원을 위해 'pip install olefile'를 실행하세요.")
         
         text_parts = []
         try:
