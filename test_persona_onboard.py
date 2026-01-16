@@ -1,10 +1,16 @@
 #!/usr/bin/env python3
 """
 MCP 서버 기능 테스트 - persona-manager의 onboard_new_client 테스트
+(Gemini API 버전)
 """
 
 import sys
 import os
+import io
+
+# Windows 터미널 UTF-8 출력 설정
+if sys.platform == 'win32' and not isinstance(sys.stdout, io.TextIOWrapper):
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
 
 # 프로젝트 경로 설정
 PROJECT_ROOT = os.path.dirname(__file__)
@@ -15,7 +21,7 @@ from dotenv import load_dotenv
 load_dotenv(os.path.join(PROJECT_ROOT, "persona-manager", ".env"))
 
 print("=" * 60)
-print("MCP persona-manager 기능 테스트")
+print("MCP persona-manager 기능 테스트 (Gemini API)")
 print("=" * 60)
 
 # 샘플 카톡 대화 (실제 테스트용)
@@ -35,21 +41,22 @@ SAMPLE_KAKAO_CHAT = """
 # 테스트 실행
 from pathlib import Path
 import json
-import anthropic
+import google.generativeai as genai
 
 DATA_DIR = Path.home() / "mcp-data" / "personas"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
-api_key = os.getenv("ANTHROPIC_API_KEY")
+api_key = os.getenv("GEMINI_API_KEY")
 if not api_key:
-    print("ERROR: API 키가 없습니다!")
+    print("ERROR: Gemini API 키가 없습니다!")
     sys.exit(1)
 
-client = anthropic.Anthropic(api_key=api_key)
+genai.configure(api_key=api_key)
+model = genai.GenerativeModel('gemini-2.0-flash')
 
 print("\n[1] 카톡 대화 분석 중...")
 
-# 분석 프롬프트 (server.py와 동일)
+# 분석 프롬프트
 analysis_prompt = f"""
 당신은 고객 페르소나 분석 전문가입니다.
 아래 카카오톡 대화를 분석하여 광고주의 상세한 페르소나를 추출해주세요.
@@ -63,7 +70,7 @@ analysis_prompt = f"""
 {SAMPLE_KAKAO_CHAT}
 
 【분석 항목】
-다음 JSON 형식으로 분석해주세요:
+다음 JSON 형식으로 분석해주세요 (JSON만 출력, 다른 텍스트 없이):
 
 {{
     "formality_level": {{
@@ -99,13 +106,9 @@ analysis_prompt = f"""
 """
 
 try:
-    response = client.messages.create(
-        model="claude-sonnet-4-20250514",
-        max_tokens=2000,
-        messages=[{"role": "user", "content": analysis_prompt}]
-    )
+    response = model.generate_content(analysis_prompt)
     
-    response_text = response.content[0].text
+    response_text = response.text
     
     if "```json" in response_text:
         response_text = response_text.split("```json")[1].split("```")[0]

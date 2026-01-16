@@ -23,14 +23,14 @@ from dotenv import load_dotenv
 load_dotenv()
 
 config_path = Path(__file__).parent / "mcp_config.json"
-if config_path.exists() and not os.getenv("ANTHROPIC_API_KEY"):
+if config_path.exists() and not os.getenv("GEMINI_API_KEY"):
     with open(config_path, 'r', encoding='utf-8') as f:
         config = json.load(f)
-        api_key = config.get("mcpServers", {}).get("content-automation", {}).get("env", {}).get("ANTHROPIC_API_KEY")
+        api_key = config.get("mcpServers", {}).get("content-automation", {}).get("env", {}).get("GEMINI_API_KEY")
         if api_key:
-            os.environ["ANTHROPIC_API_KEY"] = api_key
+            os.environ["GEMINI_API_KEY"] = api_key
 
-import anthropic
+import google.generativeai as genai
 from docx import Document
 from docx.shared import Pt, Inches
 from docx.enum.text import WD_ALIGN_PARAGRAPH
@@ -121,10 +121,17 @@ def generate_blog_post(client_id: str, press_release: str, target_keywords: list
     
     # Step 1: API 연결
     print("[1/3] API 연결 준비")
-    spinner = LoadingSpinner("Claude AI 연결 중")
+    spinner = LoadingSpinner("Gemini AI 연결 중")
     spinner.start()
     time.sleep(0.5)
-    client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        spinner.stop("실패")
+        print("❌ GEMINI_API_KEY 환경 변수가 없습니다.")
+        return None
+    
+    genai.configure(api_key=api_key)
+    model = genai.GenerativeModel('gemini-2.0-flash')
     spinner.stop("API 연결 완료")
     
     # 블로그 글 생성 프롬프트 (부산시 블로그 스타일)
@@ -191,16 +198,17 @@ def generate_blog_post(client_id: str, press_release: str, target_keywords: list
     }},
     "length": "공백 포함 1,500 ~ 2,000자 (내용을 풍성하게 늘려서 작성)"
   }},
-  "output_schema": {{
-    "description": "반드시 아래 JSON 포맷으로만 출력할 것 (Markdown 코드 블록 내부에)",
-    "format": {{
-      "title": "블로그 제목 String",
-      "content": "HTML 태그 없이 Markdown 형식이 적용된 본문 String",
-      "tags": ["태그1", "태그2", "태그3", "태그4", "태그5"],
-      "meta_description": "메타 설명 String"
-    }}
-  }}
-}}
+    "output_schema": {
+      "description": "반드시 아래 JSON 포맷으로만 출력할 것 (Markdown 코드 블록 내부에)",
+      "format": {
+        "title": "블로그 제목 String",
+        "content": "HTML 태그 없이 Markdown 형식이 적용된 본문 String",
+        "tags": ["태그1", "태그2", "태그3", "태그4", "태그5"],
+        "meta_description": "155자 이내 설명 String"
+      }
+    }
+  }
+} (다른 텍스트 없이 오직 JSON만 출력해주세요)
 """
     
     # Step 2: AI 블로그 생성
@@ -209,11 +217,7 @@ def generate_blog_post(client_id: str, press_release: str, target_keywords: list
     spinner.start()
     
     try:
-        response = client.messages.create(
-            model="claude-sonnet-4-20250514",
-            max_tokens=3000,
-            messages=[{"role": "user", "content": blog_prompt}]
-        )
+        response = model.generate_content(blog_prompt)
         spinner.stop("블로그 글 생성 완료")
         
         # Step 3: 결과 처리
@@ -221,7 +225,7 @@ def generate_blog_post(client_id: str, press_release: str, target_keywords: list
         spinner = LoadingSpinner("Word/Markdown 파일 생성 중")
         spinner.start()
         
-        response_text = response.content[0].text
+        response_text = response.text
         
         # JSON 추출
         if "```json" in response_text:

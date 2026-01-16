@@ -5,7 +5,7 @@ visual-persona-extractor MCP Server
 """
 
 from mcp.server.fastmcp import FastMCP
-import anthropic
+import google.generativeai as genai
 import os
 import json
 import base64
@@ -25,8 +25,14 @@ mcp = FastMCP("visual-persona-extractor")
 DATA_DIR = Path.home() / "mcp-data" / "visual-personas"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
-# Anthropic API 클라이언트
-client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+# Gemini API 설정
+api_key = os.getenv("GEMINI_API_KEY")
+if api_key:
+    genai.configure(api_key=api_key)
+    model = genai.GenerativeModel('gemini-2.0-flash')
+else:
+    print("⚠️ GEMINI_API_KEY가 설정되지 않았습니다.")
+    model = None
 
 
 @mcp.tool()
@@ -70,8 +76,8 @@ def extract_visual_persona_from_images(
     if not image_analysis:
         return {"error": "분석 가능한 이미지가 없습니다"}
     
-    # Claude Vision으로 고급 분석 (최대 5개 이미지)
-    visual_dna = analyze_images_with_claude(
+    # Gemini Vision으로 고급 분석 (최대 5개 이미지)
+    visual_dna = analyze_images_with_gemini(
         image_paths=sample_image_paths[:5],
         client_name=client_name,
         category=category
@@ -131,33 +137,24 @@ def extract_dominant_colors(image: Image.Image, n: int = 3) -> list:
     return unique_colors
 
 
-def analyze_images_with_claude(
+def analyze_images_with_gemini(
     image_paths: list[str],
     client_name: str,
     category: str
 ) -> dict:
-    """Claude Vision으로 이미지 분석"""
+    """Gemini Vision으로 이미지 분석"""
     
-    print(f"🤖 Claude Vision으로 {len(image_paths)}개 이미지 분석 중...")
+    print(f"🤖 Gemini Vision으로 {len(image_paths)}개 이미지 분석 중...")
     
     image_contents = []
     
     for img_path in image_paths:
         try:
-            with open(img_path, 'rb') as f:
-                img_data = f.read()
-                img_base64 = base64.b64encode(img_data).decode()
-            
-            image_contents.append({
-                "type": "image",
-                "source": {
-                    "type": "base64",
-                    "media_type": "image/png",
-                    "data": img_base64
-                }
-            })
+            img = Image.open(img_path)
+            # Gemini SDK는 PIL Image 객체를 직접 지원함
+            image_contents.append(img)
         except Exception as e:
-            print(f"⚠️  이미지 인코딩 실패: {img_path} - {e}")
+            print(f"⚠️ 이미지 로드 실패: {img_path} - {e}")
     
     prompt = f"""
 당신은 전문 그래픽 디자이너입니다.
@@ -189,19 +186,14 @@ def analyze_images_with_claude(
 }}
 """
     
-    image_contents.append({
-        "type": "text",
-        "text": prompt
-    })
-    
     try:
-        response = client.messages.create(
-            model="claude-sonnet-4-20250514",
-            max_tokens=2000,
-            messages=[{"role": "user", "content": image_contents}]
-        )
+        if not model:
+            raise ValueError("Gemini API가 구성되지 않았습니다.")
+            
+        full_content = [prompt] + image_contents
         
-        response_text = response.content[0].text
+        response = model.generate_content(full_content)
+        response_text = response.text
         
         if "```json" in response_text:
             response_text = response_text.split("```json")[1].split("```")[0]
@@ -211,7 +203,7 @@ def analyze_images_with_claude(
         visual_dna = json.loads(response_text.strip())
         
     except Exception as e:
-        print(f"❌ Claude Vision 분석 실패: {e}")
+        print(f"❌ Gemini Vision 분석 실패: {e}")
         visual_dna = {
             "color_system": {
                 "primary_colors": ["#333333"],

@@ -5,7 +5,7 @@ persona-manager MCP Server
 """
 
 from mcp.server.fastmcp import FastMCP
-import anthropic
+import google.generativeai as genai
 import os
 import json
 from datetime import datetime
@@ -22,8 +22,14 @@ mcp = FastMCP("persona-manager")
 DATA_DIR = Path.home() / "mcp-data" / "personas"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
-# Anthropic API 클라이언트
-client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+# Gemini API 설정
+api_key = os.getenv("GEMINI_API_KEY")
+if api_key:
+    genai.configure(api_key=api_key)
+    model = genai.GenerativeModel('gemini-2.0-flash')
+else:
+    print("⚠️ GEMINI_API_KEY가 설정되지 않았습니다.")
+    model = None
 
 
 @mcp.tool()
@@ -98,13 +104,11 @@ def onboard_new_client(
 """
     
     try:
-        response = client.messages.create(
-            model="claude-sonnet-4-20250514",
-            max_tokens=2000,
-            messages=[{"role": "user", "content": analysis_prompt}]
-        )
-        
-        response_text = response.content[0].text
+        if not model:
+            raise ValueError("Gemini API가 구성되지 않았습니다.")
+            
+        response = model.generate_content(analysis_prompt)
+        response_text = response.text
         
         if "```json" in response_text:
             response_text = response_text.split("```json")[1].split("```")[0]

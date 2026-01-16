@@ -23,14 +23,14 @@ load_dotenv()
 
 # mcp_config.json에서 API 키 읽기 (백업)
 config_path = Path(__file__).parent / "mcp_config.json"
-if config_path.exists() and not os.getenv("ANTHROPIC_API_KEY"):
+if config_path.exists() and not os.getenv("GEMINI_API_KEY"):
     with open(config_path, 'r', encoding='utf-8') as f:
         config = json.load(f)
-        api_key = config.get("mcpServers", {}).get("persona-manager", {}).get("env", {}).get("ANTHROPIC_API_KEY")
+        api_key = config.get("mcpServers", {}).get("persona-manager", {}).get("env", {}).get("GEMINI_API_KEY")
         if api_key:
-            os.environ["ANTHROPIC_API_KEY"] = api_key
+            os.environ["GEMINI_API_KEY"] = api_key
 
-import anthropic
+import google.generativeai as genai
 import threading
 import time
 from datetime import datetime
@@ -78,10 +78,17 @@ def analyze_persona(client_name: str, organization: str, kakao_chat_log: str, ca
     
     # Step 1: API 연결
     print("[1/3] API 연결 준비")
-    spinner = LoadingSpinner("Claude AI 연결 중")
+    spinner = LoadingSpinner("Gemini AI 연결 중")
     spinner.start()
     time.sleep(0.5)  # 짧은 딜레이
-    client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        spinner.stop("실패")
+        print("❌ GEMINI_API_KEY 환경 변수가 없습니다.")
+        return None
+    
+    genai.configure(api_key=api_key)
+    model = genai.GenerativeModel('gemini-2.0-flash')
     spinner.stop("API 연결 완료")
     
     analysis_prompt = f"""
@@ -97,7 +104,7 @@ def analyze_persona(client_name: str, organization: str, kakao_chat_log: str, ca
 {kakao_chat_log[:5000]}
 
 【분석 항목】
-다음 JSON 형식으로 분석해주세요:
+다음 JSON 형식으로 분석해주세요 (다른 텍스트 없이 오직 JSON만 출력):
 
 {{
     "formality_level": {{
@@ -138,11 +145,7 @@ def analyze_persona(client_name: str, organization: str, kakao_chat_log: str, ca
     spinner.start()
     
     try:
-        response = client.messages.create(
-            model="claude-sonnet-4-20250514",
-            max_tokens=2000,
-            messages=[{"role": "user", "content": analysis_prompt}]
-        )
+        response = model.generate_content(analysis_prompt)
         spinner.stop("대화 분석 완료")
         
         # Step 3: 결과 처리
@@ -150,7 +153,7 @@ def analyze_persona(client_name: str, organization: str, kakao_chat_log: str, ca
         spinner = LoadingSpinner("페르소나 프로필 생성 중")
         spinner.start()
         
-        response_text = response.content[0].text
+        response_text = response.text
         
         # JSON 추출
         if "```json" in response_text:
