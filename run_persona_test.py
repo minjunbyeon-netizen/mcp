@@ -93,56 +93,201 @@ def analyze_persona(client_name: str, organization: str, kakao_chat_log: str, ca
     spinner.stop("API 연결 완료")
     
     analysis_prompt = f"""
-당신은 고객 페르소나 분석 전문가입니다.
-아래 카카오톡 대화를 분석하여 광고주의 상세한 페르소나를 추출해주세요.
+당신은 광고/마케팅 에이전시의 시니어 페르소나 분석 전문가입니다.
+아래 카카오톡 대화를 철저히 분석하여 광고주의 상세한 페르소나를 추출해주세요.
+모든 분석은 실제 대화 내용에서 발견된 패턴과 근거를 바탕으로 해야 합니다.
 
-【광고주 정보】
-이름: {client_name}
-소속: {organization}
-업종: {category}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+【광고주 기본 정보】
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+• 담당자명: {client_name}
+• 소속 기관: {organization}
+• 업종 분류: {category}
 
-【카카오톡 대화】
-{kakao_chat_log[:5000]}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+【분석 대상 카카오톡 대화】
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+{kakao_chat_log[:8000]}
 
-【분석 항목】
-다음 JSON 형식으로 분석해주세요 (다른 텍스트 없이 오직 JSON만 출력):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+【분석 지침】
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+1. 모든 점수는 1-10 척도로 평가 (1=매우 낮음, 10=매우 높음)
+2. 각 항목에는 반드시 근거(evidence)를 대화에서 발췌하여 포함
+3. 콘텐츠 제작 시 실제 적용 가능한 구체적 가이드 제공
+4. JSON만 출력 (다른 텍스트 없이)
 
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+【출력 JSON 스키마】
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 {{
-    "formality_level": {{
-        "score": 1-10,
-        "description": "구체적 설명"
+    "overall_summary": {{
+        "persona_type": "한 문장으로 이 광고주를 정의 (예: 꼼꼼하고 격식을 중시하는 공공기관 담당자)",
+        "key_characteristics": ["특징1", "특징2", "특징3"],
+        "content_creation_difficulty": 1-10,
+        "primary_caution": "콘텐츠 작성 시 가장 주의할 점"
     }},
+    
+    "formality_analysis": {{
+        "overall_score": 1-10,
+        "formal_language_usage": {{
+            "score": 1-10,
+            "examples": ["대화에서 발췌한 예시1", "예시2"]
+        }},
+        "honorifics_level": {{
+            "score": 1-10,
+            "preferred_endings": ["~습니다", "~해요" 등 실제 사용되는 종결어미],
+            "avoided_expressions": ["피하는 표현들"]
+        }},
+        "business_formality": {{
+            "score": 1-10,
+            "description": "업무적 격식 수준 설명"
+        }}
+    }},
+    
     "communication_style": {{
-        "directness": "direct/indirect",
-        "emotional_tone": "formal/warm/friendly/businesslike",
-        "decision_making": "decisive/consultative/hesitant"
+        "directness": {{
+            "score": 1-10,
+            "style": "direct/diplomatic/indirect",
+            "evidence": ["근거가 되는 대화 발췌"]
+        }},
+        "response_speed_expectation": {{
+            "score": 1-10,
+            "pattern": "즉시응답요구/여유있음/유연함"
+        }},
+        "feedback_style": {{
+            "score": 1-10,
+            "type": "상세/간결/암묵적",
+            "evidence": ["근거 발췌"]
+        }},
+        "decision_making": {{
+            "score": 1-10,
+            "type": "즉결형/숙고형/합의형",
+            "evidence": ["근거 발췌"]
+        }},
+        "emotional_expression": {{
+            "score": 1-10,
+            "level": "억제적/중립/표현적",
+            "emoji_usage": 1-10,
+            "common_expressions": ["자주 쓰는 감정 표현"]
+        }}
     }},
-    "writing_characteristics": {{
-        "sentence_length": "short/medium/long",
-        "honorifics_usage": "none/moderate/heavy",
-        "emoji_usage": "none/rare/moderate/frequent"
+    
+    "writing_dna": {{
+        "sentence_structure": {{
+            "avg_length": "short/medium/long",
+            "complexity_score": 1-10,
+            "preferred_patterns": ["선호하는 문장 패턴"]
+        }},
+        "vocabulary_level": {{
+            "score": 1-10,
+            "style": "전문용어다수/일상어중심/혼용",
+            "industry_jargon_frequency": 1-10
+        }},
+        "punctuation_habits": {{
+            "exclamation_frequency": 1-10,
+            "question_frequency": 1-10,
+            "ellipsis_usage": 1-10,
+            "special_patterns": ["특이한 문장부호 사용 패턴"]
+        }},
+        "paragraph_style": {{
+            "brevity_score": 1-10,
+            "list_preference": 1-10,
+            "structure_preference": "나열형/서술형/혼합형"
+        }}
     }},
-    "personality_traits": {{
-        "detail_oriented": 1-10,
-        "urgency_level": 1-10,
-        "perfectionism": 1-10
+    
+    "personality_metrics": {{
+        "perfectionism": {{
+            "score": 1-10,
+            "triggers": ["완벽주의가 발동하는 상황"],
+            "evidence": ["근거 발췌"]
+        }},
+        "detail_orientation": {{
+            "score": 1-10,
+            "focus_areas": ["세부사항 중시 영역"],
+            "evidence": ["근거 발췌"]
+        }},
+        "urgency_sensitivity": {{
+            "score": 1-10,
+            "patterns": ["급한 상황에서의 패턴"]
+        }},
+        "flexibility": {{
+            "score": 1-10,
+            "description": "변경사항 수용도"
+        }},
+        "risk_tolerance": {{
+            "score": 1-10,
+            "preference": "안전선호/중립/도전선호"
+        }},
+        "autonomy_preference": {{
+            "score": 1-10,
+            "description": "자율적 진행 vs 확인 요청 성향"
+        }}
     }},
+    
     "content_preferences": {{
-        "preferred_tone": "professional/friendly/authoritative/casual",
-        "length_preference": "concise/moderate/detailed"
+        "tone_preference": {{
+            "primary": "professional/friendly/authoritative/warm/neutral",
+            "secondary": "보조 톤",
+            "avoid": "피해야 할 톤"
+        }},
+        "length_preference": {{
+            "ideal": "concise/moderate/detailed",
+            "tolerance_for_long": 1-10
+        }},
+        "visual_preference": {{
+            "image_importance": 1-10,
+            "infographic_preference": 1-10,
+            "style_keywords": ["선호 비주얼 스타일 키워드"]
+        }},
+        "structure_preference": {{
+            "bullet_points": 1-10,
+            "numbered_lists": 1-10,
+            "headers_importance": 1-10,
+            "whitespace_preference": 1-10
+        }}
     }},
-    "red_flags": [
-        "절대 하지 말아야 할 것들"
-    ],
-    "green_flags": [
-        "적극 활용할 것들"
-    ]
+    
+    "sensitive_areas": {{
+        "absolute_dont": {{
+            "expressions": ["절대 사용 금지 표현/단어"],
+            "topics": ["피해야 할 주제"],
+            "styles": ["피해야 할 스타일"]
+        }},
+        "careful_handling": {{
+            "topics": ["조심스럽게 다룰 주제"],
+            "reasons": ["주의가 필요한 이유"]
+        }},
+        "past_issues": ["과거 대화에서 발견된 불만/이슈 패턴"]
+    }},
+    
+    "positive_triggers": {{
+        "favorite_expressions": ["긍정 반응을 이끄는 표현"],
+        "appreciated_approaches": ["좋아하는 접근 방식"],
+        "success_patterns": ["성공적이었던 커뮤니케이션 패턴"],
+        "value_keywords": ["중요시하는 가치/키워드"]
+    }},
+    
+    "practical_guidelines": {{
+        "opening_recommendations": ["추천 오프닝 문구 스타일"],
+        "closing_recommendations": ["추천 마무리 문구 스타일"],
+        "reporting_format": "선호하는 보고/공유 형식",
+        "revision_handling": "수정요청 시 대응 방식",
+        "timeline_sensitivity": 1-10
+    }},
+    
+    "brand_alignment": {{
+        "organization_voice_match": 1-10,
+        "industry_conventions": ["업종 특성상 고려할 관행"],
+        "target_audience_consideration": "타겟 청중 특성"
+    }}
 }}
 """
     
     # Step 2: AI 분석 요청
-    print("\n[2/3] 페르소나 분석 중")
-    spinner = LoadingSpinner("AI가 대화 패턴을 분석하고 있습니다")
+    print("\n[2/3] 페르소나 심층 분석 중")
+    spinner = LoadingSpinner("AI가 대화 패턴을 정밀 분석하고 있습니다")
     spinner.start()
     
     try:
@@ -150,11 +295,11 @@ def analyze_persona(client_name: str, organization: str, kakao_chat_log: str, ca
             model='gemini-2.0-flash',
             contents=analysis_prompt
         )
-        spinner.stop("대화 분석 완료")
+        spinner.stop("심층 분석 완료")
         
         # Step 3: 결과 처리
         print("\n[3/3] 분석 결과 정리")
-        spinner = LoadingSpinner("페르소나 프로필 생성 중")
+        spinner = LoadingSpinner("프로페셔널 페르소나 프로필 생성 중")
         spinner.start()
         
         response_text = response.text
@@ -173,8 +318,8 @@ def analyze_persona(client_name: str, organization: str, kakao_chat_log: str, ca
         print(f"\n❌ 페르소나 분석 실패: {e}")
         return None
     
-    # 맞춤 프롬프트 생성
-    formality = persona_analysis["formality_level"]["score"]
+    # 맞춤 프롬프트 생성 (개선된 버전)
+    formality = persona_analysis.get("formality_analysis", {}).get("overall_score", 5)
     
     if formality >= 8:
         tone = "매우 격식있고 공식적인"
@@ -189,28 +334,52 @@ def analyze_persona(client_name: str, organization: str, kakao_chat_log: str, ca
         tone = "매우 캐주얼하고 편한"
         endings = "~해, ~야"
     
+    # 점수 추출 헬퍼
+    def get_score(path, default=5):
+        try:
+            result = persona_analysis
+            for key in path.split('.'):
+                result = result[key]
+            return result if isinstance(result, int) else default
+        except:
+            return default
+    
     custom_prompt = f"""
-【{client_name} 맞춤 글쓰기 가이드】
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+【{client_name} 전용 콘텐츠 제작 가이드】
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-🎯 기본 톤앤매너
-- {tone} 스타일로 작성
-- 종결어미: {endings}
-- 격식도: {formality}/10
+📊 페르소나 요약
+{persona_analysis.get('overall_summary', {}).get('persona_type', '분석 중')}
 
-📝 문장 구조
-- 문장 길이: {persona_analysis['writing_characteristics']['sentence_length']}
-- 존댓말: {persona_analysis['writing_characteristics']['honorifics_usage']}
-- 이모지: {persona_analysis['writing_characteristics']['emoji_usage']}
+🎯 핵심 특성
+{chr(10).join(f'• {c}' for c in persona_analysis.get('overall_summary', {}).get('key_characteristics', [])[:5])}
 
-✅ 반드시 사용할 표현들
-{chr(10).join(f'- {flag}' for flag in persona_analysis.get('green_flags', [])[:5])}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📝 글쓰기 스타일
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+• 톤앤매너: {tone}
+• 종결어미: {endings}
+• 격식도: {formality}/10
+• 완벽주의: {get_score('personality_metrics.perfectionism.score')}/10
+• 디테일 중시: {get_score('personality_metrics.detail_orientation.score')}/10
+• 긴급성 민감도: {get_score('personality_metrics.urgency_sensitivity.score')}/10
 
-❌ 절대 피해야 할 것들
-{chr(10).join(f'- {flag}' for flag in persona_analysis.get('red_flags', [])[:5])}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+✅ 반드시 적용
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+{chr(10).join(f'• {item}' for item in persona_analysis.get('positive_triggers', {}).get('favorite_expressions', [])[:5])}
 
-🎨 콘텐츠 선호도
-- 선호 톤: {persona_analysis['content_preferences']['preferred_tone']}
-- 길이: {persona_analysis['content_preferences']['length_preference']}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+❌ 절대 금지
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+{chr(10).join(f'• {item}' for item in persona_analysis.get('sensitive_areas', {}).get('absolute_dont', {}).get('expressions', [])[:5])}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+⚠️ 주의 사항
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+• 콘텐츠 제작 난이도: {persona_analysis.get('overall_summary', {}).get('content_creation_difficulty', 5)}/10
+• 핵심 주의점: {persona_analysis.get('overall_summary', {}).get('primary_caution', '')}
 """
     
     # 저장 (파일명: 소속_이름)
