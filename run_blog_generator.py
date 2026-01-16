@@ -197,17 +197,17 @@ def generate_blog_post(client_id: str, press_release: str, target_keywords: list
     }},
     "length": "공백 포함 1,500 ~ 2,000자 (내용을 풍성하게 늘려서 작성)"
   }},
-    "output_schema": {
+    "output_schema": {{
       "description": "반드시 아래 JSON 포맷으로만 출력할 것 (Markdown 코드 블록 내부에)",
-      "format": {
+      "format": {{
         "title": "블로그 제목 String",
         "content": "HTML 태그 없이 Markdown 형식이 적용된 본문 String",
         "tags": ["태그1", "태그2", "태그3", "태그4", "태그5"],
         "meta_description": "155자 이내 설명 String"
-      }
-    }
-  }
-} (다른 텍스트 없이 오직 JSON만 출력해주세요)
+      }}
+    }}
+  }}
+}} (다른 텍스트 없이 오직 JSON만 출력해주세요)
 """
     
     # Step 2: AI 블로그 생성
