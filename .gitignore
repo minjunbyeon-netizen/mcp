@@ -4,11 +4,21 @@ venv/
 __pycache__/
 *.pyc
 
-# 환경변수 (API 키 보호!)
+# ============================================
+# API 키 보호 (절대 커밋 금지!)
+# ============================================
 .env
-.env.local
 .env.*
+.env.local
+*.env
+
+# MCP 설정 파일 (API 키 포함)
 mcp_config.json
+**/mcp_config.json
+
+# .env 파일들 (모든 하위 폴더)
+**/.env
+**/*.env
 
 # IDE
 .vscode/
