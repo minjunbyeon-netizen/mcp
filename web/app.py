@@ -1211,9 +1211,9 @@ if __name__ == '__main__':
     print("=" * 60)
     print("  페르소나 도구 웹 대시보드")
     print("=" * 60)
-    print(f"  서버: http://localhost:5000")
+    print(f"  서버: http://localhost:5050")
     print(f"  페르소나 폴더: {PERSONA_DIR}")
     print(f"  출력 폴더: {OUTPUT_DIR}")
     print("=" * 60)
     
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    app.run(host='0.0.0.0', port=5050, debug=True)
