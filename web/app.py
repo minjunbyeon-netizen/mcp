@@ -67,9 +67,7 @@ if GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET:
         name='google',
         client_id=GOOGLE_CLIENT_ID,
         client_secret=GOOGLE_CLIENT_SECRET,
-        access_token_url='https://oauth2.googleapis.com/token',
-        authorize_url='https://accounts.google.com/o/oauth2/auth',
-        api_base_url='https://www.googleapis.com/oauth2/v1/',
+        server_metadata_url='https://accounts.google.com/.well-known/openid-configuration',
         client_kwargs={'scope': 'openid email profile'},
     )
     SSO_ENABLED = True
@@ -88,6 +86,11 @@ PERSONA_DIR = PROJECT_ROOT / "output" / "personas"
 PERSONA_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUT_DIR = Path.home() / "mcp-data" / "outputs"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+BLOG_COLLECTIONS_DIR = PROJECT_ROOT / "blog_pull" / "output"
+BLOG_COLLECTIONS_DIR.mkdir(parents=True, exist_ok=True)
+
+# blog_pull 모듈 경로 추가
+sys.path.insert(0, str(PROJECT_ROOT / "blog_pull"))
 
 # Google Gemini API 클라이언트
 from google import genai
@@ -187,7 +190,7 @@ def callback():
     
     try:
         token = google.authorize_access_token()
-        user_info = google.get('userinfo').json()
+        user_info = token.get('userinfo', {})
         
         email = user_info.get('email', '')
         domain = email.split('@')[-1] if '@' in email else ''
@@ -264,6 +267,7 @@ def static_files(filename):
 # ============================================================
 
 @app.route('/api/persona/list', methods=['GET'])
+@login_required
 def list_personas():
     """저장된 페르소나 목록 반환"""
     personas = []
@@ -300,6 +304,7 @@ def list_personas():
 
 
 @app.route('/api/persona/extract', methods=['POST'])
+@login_required
 def extract_persona():
     """파일 업로드로 페르소나 추출 (run_persona_test.py 기능과 동일)"""
     
@@ -664,6 +669,7 @@ def extract_persona():
 # ============================================================
 
 @app.route('/api/blog/generate', methods=['POST'])
+@login_required
 def generate_blog():
     """페르소나 기반 블로그 글 생성 (파일 업로드 지원)"""
     
@@ -818,6 +824,7 @@ def generate_blog():
 # ============================================================
 
 @app.route('/api/match-test', methods=['POST'])
+@login_required
 def match_test():
     """콘텐츠와 페르소나 일치율 테스트"""
     data = request.json
@@ -907,6 +914,293 @@ def match_test():
         
     except Exception as e:
         return jsonify({"error": f"일치율 분석 실패: {str(e)}"}), 500
+
+
+# ============================================================
+# API: Blog Collection (blog_pull 통합)
+# ============================================================
+
+from run_crawler import get_blog_id, get_post_list, get_post_content, save_results
+import run_crawler as _run_crawler
+_run_crawler.OUTPUT_DIR = str(BLOG_COLLECTIONS_DIR)
+import time as _time
+
+@app.route('/api/blog/collect', methods=['POST'])
+@login_required
+def collect_blog():
+    """네이버 블로그 글 수집 (blog_pull 크롤러 통합)"""
+    data = request.json
+    
+    blog_input = data.get("blog_id", "").strip()
+    count = min(int(data.get("count", 5)), 30)
+    
+    if not blog_input:
+        return jsonify({"error": "블로그 주소 또는 ID를 입력해주세요."}), 400
+    
+    blog_id = get_blog_id(blog_input)
+    if not blog_id:
+        return jsonify({"error": f"올바른 블로그 주소가 아닙니다: {blog_input}"}), 400
+    
+    try:
+        # STEP 1: 글 목록 가져오기
+        posts = get_post_list(blog_id, count)
+        
+        if not posts:
+            return jsonify({"error": "글 목록을 가져올 수 없습니다. 블로그 주소를 확인해주세요."}), 404
+        
+        # STEP 2: 본문 수집
+        for post in posts:
+            content = get_post_content(blog_id, post['logNo'])
+            post['content'] = content if content else "(본문 추출 실패)"
+            _time.sleep(0.3)
+        
+        # STEP 3: 저장
+        folder = save_results(blog_id, posts)
+        
+        total_chars = sum(len(p.get('content', '')) for p in posts)
+        
+        return jsonify({
+            "blog_id": blog_id,
+            "blog_url": f"https://blog.naver.com/{blog_id}",
+            "post_count": len(posts),
+            "total_chars": total_chars,
+            "output_folder": os.path.basename(folder),
+            "posts": [
+                {
+                    "title": p['title'],
+                    "date": p['addDate'],
+                    "url": p['url'],
+                    "content_length": len(p.get('content', '')),
+                    "content_preview": p.get('content', '')[:200]
+                }
+                for p in posts
+            ]
+        })
+        
+    except Exception as e:
+        return jsonify({"error": f"블로그 수집 실패: {str(e)}"}), 500
+
+
+@app.route('/api/blog/collections', methods=['GET'])
+@login_required
+def list_blog_collections():
+    """수집된 블로그 컬렉션 목록"""
+    collections = []
+    
+    if BLOG_COLLECTIONS_DIR.exists():
+        for item in sorted(BLOG_COLLECTIONS_DIR.iterdir(), reverse=True):
+            if item.is_dir() and not item.name.startswith('.'):
+                # _data.json에서 정보 읽기
+                data_file = item / "_data.json"
+                if data_file.exists():
+                    try:
+                        with open(data_file, 'r', encoding='utf-8') as f:
+                            data = json.load(f)
+                        collections.append({
+                            "folder": item.name,
+                            "blog_id": data.get("blog_id", ""),
+                            "collected_at": data.get("collected_at", ""),
+                            "post_count": len(data.get("posts", [])),
+                            "total_chars": sum(len(p.get("content", "")) for p in data.get("posts", []))
+                        })
+                    except:
+                        pass
+    
+    return jsonify({"collections": collections})
+
+
+@app.route('/api/blog/analyze-status', methods=['POST'])
+@login_required
+def analyze_blog_status():
+    """수집된 블로그 글을 AI로 분석하여 상태 파악"""
+    data = request.json
+    folder_name = data.get("folder", "")
+    
+    if not folder_name:
+        return jsonify({"error": "분석할 컬렉션 폴더를 선택해주세요."}), 400
+    
+    folder_path = BLOG_COLLECTIONS_DIR / folder_name
+    data_file = folder_path / "_data.json"
+    
+    if not data_file.exists():
+        return jsonify({"error": "컬렉션 데이터를 찾을 수 없습니다."}), 404
+    
+    try:
+        with open(data_file, 'r', encoding='utf-8') as f:
+            collection = json.load(f)
+        
+        posts = collection.get("posts", [])
+        blog_id = collection.get("blog_id", "")
+        
+        # 블로그 글 요약 텍스트 생성
+        blog_summary = ""
+        for i, post in enumerate(posts[:10], 1):  # 최대 10개
+            content = post.get("content", "")[:1500]  # 글당 1500자
+            blog_summary += f"\n\n--- 글 {i}: {post.get('title', '')} (날짜: {post.get('addDate', '')}) ---\n{content}"
+        
+        api_key = os.getenv("GEMINI_API_KEY")
+        if not api_key:
+            return jsonify({"error": "GEMINI_API_KEY가 설정되지 않았습니다."}), 500
+        
+        client = genai.Client(api_key=api_key)
+        
+        analysis_prompt = f"""당신은 블로그 콘텐츠 전략 분석 전문가입니다.
+아래는 네이버 블로그 '{blog_id}'에서 수집한 최근 글들입니다.
+이 블로그의 현재 상태를 종합적으로 분석해주세요.
+
+{blog_summary}
+
+━━━━━━━━━━━━━━━━━━━━━
+분석 항목 (반드시 JSON 형식으로 응답):
+━━━━━━━━━━━━━━━━━━━━━
+
+{{
+  "blog_overview": "블로그 전체적인 성격과 주제 (2-3줄)",
+  "writing_tone": "글쓰기 톤/어조 분석 (예: 공식적, 친근한, 전문적 등)",
+  "main_topics": ["주요 다루는 주제 1", "주요 주제 2", "주요 주제 3"],
+  "content_quality": {{
+    "score": 1~10 점수,
+    "assessment": "품질 평가 설명"
+  }},
+  "posting_pattern": "게시 패턴 분석 (빈도, 규칙성 등)",
+  "keyword_strategy": "키워드 사용 전략 분석",
+  "strengths": ["강점 1", "강점 2"],
+  "weaknesses": ["약점/개선점 1", "약점/개선점 2"],
+  "recommendations": ["추천 전략 1", "추천 전략 2", "추천 전략 3"]
+}}
+
+반드시 유효한 JSON으로만 응답하세요. 다른 텍스트는 포함하지 마세요."""
+
+        response = client.models.generate_content(
+            model="gemini-2.0-flash",
+            contents=analysis_prompt
+        )
+        
+        result_text = response.text.strip()
+        if result_text.startswith("```"):
+            result_text = result_text.split("\n", 1)[1] if "\n" in result_text else result_text
+            result_text = result_text.rsplit("```", 1)[0]
+        
+        result = json.loads(result_text)
+        result["blog_id"] = blog_id
+        result["post_count"] = len(posts)
+        result["folder"] = folder_name
+        
+        return jsonify(result)
+        
+    except json.JSONDecodeError:
+        return jsonify({"error": "AI 분석 결과 파싱 실패", "raw": result_text}), 500
+    except Exception as e:
+        return jsonify({"error": f"블로그 분석 실패: {str(e)}"}), 500
+
+
+@app.route('/api/persona/business-analysis', methods=['POST'])
+@login_required
+def business_analysis():
+    """페르소나 + 블로그 교차 분석으로 업무적 성격 파악"""
+    data = request.json
+    client_id = data.get("client_id", "")
+    folder_name = data.get("folder", "")
+    
+    if not client_id or not folder_name:
+        return jsonify({"error": "페르소나와 블로그 컬렉션을 모두 선택해주세요."}), 400
+    
+    # 페르소나 데이터 로드
+    persona_path = PERSONA_DIR / f"{client_id}.json"
+    if not persona_path.exists():
+        return jsonify({"error": f"페르소나를 찾을 수 없습니다: {client_id}"}), 404
+    
+    with open(persona_path, 'r', encoding='utf-8') as f:
+        persona_data = json.load(f)
+    
+    # 블로그 데이터 로드
+    data_file = BLOG_COLLECTIONS_DIR / folder_name / "_data.json"
+    if not data_file.exists():
+        return jsonify({"error": "블로그 컬렉션을 찾을 수 없습니다."}), 404
+    
+    with open(data_file, 'r', encoding='utf-8') as f:
+        blog_data = json.load(f)
+    
+    try:
+        # 페르소나 요약
+        persona_text = json.dumps(persona_data, ensure_ascii=False, indent=2)[:3000]
+        
+        # 블로그 글 요약
+        blog_summary = ""
+        for i, post in enumerate(blog_data.get("posts", [])[:8], 1):
+            content = post.get("content", "")[:1000]
+            blog_summary += f"\n--- 글 {i}: {post.get('title', '')} ---\n{content}\n"
+        
+        api_key = os.getenv("GEMINI_API_KEY")
+        if not api_key:
+            return jsonify({"error": "GEMINI_API_KEY가 설정되지 않았습니다."}), 500
+        
+        client_ai = genai.Client(api_key=api_key)
+        
+        prompt = f"""당신은 광고/마케팅 에이전시의 시니어 분석가입니다.
+아래 두 가지 데이터를 교차 분석하여 광고주의 업무적 성격을 종합 파악해주세요.
+
+━━━ DATA 1: 카카오톡 대화 기반 페르소나 ━━━
+{persona_text}
+
+━━━ DATA 2: 운영 중인 블로그 글 ━━━
+{blog_summary}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+위 두 데이터를 교차 분석하여 아래 JSON 형식으로 응답해주세요:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+{{
+  "business_personality": {{
+    "type": "업무 성격 유형 (예: 꼼꼼한 관리자형, 감성적 기획자형 등)",
+    "description": "종합적인 업무 성격 설명 (3-4줄)"
+  }},
+  "communication_style": {{
+    "preferred": "선호하는 커뮤니케이션 방식",
+    "response_speed": "응답 속도/패턴",
+    "detail_level": "요구하는 디테일 수준"
+  }},
+  "content_preferences": {{
+    "tone": "선호하는 콘텐츠 톤",
+    "topics": ["관심 토픽 1", "관심 토픽 2"],
+    "style": "콘텐츠 스타일 성향"
+  }},
+  "work_approach": {{
+    "decision_style": "의사결정 스타일",
+    "feedback_pattern": "피드백 패턴",
+    "priority_focus": "우선시하는 것"
+  }},
+  "agency_recommendations": [
+    "대응 전략 1",
+    "대응 전략 2",
+    "대응 전략 3"
+  ],
+  "risk_factors": ["주의할 점 1", "주의할 점 2"],
+  "summary": "3줄 이내 핵심 요약"
+}}
+
+반드시 유효한 JSON으로만 응답하세요."""
+
+        response = client_ai.models.generate_content(
+            model="gemini-2.0-flash",
+            contents=prompt
+        )
+        
+        result_text = response.text.strip()
+        if result_text.startswith("```"):
+            result_text = result_text.split("\n", 1)[1] if "\n" in result_text else result_text
+            result_text = result_text.rsplit("```", 1)[0]
+        
+        result = json.loads(result_text)
+        result["client_id"] = client_id
+        result["blog_folder"] = folder_name
+        
+        return jsonify(result)
+        
+    except json.JSONDecodeError:
+        return jsonify({"error": "AI 분석 결과 파싱 실패", "raw": result_text}), 500
+    except Exception as e:
+        return jsonify({"error": f"업무적 성격 분석 실패: {str(e)}"}), 500
 
 
 # ============================================================
