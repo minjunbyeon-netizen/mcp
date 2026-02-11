@@ -16,6 +16,7 @@ from flask_cors import CORS
 from authlib.integrations.flask_client import OAuth
 from functools import wraps
 import pdfplumber
+import requests as http_requests
 
 # Windows 터미널 UTF-8 출력 설정
 if sys.platform == 'win32' and not isinstance(sys.stdout, io.TextIOWrapper):
@@ -68,7 +69,7 @@ if GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET:
         client_id=GOOGLE_CLIENT_ID,
         client_secret=GOOGLE_CLIENT_SECRET,
         server_metadata_url='https://accounts.google.com/.well-known/openid-configuration',
-        client_kwargs={'scope': 'openid email profile'},
+        client_kwargs={'scope': 'openid email profile https://www.googleapis.com/auth/drive.file'},
     )
     SSO_ENABLED = True
     print("[OK] Google OAuth SSO 활성화됨")
@@ -88,6 +89,10 @@ OUTPUT_DIR = Path.home() / "mcp-data" / "outputs"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 BLOG_COLLECTIONS_DIR = PROJECT_ROOT / "blog_pull" / "output"
 BLOG_COLLECTIONS_DIR.mkdir(parents=True, exist_ok=True)
+DNA_DIR = OUTPUT_DIR / "dna"
+DNA_DIR.mkdir(parents=True, exist_ok=True)
+BUSINESS_DIR = OUTPUT_DIR / "business"
+BUSINESS_DIR.mkdir(parents=True, exist_ok=True)
 
 # blog_pull 모듈 경로 추가
 sys.path.insert(0, str(PROJECT_ROOT / "blog_pull"))
@@ -214,6 +219,8 @@ def callback():
             'name': user_info.get('name', ''),
             'picture': user_info.get('picture', '')
         }
+        # Google API 호출을 위한 액세스 토큰 저장
+        session['google_token'] = token.get('access_token', '')
         
         print(f"[OK] 로그인 성공: {email}")
         return redirect('/')
@@ -676,6 +683,7 @@ def generate_blog():
     client_id = request.form.get("client_id", "")
     keywords_str = request.form.get("keywords", "")
     keywords = [k.strip() for k in keywords_str.split(",") if k.strip()]
+    blog_dna_folder = request.form.get("blog_dna_folder", "")
     
     # 보도자료: 파일 또는 직접 입력
     press_release = ""
@@ -712,6 +720,47 @@ def generate_blog():
     if not persona_data:
         return jsonify({"error": f"페르소나를 찾을 수 없습니다: {client_id}"}), 404
     
+    # 블로그 DNA 로드 (선택사항)
+    blog_dna_text = ""
+    if blog_dna_folder:
+        dna_data_file = BLOG_COLLECTIONS_DIR / blog_dna_folder / "_data.json"
+        if dna_data_file.exists():
+            try:
+                with open(dna_data_file, 'r', encoding='utf-8') as f:
+                    dna_collection = json.load(f)
+                
+                dna_posts = dna_collection.get("posts", [])
+                dna_blog_id = dna_collection.get("blog_id", "")
+                
+                # 블로그 글 요약 생성 (DNA 분석용)
+                dna_summary = ""
+                for i, post in enumerate(dna_posts[:8], 1):
+                    content = post.get("content", "")[:1200]
+                    dna_summary += f"\n--- 글 {i}: {post.get('title', '')} ---\n{content}\n"
+                
+                if dna_summary.strip():
+                    blog_dna_text = f"""
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+【블로그 DNA - {dna_blog_id}의 실제 글쓰기 스타일】
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+아래는 이 블로그의 실제 글들입니다. 이 글들의 구조, 어투, 화법, 자주 쓰는 표현,
+문장 패턴, 문단 구성 등을 철저히 분석하여 동일한 스타일로 글을 작성해야 합니다.
+
+{dna_summary}
+
+※ 위 블로그 글의 다음 요소를 반드시 재현하세요:
+- 글의 전체 구조/템플릿 (도입-본문-마무리 패턴)
+- 종결어미와 어투 (예: ~요, ~습니다, ~거든요 등)
+- 소제목/헤딩 사용 방식
+- 자주 쓰는 표현과 접속어
+- 문장 길이와 복잡도
+- 독자를 부르는 방식
+- 감성적 표현 or 정보 전달 비율
+"""
+                    print(f"[OK] 블로그 DNA 로드됨: {dna_blog_id} ({len(dna_posts)}개 글)")
+            except Exception as e:
+                print(f"[WARN] 블로그 DNA 로드 실패: {e}")
+    
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
         return jsonify({"error": "GEMINI_API_KEY가 설정되지 않았습니다."}), 500
@@ -737,8 +786,15 @@ def generate_blog():
         
         keywords_text = ", ".join(keywords) if keywords else ""
         
+        # 블로그 DNA 관련 작성 지침 추가
+        dna_instruction = ""
+        if blog_dna_text:
+            dna_instruction = """6. 【중요】 블로그 DNA에서 분석된 글쓰기 스타일(구조, 어투, 화법, 표현)을 최우선으로 반영하세요.
+7. 페르소나의 톤/성격과 블로그 DNA의 글쓰기 패턴을 자연스럽게 융합하세요."""
+        
         blog_prompt = f"""
 당신은 '{client_name}'의 페르소나에 맞춰 블로그 글을 작성하는 전문가입니다.
+동일한 보도자료를 기반으로 **3가지 톤 버전**의 블로그 글을 작성해야 합니다.
 
 【페르소나 정보】
 {custom_prompt}
@@ -751,7 +807,7 @@ def generate_blog():
 
 【금지 사항】
 {json.dumps(red_flags, ensure_ascii=False)}
-
+{blog_dna_text}
 【보도자료】
 {press_release[:5000]}
 
@@ -759,18 +815,48 @@ def generate_blog():
 {keywords_text}
 
 【작성 지침】
-1. 위 페르소나의 톤과 스타일을 100% 반영하세요.
+1. 위 페르소나의 톤과 스타일을 기본으로 삼되, 3가지 톤 버전으로 변주하세요.
 2. SEO 최적화된 제목 (60자 이내)
-3. 본문 1,500~2,000자 분량
-4. 마크다운 형식 사용
+3. 각 버전 본문 1,500~2,000자 분량
+4. **절대 금지 사항**: 마크다운 기호를 절대 사용하지 마세요. ##, **, ***, >, -, ```, [ ], " " 등 어떤 마크다운/서식 기호도 사용 금지.
+   - 소제목이 필요하면 그냥 줄바꿈 후 텍스트로 쓰세요 (예: "첫 번째 이야기")
+   - 강조가 필요하면 문맥으로 표현하세요, 기호로 하지 마세요
+   - 진짜 사람이 블로그에 직접 타이핑한 것처럼 자연스러운 일반 텍스트로 작성하세요
+5. 3가지 버전의 핵심 차이:
+   - formal (포멀): 격식체, 공식적 어투, ~습니다/~입니다 종결, 전문 용어 적극 사용, 정보 중심
+   - balanced (밸런스): 페르소나+DNA 조합 그대로의 자연스러운 어투, 원래 분석된 톤 유지
+   - casual (캐주얼): 더 자유로운 어투, 친근한 표현, 이모티콘/감탄사 활용 가능, 독자와 대화하는 느낌
+{dna_instruction}
 
 【출력 JSON】
-반드시 아래 형식으로만 출력하세요:
+반드시 아래 형식으로만 출력하세요 (3개 버전 모두 포함):
 {{
-    "title": "블로그 제목",
-    "content": "마크다운 형식 본문",
-    "tags": ["태그1", "태그2", "태그3", "태그4", "태그5"],
-    "meta_description": "155자 이내 요약"
+    "versions": [
+        {{
+            "version_type": "formal",
+            "version_label": "포멀",
+            "title": "포멀 버전 제목",
+            "content": "일반 텍스트 본문 (마크다운 기호 절대 금지)",
+            "tags": ["태그1", "태그2", "태그3", "태그4", "태그5"],
+            "meta_description": "155자 이내 요약"
+        }},
+        {{
+            "version_type": "balanced",
+            "version_label": "밸런스",
+            "title": "밸런스 버전 제목",
+            "content": "일반 텍스트 본문 (마크다운 기호 절대 금지)",
+            "tags": ["태그1", "태그2", "태그3", "태그4", "태그5"],
+            "meta_description": "155자 이내 요약"
+        }},
+        {{
+            "version_type": "casual",
+            "version_label": "캐주얼",
+            "title": "캐주얼 버전 제목",
+            "content": "일반 텍스트 본문 (마크다운 기호 절대 금지)",
+            "tags": ["태그1", "태그2", "태그3", "태그4", "태그5"],
+            "meta_description": "155자 이내 요약"
+        }}
+    ]
 }}
 """
         
@@ -786,33 +872,38 @@ def generate_blog():
         elif "```" in response_text:
             response_text = response_text.split("```")[1].split("```")[0]
         
-        blog_content = json.loads(response_text.strip())
+        blog_result = json.loads(response_text.strip())
+        versions = blog_result.get("versions", [])
+        
+        if not versions:
+            return jsonify({"error": "AI가 3가지 버전을 생성하지 못했습니다."}), 500
         
         output_id = f"BLOG_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
         
-        md_path = OUTPUT_DIR / f"{output_id}.md"
-        with open(md_path, 'w', encoding='utf-8') as f:
-            f.write(f"# {blog_content['title']}\n\n")
-            f.write(f"{blog_content['content']}\n\n")
-            f.write(f"**태그:** {', '.join(blog_content['tags'])}\n")
+        # 각 버전별 MD 파일 저장
+        for ver in versions:
+            vtype = ver.get("version_type", "unknown")
+            md_path = OUTPUT_DIR / f"{output_id}_{vtype}.md"
+            with open(md_path, 'w', encoding='utf-8') as f:
+                f.write(f"# [{ver.get('version_label', vtype)}] {ver.get('title', '')}\n\n")
+                f.write(f"{ver.get('content', '')}\n\n")
+                f.write(f"**태그:** {', '.join(ver.get('tags', []))}\n")
         
+        # 전체 JSON 저장
         json_path = OUTPUT_DIR / f"{output_id}.json"
         with open(json_path, 'w', encoding='utf-8') as f:
             json.dump({
                 "output_id": output_id,
                 "client_id": client_id,
-                "content": blog_content,
+                "versions": versions,
                 "created_at": datetime.now().isoformat()
             }, f, ensure_ascii=False, indent=2)
         
         return jsonify({
             "success": True,
-            "title": blog_content.get("title", ""),
-            "content": blog_content.get("content", ""),
-            "tags": blog_content.get("tags", []),
-            "meta_description": blog_content.get("meta_description", ""),
-            "md_path": str(md_path),
-            "docx_path": str(OUTPUT_DIR / f"{output_id}.docx")
+            "versions": versions,
+            "output_id": output_id,
+            "output_dir": str(OUTPUT_DIR)
         })
         
     except Exception as e:
@@ -1044,29 +1135,111 @@ def analyze_blog_status():
         
         client = genai.Client(api_key=api_key)
         
-        analysis_prompt = f"""당신은 블로그 콘텐츠 전략 분석 전문가입니다.
+        analysis_prompt = f"""당신은 블로그 글쓰기 DNA 분석 전문가입니다.
 아래는 네이버 블로그 '{blog_id}'에서 수집한 최근 글들입니다.
-이 블로그의 현재 상태를 종합적으로 분석해주세요.
+이 블로그의 글쓰기 스타일, 구조, 어투, 화법, 표현 패턴을 아주 꼼꼼하게 분석해주세요.
+모든 분석은 실제 글에서 발견된 패턴과 근거를 바탕으로 해야 합니다.
 
 {blog_summary}
 
-━━━━━━━━━━━━━━━━━━━━━
-분석 항목 (반드시 JSON 형식으로 응답):
-━━━━━━━━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+【분석 지침】
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+- 10가지 카테고리별로 글에서 실제로 발견한 패턴을 근거(evidence)와 함께 제시
+- 각 항목의 examples에는 실제 글에서 발췌한 표현을 반드시 포함
+- 블로그 글을 그대로 재현할 수 있을 정도로 구체적으로 분석
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+【출력 JSON 스키마 (10가지 카테고리)】
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 {{
-  "blog_overview": "블로그 전체적인 성격과 주제 (2-3줄)",
-  "writing_tone": "글쓰기 톤/어조 분석 (예: 공식적, 친근한, 전문적 등)",
-  "main_topics": ["주요 다루는 주제 1", "주요 주제 2", "주요 주제 3"],
-  "content_quality": {{
-    "score": 1~10 점수,
-    "assessment": "품질 평가 설명"
+  "c1_template_structure": {{
+    "title": "글 템플릿/구조",
+    "overall_pattern": "글의 전체적인 구조 패턴 (예: 서론-본론-결론, 리스트형, Q&A형 등)",
+    "section_flow": ["도입부 패턴", "본문 전개 방식", "마무리 패턴"],
+    "heading_style": "소제목/헤딩 사용 방식",
+    "average_sections": "평균 섹션 수와 구성",
+    "examples": ["실제 글에서 발췌한 구조 예시"]
   }},
-  "posting_pattern": "게시 패턴 분석 (빈도, 규칙성 등)",
-  "keyword_strategy": "키워드 사용 전략 분석",
-  "strengths": ["강점 1", "강점 2"],
-  "weaknesses": ["약점/개선점 1", "약점/개선점 2"],
-  "recommendations": ["추천 전략 1", "추천 전략 2", "추천 전략 3"]
+  "c2_tone_mood": {{
+    "title": "톤/분위기",
+    "primary_tone": "주된 톤 (예: 친근한, 전문적, 공식적, 감성적 등)",
+    "secondary_tone": "보조 톤",
+    "formality_level": "격식 수준 (1-10)",
+    "warmth_level": "친밀감 수준 (1-10)",
+    "consistency": "톤 일관성 평가",
+    "examples": ["톤을 보여주는 실제 문장 발췌"]
+  }},
+  "c3_speech_style": {{
+    "title": "어투/말투",
+    "ending_patterns": ["자주 쓰는 종결어미 (예: ~요, ~습니다, ~해요, ~거든요)"],
+    "characteristic_phrases": ["특징적인 말투 패턴"],
+    "question_style": "질문 던지기 방식 (있다면)",
+    "reader_address": "독자를 부르는 방식 (예: 여러분, ~님, 우리 등)",
+    "examples": ["실제 어투 발췌"]
+  }},
+  "c4_rhetoric": {{
+    "title": "화법/수사법",
+    "storytelling": "스토리텔링 활용 여부와 방식",
+    "persuasion_technique": "설득/전달 기법",
+    "humor_usage": "유머/위트 활용 수준 (1-10)",
+    "metaphor_usage": "비유/은유 활용 빈도와 스타일",
+    "emotional_appeal": "감정 호소 방식",
+    "examples": ["화법이 드러나는 실제 문장"]
+  }},
+  "c5_frequent_expressions": {{
+    "title": "자주 쓰는 표현",
+    "signature_phrases": ["이 블로거만의 시그니처 표현 5개 이상"],
+    "transition_words": ["자주 쓰는 접속/전환 표현"],
+    "emphasis_expressions": ["강조할 때 쓰는 표현"],
+    "filler_expressions": ["습관적으로 쓰는 군더더기 표현"],
+    "examples": ["실제 반복 등장하는 표현 발췌"]
+  }},
+  "c6_sentence_patterns": {{
+    "title": "문장 구조 패턴",
+    "avg_length": "평균 문장 길이 (짧은/중간/긴)",
+    "complexity": "문장 복잡도 (단문 위주/복문 위주/혼합)",
+    "rhythm": "문장 리듬감 (짧은 문장과 긴 문장의 배치 패턴)",
+    "list_usage": "나열/리스트 활용 빈도 (1-10)",
+    "examples": ["특징적인 문장 구조 발췌"]
+  }},
+  "c7_vocabulary": {{
+    "title": "어휘/용어 선택",
+    "level": "어휘 수준 (쉬운/보통/전문적)",
+    "style": "한자어 vs 순우리말 vs 외래어 비율",
+    "jargon_usage": "전문용어/업계용어 사용 빈도",
+    "trendy_words": "유행어/신조어 사용 여부",
+    "characteristic_words": ["이 블로거가 특히 자주 쓰는 단어 목록"],
+    "examples": ["어휘 특성이 보이는 문장 발췌"]
+  }},
+  "c8_paragraph_composition": {{
+    "title": "단락/문단 구성",
+    "avg_paragraph_length": "평균 문단 길이 (짧은/중간/긴)",
+    "paragraph_count": "글당 평균 문단 수",
+    "whitespace_usage": "여백/줄바꿈 활용 (많은/적절/적은)",
+    "content_density": "정보 밀도 (높은/중간/낮은)",
+    "examples": ["단락 구성 특징이 보이는 예시"]
+  }},
+  "c9_opening_closing": {{
+    "title": "도입/마무리 패턴",
+    "opening_types": ["자주 쓰는 도입 방식 (예: 질문, 인사, 상황 설명, 공감 유도 등)"],
+    "closing_types": ["자주 쓰는 마무리 방식 (예: 요약, CTA, 인사, 감성 마무리 등)"],
+    "hook_technique": "독자 후킹 기법",
+    "cta_pattern": "행동 유도(CTA) 패턴",
+    "opening_examples": ["실제 도입부 발췌"],
+    "closing_examples": ["실제 마무리부 발췌"]
+  }},
+  "c10_visual_formatting": {{
+    "title": "시각적 요소/포맷팅",
+    "emoji_usage": "이모지/이모티콘 사용 빈도 (1-10)",
+    "emoji_types": ["자주 쓰는 이모지 종류"],
+    "bold_highlight": "볼드/강조 사용 패턴",
+    "image_placement": "이미지 배치 패턴",
+    "separator_style": "구분선/구분 요소 스타일",
+    "special_formatting": ["특수 포맷팅 습관 (예: 괄호 사용, 따옴표, 말줄임표 등)"],
+    "examples": ["포맷팅 특징이 보이는 예시"]
+  }}
 }}
 
 반드시 유효한 JSON으로만 응답하세요. 다른 텍스트는 포함하지 마세요."""
@@ -1085,6 +1258,14 @@ def analyze_blog_status():
         result["blog_id"] = blog_id
         result["post_count"] = len(posts)
         result["folder"] = folder_name
+        result["created_at"] = datetime.now().isoformat()
+        
+        # DNA 분석 결과 자동 저장
+        dna_id = f"DNA_{folder_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        result["dna_id"] = dna_id
+        dna_path = DNA_DIR / f"{dna_id}.json"
+        with open(dna_path, 'w', encoding='utf-8') as f:
+            json.dump(result, f, ensure_ascii=False, indent=2)
         
         return jsonify(result)
         
@@ -1194,6 +1375,14 @@ def business_analysis():
         result = json.loads(result_text)
         result["client_id"] = client_id
         result["blog_folder"] = folder_name
+        result["created_at"] = datetime.now().isoformat()
+        
+        # 업무성격 분석 결과 자동 저장
+        biz_id = f"BIZ_{client_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        result["biz_id"] = biz_id
+        biz_path = BUSINESS_DIR / f"{biz_id}.json"
+        with open(biz_path, 'w', encoding='utf-8') as f:
+            json.dump(result, f, ensure_ascii=False, indent=2)
         
         return jsonify(result)
         
@@ -1201,6 +1390,340 @@ def business_analysis():
         return jsonify({"error": "AI 분석 결과 파싱 실패", "raw": result_text}), 500
     except Exception as e:
         return jsonify({"error": f"업무적 성격 분석 실패: {str(e)}"}), 500
+
+
+
+# ============================================================
+# API: My Page (데이터 관리)
+# ============================================================
+
+@app.route('/api/mypage/personas', methods=['GET'])
+@login_required
+def mypage_personas():
+    """저장된 페르소나 목록 (상세 포함)"""
+    items = []
+    for fp in PERSONA_DIR.glob("*.json"):
+        try:
+            with open(fp, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            if "client_id" in data and "persona_analysis" in data:
+                items.append({
+                    "id": data["client_id"],
+                    "client_name": data.get("client_name", data["client_id"]),
+                    "organization": data.get("organization", ""),
+                    "created_at": data.get("created_at", ""),
+                    "filename": fp.name
+                })
+        except Exception:
+            pass
+    items.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+    return jsonify({"items": items})
+
+
+@app.route('/api/mypage/personas/<client_id>', methods=['GET'])
+@login_required
+def mypage_persona_detail(client_id):
+    """페르소나 상세"""
+    fp = PERSONA_DIR / f"{client_id}.json"
+    if not fp.exists():
+        return jsonify({"error": "페르소나를 찾을 수 없습니다."}), 404
+    with open(fp, 'r', encoding='utf-8') as f:
+        data = json.load(f)
+    return jsonify(data)
+
+
+@app.route('/api/mypage/blogs', methods=['GET'])
+@login_required
+def mypage_blogs():
+    """생성된 블로그 글 목록"""
+    items = []
+    for fp in OUTPUT_DIR.glob("BLOG_*.json"):
+        try:
+            with open(fp, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            versions = data.get("versions", [])
+            title = versions[0].get("title", "") if versions else ""
+            items.append({
+                "id": data.get("output_id", fp.stem),
+                "title": title,
+                "client_id": data.get("client_id", ""),
+                "version_count": len(versions),
+                "created_at": data.get("created_at", ""),
+                "filename": fp.name
+            })
+        except Exception:
+            pass
+    items.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+    return jsonify({"items": items})
+
+
+@app.route('/api/mypage/blogs/<blog_id>', methods=['GET'])
+@login_required
+def mypage_blog_detail(blog_id):
+    """블로그 상세 (3버전 포함)"""
+    fp = OUTPUT_DIR / f"{blog_id}.json"
+    if not fp.exists():
+        return jsonify({"error": "블로그를 찾을 수 없습니다."}), 404
+    with open(fp, 'r', encoding='utf-8') as f:
+        data = json.load(f)
+    return jsonify(data)
+
+
+@app.route('/api/mypage/dna', methods=['GET'])
+@login_required
+def mypage_dna_list():
+    """DNA 분석 결과 목록"""
+    items = []
+    for fp in DNA_DIR.glob("DNA_*.json"):
+        try:
+            with open(fp, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            items.append({
+                "id": data.get("dna_id", fp.stem),
+                "blog_id": data.get("blog_id", ""),
+                "folder": data.get("folder", ""),
+                "post_count": data.get("post_count", 0),
+                "created_at": data.get("created_at", ""),
+                "filename": fp.name
+            })
+        except Exception:
+            pass
+    items.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+    return jsonify({"items": items})
+
+
+@app.route('/api/mypage/dna/<dna_id>', methods=['GET'])
+@login_required
+def mypage_dna_detail(dna_id):
+    """DNA 상세"""
+    fp = DNA_DIR / f"{dna_id}.json"
+    if not fp.exists():
+        return jsonify({"error": "DNA 분석 결과를 찾을 수 없습니다."}), 404
+    with open(fp, 'r', encoding='utf-8') as f:
+        data = json.load(f)
+    return jsonify(data)
+
+
+@app.route('/api/mypage/business', methods=['GET'])
+@login_required
+def mypage_business_list():
+    """업무적 성격 분석 결과 목록"""
+    items = []
+    for fp in BUSINESS_DIR.glob("BIZ_*.json"):
+        try:
+            with open(fp, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            bp = data.get("business_personality", {})
+            items.append({
+                "id": data.get("biz_id", fp.stem),
+                "client_id": data.get("client_id", ""),
+                "blog_folder": data.get("blog_folder", ""),
+                "type": bp.get("type", ""),
+                "created_at": data.get("created_at", ""),
+                "filename": fp.name
+            })
+        except Exception:
+            pass
+    items.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+    return jsonify({"items": items})
+
+
+@app.route('/api/mypage/business/<biz_id>', methods=['GET'])
+@login_required
+def mypage_business_detail(biz_id):
+    """업무적 성격 상세"""
+    fp = BUSINESS_DIR / f"{biz_id}.json"
+    if not fp.exists():
+        return jsonify({"error": "업무적 성격 분석 결과를 찾을 수 없습니다."}), 404
+    with open(fp, 'r', encoding='utf-8') as f:
+        data = json.load(f)
+    return jsonify(data)
+
+
+@app.route('/api/mypage/<data_type>/<item_id>', methods=['DELETE'])
+@login_required
+def mypage_delete(data_type, item_id):
+    """마이페이지 항목 삭제"""
+    dir_map = {
+        "personas": PERSONA_DIR,
+        "blogs": OUTPUT_DIR,
+        "dna": DNA_DIR,
+        "business": BUSINESS_DIR
+    }
+    target_dir = dir_map.get(data_type)
+    if not target_dir:
+        return jsonify({"error": "잘못된 데이터 타입입니다."}), 400
+    
+    fp = target_dir / f"{item_id}.json"
+    if not fp.exists():
+        return jsonify({"error": "항목을 찾을 수 없습니다."}), 404
+    
+    fp.unlink()
+    
+    # 블로그의 경우 MD 파일도 삭제
+    if data_type == "blogs":
+        for md in target_dir.glob(f"{item_id}_*.md"):
+            md.unlink()
+    
+    return jsonify({"success": True, "message": "삭제되었습니다."})
+
+
+# ============================================================
+# Google Docs Export
+# ============================================================
+
+@app.route('/api/export/google-docs', methods=['POST'])
+@login_required
+def export_to_google_docs():
+    """블로그 글을 Google Docs로 내보내기"""
+    access_token = session.get('google_token')
+    if not access_token:
+        return jsonify({"error": "Google 로그인이 필요합니다. 다시 로그인해주세요."}), 401
+
+    data = request.get_json()
+    data_type = data.get('type', 'blogs')
+    item_id = data.get('id', '')
+
+    if not item_id:
+        return jsonify({"error": "항목 ID가 필요합니다."}), 400
+
+    # 데이터 로드
+    if data_type == 'blogs':
+        fp = OUTPUT_DIR / f"{item_id}.json"
+    elif data_type == 'dna':
+        fp = DNA_DIR / f"{item_id}.json"
+    elif data_type == 'business':
+        fp = BUSINESS_DIR / f"{item_id}.json"
+    elif data_type == 'personas':
+        fp = PERSONA_DIR / f"{item_id}.json"
+    else:
+        return jsonify({"error": "지원되지 않는 데이터 유형입니다."}), 400
+
+    if not fp.exists():
+        return jsonify({"error": "파일을 찾을 수 없습니다."}), 404
+
+    with open(fp, 'r', encoding='utf-8') as f:
+        content_data = json.load(f)
+
+    # Google Docs 문서 내용 구성
+    doc_title, doc_body = _build_doc_content(data_type, content_data, item_id)
+
+    # 1) Google Docs 문서 생성
+    headers = {
+        'Authorization': f'Bearer {access_token}',
+        'Content-Type': 'application/json'
+    }
+
+    create_resp = http_requests.post(
+        'https://docs.googleapis.com/v1/documents',
+        headers=headers,
+        json={'title': doc_title}
+    )
+
+    if create_resp.status_code == 401:
+        session.pop('google_token', None)
+        return jsonify({"error": "토큰이 만료되었습니다. 다시 로그인해주세요."}), 401
+
+    if create_resp.status_code != 200:
+        return jsonify({"error": f"Google Docs 생성 실패: {create_resp.text}"}), 500
+
+    doc = create_resp.json()
+    doc_id = doc['documentId']
+    doc_url = f"https://docs.google.com/document/d/{doc_id}/edit"
+
+    # 2) 문서에 내용 삽입
+    update_resp = http_requests.post(
+        f'https://docs.googleapis.com/v1/documents/{doc_id}:batchUpdate',
+        headers=headers,
+        json={'requests': doc_body}
+    )
+
+    if update_resp.status_code != 200:
+        print(f"[WARN] Google Docs 내용 입력 실패: {update_resp.text}")
+
+    return jsonify({
+        "success": True,
+        "doc_url": doc_url,
+        "doc_id": doc_id,
+        "message": "Google Docs에 내보내기 완료!"
+    })
+
+
+def _build_doc_content(data_type, data, item_id):
+    """데이터 유형별 Google Docs 내용 생성"""
+    requests_list = []
+    idx = 1  # 커서 위치 (1-indexed)
+
+    if data_type == 'blogs':
+        title = data.get('title', item_id)
+        doc_title = f"[블로그] {title}"
+
+        versions = data.get('versions', [])
+        for v in versions:
+            ver_label = v.get('version_label', v.get('version_type', ''))
+            ver_title = v.get('title', '')
+            ver_content = v.get('content', '')
+            tags = v.get('tags', [])
+
+            # 버전 라벨
+            header = f"\n{'='*40}\n{ver_label} 버전\n{'='*40}\n\n"
+            requests_list.append({
+                'insertText': {'location': {'index': idx}, 'text': header}
+            })
+            idx += len(header)
+
+            # 제목
+            title_text = f"제목: {ver_title}\n\n"
+            requests_list.append({
+                'insertText': {'location': {'index': idx}, 'text': title_text}
+            })
+            idx += len(title_text)
+
+            # 태그
+            if tags:
+                tags_text = f"태그: {', '.join(tags)}\n\n"
+                requests_list.append({
+                    'insertText': {'location': {'index': idx}, 'text': tags_text}
+                })
+                idx += len(tags_text)
+
+            # 본문
+            body_text = f"{ver_content}\n\n"
+            requests_list.append({
+                'insertText': {'location': {'index': idx}, 'text': body_text}
+            })
+            idx += len(body_text)
+
+    elif data_type == 'dna':
+        doc_title = f"[DNA 분석] {data.get('blog_id', item_id)}"
+        text = json.dumps(data, ensure_ascii=False, indent=2)
+        requests_list.append({
+            'insertText': {'location': {'index': idx}, 'text': text}
+        })
+
+    elif data_type == 'business':
+        bp = data.get('business_personality', {})
+        doc_title = f"[업무성격] {bp.get('type', item_id)}"
+        text = json.dumps(data, ensure_ascii=False, indent=2)
+        requests_list.append({
+            'insertText': {'location': {'index': idx}, 'text': text}
+        })
+
+    elif data_type == 'personas':
+        doc_title = f"[페르소나] {data.get('client_name', data.get('client_id', item_id))}"
+        text = json.dumps(data, ensure_ascii=False, indent=2)
+        requests_list.append({
+            'insertText': {'location': {'index': idx}, 'text': text}
+        })
+
+    else:
+        doc_title = f"내보내기 - {item_id}"
+        text = json.dumps(data, ensure_ascii=False, indent=2)
+        requests_list.append({
+            'insertText': {'location': {'index': idx}, 'text': text}
+        })
+
+    return doc_title, requests_list
 
 
 # ============================================================
@@ -1217,3 +1740,4 @@ if __name__ == '__main__':
     print("=" * 60)
     
     app.run(host='0.0.0.0', port=5050, debug=True)
+

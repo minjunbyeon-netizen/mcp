@@ -2,47 +2,33 @@
 const API_BASE = '/api';
 
 // ============================================================
-// Step & Sub-tab Navigation
+// Sidebar Navigation
 // ============================================================
 
-const stepBtns = document.querySelectorAll('.step-btn');
-const stepPanels = document.querySelectorAll('.step-panel');
+const navItems = document.querySelectorAll('.nav-item');
+const contentPanels = document.querySelectorAll('.content-panel');
 
-// Step switching
-stepBtns.forEach(btn => {
-    btn.addEventListener('click', () => {
-        const stepId = btn.dataset.step;
+navItems.forEach(item => {
+    item.addEventListener('click', () => {
+        const panelId = item.dataset.panel;
 
-        stepBtns.forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
+        navItems.forEach(n => n.classList.remove('active'));
+        item.classList.add('active');
 
-        stepPanels.forEach(panel => {
+        contentPanels.forEach(panel => {
             panel.classList.remove('active');
-            if (panel.id === stepId) {
+            if (panel.id === panelId) {
                 panel.classList.add('active');
             }
         });
-    });
-});
 
-// Sub-tab switching
-document.querySelectorAll('.sub-tab-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-        const subtabId = btn.dataset.subtab;
-        const parentNav = btn.closest('.sub-tab-nav');
-        const parentPanel = btn.closest('.step-panel');
-
-        // Update buttons within the same nav
-        parentNav.querySelectorAll('.sub-tab-btn').forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-
-        // Update panels within the same step
-        parentPanel.querySelectorAll('.sub-tab-panel').forEach(p => {
-            p.classList.remove('active');
-            if (p.id === subtabId) {
-                p.classList.add('active');
-            }
-        });
+        // 마이페이지 패널 진입시 데이터 로드
+        if (panelId === 'my-personas') loadMyPersonas();
+        if (panelId === 'my-blogs') loadMyBlogs();
+        if (panelId === 'my-dna') loadMyDna();
+        if (panelId === 'my-business') loadMyBusiness();
+        // 블로그 작성 패널 진입시 최근 작성 글 로드
+        if (panelId === 's2-blog-write') loadRecentBlogs();
     });
 });
 
@@ -311,9 +297,14 @@ async function loadCollections() {
 
         const defaultOpt = '<option value="">컬렉션을 선택하세요</option>';
 
-        ['status-collection-select', 'biz-collection-select'].forEach(id => {
+        ['status-collection-select', 'biz-collection-select', 'blog-dna-select'].forEach(id => {
             const el = document.getElementById(id);
-            if (el) el.innerHTML = defaultOpt + optionsHTML;
+            if (el) {
+                const defOpt = id === 'blog-dna-select'
+                    ? '<option value="">DNA 미적용</option>'
+                    : defaultOpt;
+                el.innerHTML = defOpt + optionsHTML;
+            }
         });
 
         // Populate collection list in 1-2 tab
@@ -437,11 +428,11 @@ document.getElementById('persona-form')?.addEventListener('submit', async (e) =>
             <ul>${(result.key_characteristics || []).map(c => `<li>${c}</li>`).join('')}</ul>
             
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 20px;">
-                <div style="background: rgba(248, 81, 73, 0.1); border: 1px solid var(--accent-danger); padding: 16px; border-radius: 8px;">
+                <div style="background: rgba(198, 40, 40, 0.06); border: 1px solid var(--accent-danger); padding: 16px; border-radius: 8px;">
                     <h5 style="color: var(--accent-danger); margin-bottom: 8px;">금지 표현</h5>
                     <ul style="font-size: 0.9rem;">${(result.red_flags || []).map(r => `<li>${r}</li>`).join('')}</ul>
                 </div>
-                <div style="background: rgba(63, 185, 80, 0.1); border: 1px solid var(--accent-success); padding: 16px; border-radius: 8px;">
+                <div style="background: rgba(46, 125, 50, 0.06); border: 1px solid var(--accent-success); padding: 16px; border-radius: 8px;">
                     <h5 style="color: var(--accent-success); margin-bottom: 8px;">권장 표현</h5>
                     <ul style="font-size: 0.9rem;">${(result.green_flags || []).map(g => `<li>${g}</li>`).join('')}</ul>
                 </div>
@@ -548,58 +539,43 @@ document.getElementById('blog-status-form')?.addEventListener('submit', async (e
     try {
         const result = await apiRequest('/blog/analyze-status', 'POST', { folder });
 
-        const qualityScore = result.content_quality?.score || 0;
-        const qualityColor = qualityScore >= 7 ? 'var(--accent-success)' : qualityScore >= 4 ? 'var(--accent-warning)' : 'var(--accent-danger)';
+        // 10가지 카테고리 렌더링 헬퍼
+        function renderCategory(cat) {
+            if (!cat) return '';
+            const entries = Object.entries(cat).filter(([k]) => k !== 'title');
+            const itemsHTML = entries.map(([key, val]) => {
+                const label = key.replace(/_/g, ' ');
+                if (Array.isArray(val)) {
+                    if (key === 'examples' || key.endsWith('_examples')) {
+                        return `<div style="margin-top: 8px;"><div style="color: var(--text-muted); font-size: 0.8rem; margin-bottom: 4px;">${label}</div>${val.map(v => `<div style="background: var(--bg-primary); padding: 8px 12px; border-left: 3px solid var(--accent-primary); margin: 4px 0; font-size: 0.85rem; font-style: italic;">"${v}"</div>`).join('')}</div>`;
+                    }
+                    return `<div style="margin-top: 6px;"><div style="color: var(--text-muted); font-size: 0.8rem;">${label}</div><div style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px;">${val.map(v => `<span style="background: var(--bg-primary); padding: 3px 10px; border-radius: 12px; font-size: 0.82rem; border: 1px solid var(--border-color);">${v}</span>`).join('')}</div></div>`;
+                }
+                return `<div style="margin-top: 6px;"><span style="color: var(--text-muted); font-size: 0.8rem;">${label}: </span><span style="font-size: 0.9rem;">${val}</span></div>`;
+            }).join('');
+            return `<div style="background: var(--bg-tertiary); padding: 16px; border-radius: 10px; margin-bottom: 12px;">
+                <h4 style="color: var(--accent-primary); margin-bottom: 10px; font-size: 1rem;">${cat.title || ''}</h4>
+                ${itemsHTML}
+            </div>`;
+        }
+
+        const categories = [
+            result.c1_template_structure,
+            result.c2_tone_mood,
+            result.c3_speech_style,
+            result.c4_rhetoric,
+            result.c5_frequent_expressions,
+            result.c6_sentence_patterns,
+            result.c7_vocabulary,
+            result.c8_paragraph_composition,
+            result.c9_opening_closing,
+            result.c10_visual_formatting
+        ];
 
         const html = `
-            <h3>블로그 상태 분석 리포트</h3>
-            <p style="color: var(--text-muted); margin-bottom: 16px;">${result.blog_id} | 분석 글 수: ${result.post_count}개</p>
-            
-            <div style="background: var(--bg-tertiary); padding: 16px; border-radius: 8px; margin-bottom: 16px;">
-                <h4 style="margin-bottom: 8px;">블로그 개요</h4>
-                <p>${result.blog_overview}</p>
-            </div>
-
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px;">
-                <div style="background: var(--bg-tertiary); padding: 12px; border-radius: 8px;">
-                    <div style="color: var(--text-muted); font-size: 0.85rem;">글쓰기 톤</div>
-                    <div style="font-weight: 500; margin-top: 4px;">${result.writing_tone}</div>
-                </div>
-                <div style="background: var(--bg-tertiary); padding: 12px; border-radius: 8px;">
-                    <div style="color: var(--text-muted); font-size: 0.85rem;">게시 패턴</div>
-                    <div style="font-weight: 500; margin-top: 4px;">${result.posting_pattern}</div>
-                </div>
-            </div>
-
-            <div style="margin-bottom: 16px;">
-                <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 8px;">
-                    <h4>콘텐츠 품질</h4>
-                    <span style="font-size: 1.2rem; font-weight: 700; color: ${qualityColor};">${qualityScore}/10</span>
-                </div>
-                <p style="font-size: 0.9rem;">${result.content_quality?.assessment || ''}</p>
-            </div>
-
-            <h4>주요 주제</h4>
-            <div style="display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 16px;">
-                ${(result.main_topics || []).map(t => `<span style="background: var(--accent-blue); color: white; padding: 4px 12px; border-radius: 16px; font-size: 0.85rem;">${t}</span>`).join('')}
-            </div>
-
-            <h4>키워드 전략</h4>
-            <p style="font-size: 0.9rem; margin-bottom: 16px;">${result.keyword_strategy}</p>
-
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px;">
-                <div style="background: rgba(63, 185, 80, 0.1); border: 1px solid var(--accent-success); padding: 16px; border-radius: 8px;">
-                    <h5 style="color: var(--accent-success); margin-bottom: 8px;">강점</h5>
-                    <ul style="font-size: 0.9rem;">${(result.strengths || []).map(s => `<li>${s}</li>`).join('')}</ul>
-                </div>
-                <div style="background: rgba(248, 81, 73, 0.1); border: 1px solid var(--accent-danger); padding: 16px; border-radius: 8px;">
-                    <h5 style="color: var(--accent-danger); margin-bottom: 8px;">약점/개선점</h5>
-                    <ul style="font-size: 0.9rem;">${(result.weaknesses || []).map(w => `<li>${w}</li>`).join('')}</ul>
-                </div>
-            </div>
-
-            <h4 style="margin-top: 20px;">추천 전략</h4>
-            <ol style="font-size: 0.9rem;">${(result.recommendations || []).map(r => `<li>${r}</li>`).join('')}</ol>
+            <h3>블로그 글쓰기 DNA 분석 리포트</h3>
+            <p style="color: var(--text-muted); margin-bottom: 20px;">${result.blog_id} | 분석 글 수: ${result.post_count}개 | 10가지 카테고리</p>
+            ${categories.map((cat, i) => renderCategory(cat)).join('')}
         `;
 
         showResult(resultBox, html);
@@ -646,7 +622,7 @@ document.getElementById('business-form')?.addEventListener('submit', async (e) =
         const html = `
             <h3>업무적 성격 분석 리포트</h3>
             
-            <div style="background: linear-gradient(135deg, rgba(102,126,234,0.15), rgba(118,75,162,0.15)); padding: 20px; border-radius: 12px; margin: 16px 0;">
+            <div style="background: rgba(0,0,0,0.03); border: 1px solid var(--border-color); padding: 20px; border-radius: 12px; margin: 16px 0;">
                 <div style="font-size: 1.3rem; font-weight: 700; color: var(--accent-primary);">${bp.type || ''}</div>
                 <p style="margin-top: 8px; line-height: 1.6;">${bp.description || ''}</p>
             </div>
@@ -697,7 +673,7 @@ document.getElementById('business-form')?.addEventListener('submit', async (e) =
             <h4>에이전시 대응 전략</h4>
             <ol style="font-size: 0.9rem;">${(result.agency_recommendations || []).map(r => `<li style="margin-bottom: 6px;">${r}</li>`).join('')}</ol>
 
-            <div style="background: rgba(248, 81, 73, 0.1); border: 1px solid var(--accent-danger); padding: 16px; border-radius: 8px; margin-top: 16px;">
+            <div style="background: rgba(198, 40, 40, 0.06); border: 1px solid var(--accent-danger); padding: 16px; border-radius: 8px; margin-top: 16px;">
                 <h5 style="color: var(--accent-danger); margin-bottom: 8px;">주의 사항</h5>
                 <ul style="font-size: 0.9rem;">${(result.risk_factors || []).map(r => `<li>${r}</li>`).join('')}</ul>
             </div>
@@ -746,6 +722,12 @@ document.getElementById('blog-form')?.addEventListener('submit', async (e) => {
     formData.append('client_id', personaId);
     formData.append('keywords', document.getElementById('keywords').value);
 
+    // 블로그 DNA 선택 (선택사항)
+    const blogDnaFolder = document.getElementById('blog-dna-select')?.value;
+    if (blogDnaFolder) {
+        formData.append('blog_dna_folder', blogDnaFolder);
+    }
+
     if (hasFile) {
         formData.append('file', pressFileInput.files[0]);
     } else {
@@ -757,23 +739,67 @@ document.getElementById('blog-form')?.addEventListener('submit', async (e) => {
     try {
         const result = await apiRequest('/blog/generate', 'POST', formData, true);
 
-        const html = `
-            <h3>블로그 글 생성 완료</h3>
-            <div class="blog-preview">
-                <h1>${result.title}</h1>
-                <div class="content">${result.content.replace(/\n/g, '<br>')}</div>
-                <div class="tags">
-                    ${result.tags.map(tag => `<span class="tag">#${tag}</span>`).join('')}
+        const versions = result.versions || [];
+        if (versions.length === 0) {
+            showError(resultBox, 'AI가 버전을 생성하지 못했습니다.');
+            return;
+        }
+
+        // 버전별 색상/아이콘
+        const versionStyles = {
+            formal: { color: '#1a1a1a', icon: '', bg: 'rgba(0,0,0,0.05)' },
+            balanced: { color: '#555555', icon: '', bg: 'rgba(0,0,0,0.03)' },
+            casual: { color: '#777777', icon: '', bg: 'rgba(0,0,0,0.02)' }
+        };
+
+        // 탭 버튼 생성
+        const tabsHTML = versions.map((v, i) => {
+            const style = versionStyles[v.version_type] || versionStyles.balanced;
+            return `<button class="version-tab ${i === 0 ? 'active' : ''}" data-version-idx="${i}" 
+                style="--tab-color: ${style.color}; --tab-bg: ${style.bg}">
+                <span class="version-tab-icon">${style.icon}</span>
+                <span class="version-tab-label">${v.version_label}</span>
+            </button>`;
+        }).join('');
+
+        // 각 버전 컨텐츠
+        const contentsHTML = versions.map((v, i) => `
+            <div class="version-content ${i === 0 ? 'active' : ''}" data-version-idx="${i}">
+                <div class="blog-preview">
+                    <h1>${v.title}</h1>
+                    <div class="content">${v.content.replace(/\n/g, '<br>')}</div>
+                    <div class="tags">
+                        ${(v.tags || []).map(tag => `<span class="tag">#${tag}</span>`).join('')}
+                    </div>
                 </div>
             </div>
+        `).join('');
+
+        const html = `
+            <h3>블로그 3가지 버전 생성 완료</h3>
+            <p style="color: var(--text-muted); margin-bottom: 16px;">동일한 내용을 3가지 톤으로 작성했습니다. 탭을 클릭하여 비교해보세요.</p>
+            <div class="version-tabs">${tabsHTML}</div>
+            <div class="version-panels">${contentsHTML}</div>
             <div style="margin-top: 16px; color: var(--text-secondary);">
-                <p><strong>저장 위치:</strong></p>
-                <code>${result.md_path}</code><br>
-                <code>${result.docx_path}</code>
+                <p><strong>저장 위치:</strong> <code>${result.output_dir}</code></p>
             </div>
         `;
 
         showResult(resultBox, html);
+
+        // 탭 클릭 이벤트
+        resultBox.querySelectorAll('.version-tab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                const idx = tab.dataset.versionIdx;
+                resultBox.querySelectorAll('.version-tab').forEach(t => t.classList.remove('active'));
+                resultBox.querySelectorAll('.version-content').forEach(c => c.classList.remove('active'));
+                tab.classList.add('active');
+                resultBox.querySelector(`.version-content[data-version-idx="${idx}"]`).classList.add('active');
+            });
+        });
+
+        // 최근 작성한 글 목록 갱신
+        loadRecentBlogs();
 
     } catch (error) {
         showError(resultBox, error.message);
@@ -854,6 +880,365 @@ document.getElementById('refresh-personas')?.addEventListener('click', () => loa
 document.getElementById('refresh-biz-personas')?.addEventListener('click', () => loadPersonas());
 document.getElementById('refresh-collections-status')?.addEventListener('click', () => loadCollections());
 document.getElementById('refresh-biz-collections')?.addEventListener('click', () => loadCollections());
+document.getElementById('refresh-blog-dna')?.addEventListener('click', () => loadCollections());
+
+// ============================================================
+// My Page: Data Management
+// ============================================================
+
+function formatDate(isoStr) {
+    if (!isoStr) return '-';
+    try {
+        const d = new Date(isoStr);
+        return d.toLocaleDateString('ko-KR') + ' ' + d.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
+    } catch { return isoStr; }
+}
+
+// --- 페르소나 관리 ---
+async function loadMyPersonas() {
+    try {
+        const res = await fetch(`${API_BASE}/mypage/personas`);
+        const data = await res.json();
+        const tbody = document.querySelector('#my-personas-table tbody');
+        const empty = document.getElementById('my-personas-empty');
+        tbody.innerHTML = '';
+        if (!data.items || data.items.length === 0) {
+            document.getElementById('my-personas-table').style.display = 'none';
+            empty.style.display = 'block';
+            return;
+        }
+        document.getElementById('my-personas-table').style.display = 'table';
+        empty.style.display = 'none';
+        data.items.forEach(item => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td>${item.client_name || item.id}</td>
+                <td>${item.organization || '-'}</td>
+                <td>${formatDate(item.created_at)}</td>
+                <td class="td-actions">
+                    <button class="btn-view" onclick="viewDetail('personas','${item.id}','페르소나 상세')">상세</button>
+                    <button class="btn-delete" onclick="deleteItem('personas','${item.id}',this)">삭제</button>
+                </td>`;
+            tbody.appendChild(tr);
+        });
+    } catch (e) { console.error('페르소나 목록 로드 실패:', e); }
+}
+
+// --- 블로그 글 관리 ---
+async function loadMyBlogs() {
+    try {
+        const res = await fetch(`${API_BASE}/mypage/blogs`);
+        const data = await res.json();
+        const tbody = document.querySelector('#my-blogs-table tbody');
+        const empty = document.getElementById('my-blogs-empty');
+        tbody.innerHTML = '';
+        if (!data.items || data.items.length === 0) {
+            document.getElementById('my-blogs-table').style.display = 'none';
+            empty.style.display = 'block';
+            return;
+        }
+        document.getElementById('my-blogs-table').style.display = 'table';
+        empty.style.display = 'none';
+        data.items.forEach(item => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td>${item.title || '(제목없음)'}</td>
+                <td>${item.client_id || '-'}</td>
+                <td>${item.version_count || 0}개</td>
+                <td>${formatDate(item.created_at)}</td>
+                <td class="td-actions">
+                    <button class="btn-view" onclick="viewDetail('blogs','${item.id}','블로그 상세')">상세</button>
+                    <button class="btn-view" onclick="exportToGoogleDocs('blogs','${item.id}')" style="background:rgba(52,168,83,0.15);color:#34a853;">Docs</button>
+                    <button class="btn-delete" onclick="deleteItem('blogs','${item.id}',this)">삭제</button>
+                </td>`;
+            tbody.appendChild(tr);
+        });
+    } catch (e) { console.error('블로그 목록 로드 실패:', e); }
+}
+
+// --- DNA 관리 ---
+async function loadMyDna() {
+    try {
+        const res = await fetch(`${API_BASE}/mypage/dna`);
+        const data = await res.json();
+        const tbody = document.querySelector('#my-dna-table tbody');
+        const empty = document.getElementById('my-dna-empty');
+        tbody.innerHTML = '';
+        if (!data.items || data.items.length === 0) {
+            document.getElementById('my-dna-table').style.display = 'none';
+            empty.style.display = 'block';
+            return;
+        }
+        document.getElementById('my-dna-table').style.display = 'table';
+        empty.style.display = 'none';
+        data.items.forEach(item => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td>${item.blog_id || '-'}</td>
+                <td>${item.folder || '-'}</td>
+                <td>${item.post_count || 0}개</td>
+                <td>${formatDate(item.created_at)}</td>
+                <td class="td-actions">
+                    <button class="btn-view" onclick="viewDetail('dna','${item.id}','DNA 분석 상세')">상세</button>
+                    <button class="btn-delete" onclick="deleteItem('dna','${item.id}',this)">삭제</button>
+                </td>`;
+            tbody.appendChild(tr);
+        });
+    } catch (e) { console.error('DNA 목록 로드 실패:', e); }
+}
+
+// --- 업무적 성격 관리 ---
+async function loadMyBusiness() {
+    try {
+        const res = await fetch(`${API_BASE}/mypage/business`);
+        const data = await res.json();
+        const tbody = document.querySelector('#my-business-table tbody');
+        const empty = document.getElementById('my-business-empty');
+        tbody.innerHTML = '';
+        if (!data.items || data.items.length === 0) {
+            document.getElementById('my-business-table').style.display = 'none';
+            empty.style.display = 'block';
+            return;
+        }
+        document.getElementById('my-business-table').style.display = 'table';
+        empty.style.display = 'none';
+        data.items.forEach(item => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td>${item.type || '-'}</td>
+                <td>${item.client_id || '-'}</td>
+                <td>${item.blog_folder || '-'}</td>
+                <td>${formatDate(item.created_at)}</td>
+                <td class="td-actions">
+                    <button class="btn-view" onclick="viewDetail('business','${item.id}','업무적 성격 상세')">상세</button>
+                    <button class="btn-delete" onclick="deleteItem('business','${item.id}',this)">삭제</button>
+                </td>`;
+            tbody.appendChild(tr);
+        });
+    } catch (e) { console.error('업무적 성격 목록 로드 실패:', e); }
+}
+
+// --- 상세 보기 모달 ---
+let _currentDetailType = '';
+let _currentDetailId = '';
+
+async function viewDetail(type, id, title) {
+    const modal = document.getElementById('detail-modal');
+    const modalTitle = document.getElementById('detail-modal-title');
+    const modalBody = document.getElementById('detail-modal-body');
+
+    _currentDetailType = type;
+    _currentDetailId = id;
+    modalTitle.textContent = title;
+    modalBody.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:40px;">로딩 중...</div>';
+    modal.classList.remove('hidden');
+
+    // Google Docs 내보내기 버튼 표시
+    const exportBtn = document.getElementById('detail-modal-export');
+    if (exportBtn) exportBtn.style.display = 'inline-flex';
+
+    try {
+        const res = await fetch(`${API_BASE}/mypage/${type}/${id}`);
+        const data = await res.json();
+        modalBody.innerHTML = renderDetailContent(type, data);
+    } catch (e) {
+        modalBody.innerHTML = `<div class="error-message">데이터 로드 실패: ${e.message}</div>`;
+    }
+}
+
+function renderDetailContent(type, data) {
+    if (type === 'personas') {
+        const pa = data.persona_analysis || {};
+        let html = `<div class="detail-section">
+            <div class="detail-section-title">기본 정보</div>
+            <div class="detail-field"><span class="detail-field-label">이름</span><span class="detail-field-value">${data.client_name || data.client_id}</span></div>
+            <div class="detail-field"><span class="detail-field-label">소속</span><span class="detail-field-value">${data.organization || '-'}</span></div>
+            <div class="detail-field"><span class="detail-field-label">생성일</span><span class="detail-field-value">${formatDate(data.created_at)}</span></div>
+        </div>`;
+        html += `<div class="detail-section">
+            <div class="detail-section-title">페르소나 분석 결과</div>
+            <div class="detail-text-block">${JSON.stringify(pa, null, 2)}</div>
+        </div>`;
+        return html;
+    }
+    if (type === 'blogs') {
+        const versions = data.versions || [];
+        let html = `<div class="detail-section">
+            <div class="detail-section-title">기본 정보</div>
+            <div class="detail-field"><span class="detail-field-label">출력 ID</span><span class="detail-field-value">${data.output_id || '-'}</span></div>
+            <div class="detail-field"><span class="detail-field-label">페르소나</span><span class="detail-field-value">${data.client_id || '-'}</span></div>
+            <div class="detail-field"><span class="detail-field-label">생성일</span><span class="detail-field-value">${formatDate(data.created_at)}</span></div>
+        </div>`;
+        versions.forEach(ver => {
+            html += `<div class="detail-section">
+                <div class="detail-section-title">${ver.version_label || ver.version_type} 버전</div>
+                <div class="detail-field"><span class="detail-field-label">제목</span><span class="detail-field-value">${ver.title || ''}</span></div>
+                <div class="detail-field"><span class="detail-field-label">태그</span><span class="detail-field-value"><span class="detail-tags">${(ver.tags || []).map(t => `<span class="detail-tag">${t}</span>`).join('')}</span></span></div>
+                <div class="detail-text-block">${ver.content || ''}</div>
+            </div>`;
+        });
+        return html;
+    }
+    if (type === 'dna') {
+        let html = `<div class="detail-section">
+            <div class="detail-section-title">분석 정보</div>
+            <div class="detail-field"><span class="detail-field-label">블로그 ID</span><span class="detail-field-value">${data.blog_id || '-'}</span></div>
+            <div class="detail-field"><span class="detail-field-label">컬렉션</span><span class="detail-field-value">${data.folder || '-'}</span></div>
+            <div class="detail-field"><span class="detail-field-label">분석글수</span><span class="detail-field-value">${data.post_count || 0}개</span></div>
+            <div class="detail-field"><span class="detail-field-label">생성일</span><span class="detail-field-value">${formatDate(data.created_at)}</span></div>
+        </div>`;
+        // DNA 카테고리별 표시
+        const categories = Object.keys(data).filter(k => k.startsWith('c'));
+        categories.forEach(key => {
+            const cat = data[key];
+            if (cat && typeof cat === 'object' && cat.title) {
+                html += `<div class="detail-section">
+                    <div class="detail-section-title">${cat.title}</div>
+                    <div class="detail-text-block">${JSON.stringify(cat, null, 2)}</div>
+                </div>`;
+            }
+        });
+        return html;
+    }
+    if (type === 'business') {
+        const bp = data.business_personality || {};
+        const cs = data.communication_style || {};
+        const cp = data.content_preferences || {};
+        const wa = data.work_approach || {};
+        let html = `<div class="detail-section">
+            <div class="detail-section-title">업무적 성격</div>
+            <div class="detail-field"><span class="detail-field-label">유형</span><span class="detail-field-value">${bp.type || '-'}</span></div>
+            <div class="detail-field"><span class="detail-field-label">설명</span><span class="detail-field-value">${bp.description || '-'}</span></div>
+        </div>`;
+        html += `<div class="detail-section">
+            <div class="detail-section-title">커뮤니케이션 스타일</div>
+            <div class="detail-field"><span class="detail-field-label">선호 방식</span><span class="detail-field-value">${cs.preferred || '-'}</span></div>
+            <div class="detail-field"><span class="detail-field-label">응답 속도</span><span class="detail-field-value">${cs.response_speed || '-'}</span></div>
+            <div class="detail-field"><span class="detail-field-label">디테일</span><span class="detail-field-value">${cs.detail_level || '-'}</span></div>
+        </div>`;
+        html += `<div class="detail-section">
+            <div class="detail-section-title">콘텐츠 선호</div>
+            <div class="detail-field"><span class="detail-field-label">톤</span><span class="detail-field-value">${cp.tone || '-'}</span></div>
+            <div class="detail-field"><span class="detail-field-label">스타일</span><span class="detail-field-value">${cp.style || '-'}</span></div>
+            <div class="detail-field"><span class="detail-field-label">관심 토픽</span><span class="detail-field-value">${(cp.topics || []).join(', ')}</span></div>
+        </div>`;
+        html += `<div class="detail-section">
+            <div class="detail-section-title">업무 접근 방식</div>
+            <div class="detail-field"><span class="detail-field-label">의사결정</span><span class="detail-field-value">${wa.decision_style || '-'}</span></div>
+            <div class="detail-field"><span class="detail-field-label">피드백 패턴</span><span class="detail-field-value">${wa.feedback_pattern || '-'}</span></div>
+            <div class="detail-field"><span class="detail-field-label">우선시</span><span class="detail-field-value">${wa.priority_focus || '-'}</span></div>
+        </div>`;
+        if (data.agency_recommendations) {
+            html += `<div class="detail-section">
+                <div class="detail-section-title">대응 전략</div>
+                ${data.agency_recommendations.map(r => `<div style="padding:4px 0;">• ${r}</div>`).join('')}
+            </div>`;
+        }
+        if (data.summary) {
+            html += `<div class="detail-section">
+                <div class="detail-section-title">요약</div>
+                <div>${data.summary}</div>
+            </div>`;
+        }
+        return html;
+    }
+    return `<div class="detail-text-block">${JSON.stringify(data, null, 2)}</div>`;
+}
+
+// --- 항목 삭제 ---
+async function deleteItem(type, id, btnEl) {
+    if (!confirm('정말 삭제하시겠습니까?')) return;
+    try {
+        const res = await fetch(`${API_BASE}/mypage/${type}/${id}`, { method: 'DELETE' });
+        const data = await res.json();
+        if (data.success) {
+            // 해당 탭 리로드
+            if (type === 'personas') loadMyPersonas();
+            else if (type === 'blogs') loadMyBlogs();
+            else if (type === 'dna') loadMyDna();
+            else if (type === 'business') loadMyBusiness();
+        } else {
+            alert(data.error || '삭제 실패');
+        }
+    } catch (e) { alert('삭제 실패: ' + e.message); }
+}
+
+// --- 모달 닫기 ---
+document.getElementById('detail-modal-close')?.addEventListener('click', () => {
+    document.getElementById('detail-modal').classList.add('hidden');
+});
+document.querySelector('.detail-modal-overlay')?.addEventListener('click', () => {
+    document.getElementById('detail-modal').classList.add('hidden');
+});
+
+// --- Google Docs 내보내기 ---
+async function exportToGoogleDocs(type, id) {
+    const btn = event?.target;
+    const origText = btn ? btn.textContent : '';
+    if (btn) { btn.textContent = '내보내는 중...'; btn.disabled = true; }
+
+    try {
+        const res = await fetch(`${API_BASE}/export/google-docs`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ type, id })
+        });
+        const data = await res.json();
+
+        if (data.success) {
+            window.open(data.doc_url, '_blank');
+            if (btn) btn.textContent = '완료!';
+            setTimeout(() => { if (btn) { btn.textContent = origText; btn.disabled = false; } }, 2000);
+        } else {
+            alert(data.error || 'Google Docs 내보내기 실패');
+            if (btn) { btn.textContent = origText; btn.disabled = false; }
+        }
+    } catch (e) {
+        alert('Google Docs 내보내기 실패: ' + e.message);
+        if (btn) { btn.textContent = origText; btn.disabled = false; }
+    }
+}
+
+// --- 모달 내 Google Docs 내보내기 버튼 ---
+document.getElementById('detail-modal-export')?.addEventListener('click', () => {
+    exportToGoogleDocs(_currentDetailType, _currentDetailId);
+});
+
+// --- 최근 작성한 글 (블로그 작성 패널 내) ---
+async function loadRecentBlogs() {
+    try {
+        const res = await fetch(`${API_BASE}/mypage/blogs`);
+        const data = await res.json();
+        const tbody = document.querySelector('#recent-blogs-table tbody');
+        const empty = document.getElementById('recent-blogs-empty');
+        if (!tbody) return;
+        tbody.innerHTML = '';
+        if (!data.items || data.items.length === 0) {
+            document.getElementById('recent-blogs-table').style.display = 'none';
+            empty.style.display = 'block';
+            return;
+        }
+        document.getElementById('recent-blogs-table').style.display = 'table';
+        empty.style.display = 'none';
+        // 최근 10건만 표시
+        const items = data.items.slice(0, 10);
+        items.forEach(item => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td>${item.title || '(제목없음)'}</td>
+                <td>${item.client_id || '-'}</td>
+                <td>${item.version_count || 0}개</td>
+                <td>${formatDate(item.created_at)}</td>
+                <td class="td-actions">
+                    <button class="btn-view" onclick="viewDetail('blogs','${item.id}','블로그 상세')">상세</button>
+                    <button class="btn-view" onclick="exportToGoogleDocs('blogs','${item.id}')" style="background:rgba(52,168,83,0.15);color:#34a853;">Docs</button>
+                    <button class="btn-delete" onclick="deleteItem('blogs','${item.id}',this); setTimeout(loadRecentBlogs,300);">삭제</button>
+                </td>`;
+            tbody.appendChild(tr);
+        });
+    } catch (e) { console.error('최근 블로그 로드 실패:', e); }
+}
+
 
 // ============================================================
 // Initialize
