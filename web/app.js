@@ -775,11 +775,29 @@ document.getElementById('blog-form')?.addEventListener('submit', async (e) => {
             </div>
         `).join('');
 
+        // AI 이미지 생성 버튼 (블로그 결과 하단)
+        const imageGenHTML = `
+            <div id="image-gen-section" style="margin-top: 24px; padding: 20px; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: var(--radius-md);">
+                <div style="display: flex; align-items: center; justify-content: space-between;">
+                    <div>
+                        <h4 style="margin: 0;">AI 이미지 생성</h4>
+                        <p style="color: var(--text-muted); font-size: 0.85rem; margin: 4px 0 0;">Google Imagen으로 본문에 맞는 이미지를 생성합니다</p>
+                    </div>
+                    <button id="btn-generate-images" class="btn btn-primary" style="padding: 10px 24px; font-size: 0.9rem;" onclick="generateBlogImages()">
+                        <span class="btn-text">이미지 생성</span>
+                        <span class="btn-loading">이미지 생성 중...</span>
+                    </button>
+                </div>
+                <div id="generated-images-area"></div>
+            </div>
+        `;
+
         const html = `
             <h3>블로그 3가지 버전 생성 완료</h3>
             <p style="color: var(--text-muted); margin-bottom: 16px;">동일한 내용을 3가지 톤으로 작성했습니다. 탭을 클릭하여 비교해보세요.</p>
             <div class="version-tabs">${tabsHTML}</div>
             <div class="version-panels">${contentsHTML}</div>
+            ${imageGenHTML}
             <div style="margin-top: 16px; color: var(--text-secondary);">
                 <p><strong>저장 위치:</strong> <code>${result.output_dir}</code></p>
             </div>
@@ -807,6 +825,147 @@ document.getElementById('blog-form')?.addEventListener('submit', async (e) => {
         setLoading(submitBtn, false);
     }
 });
+
+// ============================================================
+// 2-1-B: Blog Image Generation (On-Demand)
+// ============================================================
+
+// 생성된 블로그 본문을 저장 (이미지 생성 시 사용)
+let lastBlogContent = '';
+
+// 블로그 생성 성공 시 본문 저장 hook
+const origShowResult = window.showResult || function () { };
+
+async function generateBlogImages() {
+    const btn = document.getElementById('btn-generate-images');
+    const area = document.getElementById('generated-images-area');
+
+    if (!btn || !area) return;
+
+    // 현재 활성된 버전의 본문 가져오기
+    const activeContent = document.querySelector('.version-content.active .blog-preview .content');
+    if (!activeContent) {
+        area.innerHTML = '<p style="color: var(--accent-danger); margin-top: 12px;">블로그 본문을 찾을 수 없습니다.</p>';
+        return;
+    }
+
+    const blogText = activeContent.innerText || activeContent.textContent;
+    if (!blogText.trim()) {
+        area.innerHTML = '<p style="color: var(--accent-danger); margin-top: 12px;">블로그 본문이 비어있습니다.</p>';
+        return;
+    }
+
+    // 로딩 상태
+    setLoading(btn, true);
+    area.innerHTML = `
+        <div style="text-align: center; padding: 32px; color: var(--text-muted);">
+            <div style="font-size: 1rem; margin-bottom: 12px; font-weight: 600;">IMAGE</div>
+            <p>Google Imagen이 이미지를 생성하고 있습니다...</p>
+            <p style="font-size: 0.85rem;">약 15~30초 소요됩니다</p>
+        </div>
+    `;
+
+    try {
+        const result = await apiRequest('/blog/generate-images', 'POST', {
+            content: blogText
+        });
+
+        const images = result.images || [];
+
+        if (images.length === 0) {
+            area.innerHTML = '<p style="color: var(--accent-warning); margin-top: 12px;">이미지를 생성하지 못했습니다. 다시 시도해주세요.</p>';
+            return;
+        }
+
+        area.innerHTML = `
+            <div style="margin-top: 20px;">
+                <h4 style="margin-bottom: 12px;">생성된 이미지 (${images.length}장)</h4>
+                <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px;">
+                    ${images.map((img, idx) => `
+                        <div class="image-card" style="border-radius: 10px; overflow: hidden; border: 1px solid var(--border-color);">
+                            <img src="${img.data_uri}" alt="AI Generated ${idx + 1}" 
+                                 style="width: 100%; height: 180px; object-fit: cover; display: block; cursor: pointer;"
+                                 onclick="window.open(this.src, '_blank')" />
+                            <div style="padding: 10px; background: var(--bg-secondary);">
+                                <div style="font-size: 0.78rem; color: var(--text-muted); line-height: 1.4; margin-bottom: 8px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;">
+                                    ${img.prompt || ''}
+                                </div>
+                                <button onclick="insertImageToBlog('${img.data_uri.substring(0, 50)}...', ${idx})"
+                                        style="width: 100%; padding: 6px 12px; background: var(--gradient-primary); color: white; border: none; border-radius: 6px; font-size: 0.82rem; font-weight: 500; cursor: pointer; transition: var(--transition);"
+                                        id="insert-btn-${idx}">
+                                    본문에 삽입
+                                </button>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+        `;
+
+        // 이미지 data_uri를 전역에 저장 (삽입 시 사용)
+        window._generatedImages = images;
+        window._insertedImageCount = 0;
+
+    } catch (error) {
+        area.innerHTML = `<p style="color: var(--accent-danger); margin-top: 12px;">이미지 생성 실패: ${error.message}</p>`;
+    } finally {
+        setLoading(btn, false);
+    }
+}
+
+// 삽입된 이미지 수 카운터 (문단별 분산 삽입용)
+if (!window._insertedImageCount) window._insertedImageCount = 0;
+
+function insertImageToBlog(_, imgIdx) {
+    const images = window._generatedImages || [];
+    if (imgIdx >= images.length) return;
+
+    const img = images[imgIdx];
+    const activeContent = document.querySelector('.version-content.active .blog-preview .content');
+
+    if (!activeContent) {
+        alert('삽입할 블로그 본문을 찾을 수 없습니다.');
+        return;
+    }
+
+    // 문단(p, div, br 등) 요소들 수집
+    const paragraphs = Array.from(activeContent.children).filter(
+        el => !el.classList.contains('inserted-image')
+    );
+
+    // 이미지 요소 생성
+    const imgElement = document.createElement('div');
+    imgElement.className = 'inserted-image';
+    imgElement.style.cssText = 'text-align: center; margin: 20px 0;';
+    imgElement.innerHTML = `
+        <img src="${img.data_uri}" alt="AI Generated" 
+             style="max-width: 100%; height: auto; border-radius: 8px; box-shadow: 0 2px 12px rgba(0,0,0,0.08);" />
+    `;
+
+    // 문단 사이에 분산 삽입: 전체 문단을 균등 분할하여 배치
+    const totalImages = images.length;
+    const step = Math.max(1, Math.floor(paragraphs.length / (totalImages + 1)));
+    const targetIdx = Math.min(step * (window._insertedImageCount + 1), paragraphs.length) - 1;
+
+    if (targetIdx >= 0 && paragraphs[targetIdx]) {
+        // 해당 문단 뒤에 삽입
+        paragraphs[targetIdx].after(imgElement);
+    } else {
+        // fallback: 마지막에 추가
+        activeContent.appendChild(imgElement);
+    }
+
+    window._insertedImageCount++;
+
+    // 삽입 완료 표시
+    const btn = document.getElementById(`insert-btn-${imgIdx}`);
+    if (btn) {
+        btn.textContent = '삽입 완료';
+        btn.disabled = true;
+        btn.style.background = 'var(--accent-success)';
+        btn.style.opacity = '0.7';
+    }
+}
 
 // ============================================================
 // 2-2: Match Rate Tester Form

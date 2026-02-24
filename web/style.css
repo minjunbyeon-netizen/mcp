@@ -1173,3 +1173,32 @@ select {
     max-height: 300px;
     overflow-y: auto;
 }
+
+/* ============================================================
+   Image Recommendations Gallery
+   ============================================================ */
+
+.image-recommendations {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    padding: 20px;
+}
+
+.image-recommendations h4 {
+    color: var(--text-primary);
+    font-size: 1rem;
+}
+
+.image-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.1);
+}
+
+.image-card img {
+    transition: transform 0.3s ease;
+}
+
+.image-card:hover img {
+    transform: scale(1.05);
+}

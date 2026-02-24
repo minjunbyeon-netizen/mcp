@@ -34,12 +34,18 @@ load_dotenv(PROJECT_ROOT / "persona-manager" / ".env")
 
 # mcp_config.json에서 API 키 로드
 config_path = PROJECT_ROOT / "mcp_config.json"
-if config_path.exists() and not os.getenv("GEMINI_API_KEY"):
+if config_path.exists():
     with open(config_path, 'r', encoding='utf-8') as f:
         config = json.load(f)
-        api_key = config.get("mcpServers", {}).get("persona-manager", {}).get("env", {}).get("GEMINI_API_KEY")
-        if api_key:
-            os.environ["GEMINI_API_KEY"] = api_key
+        env_config = config.get("mcpServers", {}).get("persona-manager", {}).get("env", {})
+        if not os.getenv("GEMINI_API_KEY"):
+            api_key = env_config.get("GEMINI_API_KEY")
+            if api_key:
+                os.environ["GEMINI_API_KEY"] = api_key
+        if not os.getenv("UNSPLASH_ACCESS_KEY"):
+            unsplash_key = env_config.get("UNSPLASH_ACCESS_KEY")
+            if unsplash_key:
+                os.environ["UNSPLASH_ACCESS_KEY"] = unsplash_key
 
 # HWP 지원
 try:
@@ -908,6 +914,43 @@ def generate_blog():
         
     except Exception as e:
         return jsonify({"error": f"블로그 생성 실패: {str(e)}"}), 500
+
+
+# ============================================================
+# API: Blog Image Generation (On-Demand)
+# ============================================================
+
+@app.route('/api/blog/generate-images', methods=['POST'])
+@login_required
+def generate_blog_images():
+    """블로그 본문 기반 AI 이미지 생성 (On-Demand)"""
+    data = request.json
+    
+    blog_content = data.get("content", "")
+    if not blog_content or not blog_content.strip():
+        return jsonify({"error": "이미지 생성을 위한 블로그 본문이 필요합니다."}), 400
+    
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        return jsonify({"error": "GEMINI_API_KEY가 설정되지 않았습니다."}), 500
+    
+    try:
+        client = genai.Client(api_key=api_key)
+        
+        from image_service import generate_images_for_blog
+        images = generate_images_for_blog(blog_content, client, OUTPUT_DIR)
+        
+        if not images:
+            return jsonify({"error": "이미지를 생성하지 못했습니다. 다시 시도해주세요."}), 500
+        
+        return jsonify({
+            "success": True,
+            "images": images,
+            "count": len(images)
+        })
+        
+    except Exception as e:
+        return jsonify({"error": f"이미지 생성 실패: {str(e)}"}), 500
 
 
 # ============================================================
