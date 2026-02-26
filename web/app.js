@@ -721,6 +721,8 @@ document.getElementById('blog-form')?.addEventListener('submit', async (e) => {
     const formData = new FormData();
     formData.append('client_id', personaId);
     formData.append('keywords', document.getElementById('keywords').value);
+    formData.append('target_audience', document.getElementById('target-audience').value);
+    formData.append('content_angle', document.getElementById('content-angle').value);
 
     // 블로그 DNA 선택 (선택사항)
     const blogDnaFolder = document.getElementById('blog-dna-select')?.value;
@@ -763,17 +765,22 @@ document.getElementById('blog-form')?.addEventListener('submit', async (e) => {
         }).join('');
 
         // 각 버전 컨텐츠
-        const contentsHTML = versions.map((v, i) => `
-            <div class="version-content ${i === 0 ? 'active' : ''}" data-version-idx="${i}">
-                <div class="blog-preview">
-                    <h1>${v.title}</h1>
-                    <div class="content">${v.content.replace(/\n/g, '<br>')}</div>
-                    <div class="tags">
-                        ${(v.tags || []).map(tag => `<span class="tag">#${tag}</span>`).join('')}
+        const contentsHTML = versions.map((v, i) => {
+            const paragraphs = v.content.split('\n').filter(p => p.trim() !== '');
+            const contentHTML = paragraphs.map(p => `<p>${p}</p>`).join('');
+
+            return `
+                <div class="version-content ${i === 0 ? 'active' : ''}" data-version-idx="${i}">
+                    <div class="blog-preview">
+                        <h1>${v.title}</h1>
+                        <div class="content">${contentHTML}</div>
+                        <div class="tags">
+                            ${(v.tags || []).map(tag => `<span class="tag">#${tag}</span>`).join('')}
+                        </div>
                     </div>
                 </div>
-            </div>
-        `).join('');
+            `;
+        }).join('');
 
         // AI 이미지 생성 버튼 (블로그 결과 하단)
         const imageGenHTML = `
@@ -855,62 +862,188 @@ async function generateBlogImages() {
         return;
     }
 
-    // 로딩 상태
+    // 단계 1: 이미지 프롬프트 제안받기
     setLoading(btn, true);
     area.innerHTML = `
-        <div style="text-align: center; padding: 32px; color: var(--text-muted);">
-            <div style="font-size: 1rem; margin-bottom: 12px; font-weight: 600;">IMAGE</div>
-            <p>Google Imagen이 이미지를 생성하고 있습니다...</p>
-            <p style="font-size: 0.85rem;">약 15~30초 소요됩니다</p>
+        <div style="text-align: center; padding: 20px; color: var(--text-muted);">
+            <p>본문을 분석하여 이미지 프롬프트를 생성 중입니다...</p>
         </div>
     `;
 
     try {
-        const result = await apiRequest('/blog/generate-images', 'POST', {
-            content: blogText
+        const targetAudience = document.getElementById('target-audience')?.value || '일반 시민';
+        const contentAngle = document.getElementById('content-angle')?.value || '정보전달형';
+
+        const result = await apiRequest('/blog/suggest-prompts', 'POST', {
+            content: blogText,
+            target_audience: targetAudience,
+            content_angle: contentAngle
         });
 
-        const images = result.images || [];
-
-        if (images.length === 0) {
-            area.innerHTML = '<p style="color: var(--accent-warning); margin-top: 12px;">이미지를 생성하지 못했습니다. 다시 시도해주세요.</p>';
-            return;
+        const prompts = result.prompts || [];
+        if (prompts.length === 0) {
+            area.innerHTML = '<p style="color: var(--accent-warning); margin-top: 12px;">프롬프트를 생성하지 못했습니다. 직접 입력하시겠습니까?</p>';
+            prompts.push(""); // 빈 프롬프트 하나 추가
         }
 
+        // 프롬프트 편집 UI 렌더링
         area.innerHTML = `
-            <div style="margin-top: 20px;">
-                <h4 style="margin-bottom: 12px;">생성된 이미지 (${images.length}장)</h4>
-                <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px;">
-                    ${images.map((img, idx) => `
-                        <div class="image-card" style="border-radius: 10px; overflow: hidden; border: 1px solid var(--border-color);">
-                            <img src="${img.data_uri}" alt="AI Generated ${idx + 1}" 
-                                 style="width: 100%; height: 180px; object-fit: cover; display: block; cursor: pointer;"
-                                 onclick="window.open(this.src, '_blank')" />
-                            <div style="padding: 10px; background: var(--bg-secondary);">
-                                <div style="font-size: 0.78rem; color: var(--text-muted); line-height: 1.4; margin-bottom: 8px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;">
-                                    ${img.prompt || ''}
-                                </div>
-                                <button onclick="insertImageToBlog('${img.data_uri.substring(0, 50)}...', ${idx})"
-                                        style="width: 100%; padding: 6px 12px; background: var(--gradient-primary); color: white; border: none; border-radius: 6px; font-size: 0.82rem; font-weight: 500; cursor: pointer; transition: var(--transition);"
-                                        id="insert-btn-${idx}">
-                                    본문에 삽입
-                                </button>
-                            </div>
+            <div style="margin-top: 20px; padding: 16px; background: var(--bg-secondary); border-radius: 10px; border: 1px solid var(--border-color);">
+                <h5 style="margin-bottom: 12px;">이미지 생성 프롬프트 확인/수정</h5>
+                <p style="font-size: 0.82rem; color: var(--text-muted); margin-bottom: 12px;">AI가 추천한 영문 프롬프트입니다. 자유롭게 수정 후 생성하세요.</p>
+                
+                <div id="prompt-list" style="display: flex; flex-direction: column; gap: 12px;">
+                    ${prompts.map((p, i) => `
+                        <div style="display: flex; gap: 10px; align-items: flex-start;">
+                            <textarea id="prompt-input-${i}" class="form-control" style="flex: 1; height: 80px; font-size: 0.85rem; padding: 10px;" placeholder="영문 프롬프트를 입력하세요...">${p}</textarea>
+                            <button class="btn btn-primary" style="padding: 8px 16px; font-size: 0.82rem; min-width: 100px;" onclick="generateSingleImage(${i})">
+                                <span class="btn-text">이걸로 생성</span>
+                                <span class="btn-loading">...</span>
+                            </button>
                         </div>
                     `).join('')}
                 </div>
+                
+                <div style="margin-top: 16px; border-top: 1px solid var(--border-color); padding-top: 16px; display: flex; justify-content: space-between; align-items: center;">
+                    <button class="btn" style="background: rgba(0,0,0,0.05); font-size: 0.82rem;" onclick="addPromptInput()">+ 프롬프트 추가</button>
+                    <button id="btn-generate-all" class="btn btn-primary" style="padding: 10px 24px; font-weight: 600;" onclick="generateAllImages()">전체 생성하기</button>
+                </div>
             </div>
+            <div id="final-images-area"></div>
         `;
 
-        // 이미지 data_uri를 전역에 저장 (삽입 시 사용)
-        window._generatedImages = images;
-        window._insertedImageCount = 0;
+        window._suggestedPrompts = prompts;
 
     } catch (error) {
-        area.innerHTML = `<p style="color: var(--accent-danger); margin-top: 12px;">이미지 생성 실패: ${error.message}</p>`;
+        area.innerHTML = `<p style="color: var(--accent-danger); margin-top: 12px;">프롬프트 추천 실패: ${error.message}</p>`;
     } finally {
         setLoading(btn, false);
     }
+}
+
+// 프롬프트 입력창 추가
+function addPromptInput() {
+    const list = document.getElementById('prompt-list');
+    const idx = list.querySelectorAll('textarea').length;
+    const div = document.createElement('div');
+    div.style.cssText = 'display: flex; gap: 10px; align-items: flex-start;';
+    div.innerHTML = `
+        <textarea id="prompt-input-${idx}" class="form-control" style="flex: 1; height: 80px; font-size: 0.85rem; padding: 10px;" placeholder="영문 프롬프트를 입력하세요..."></textarea>
+        <button class="btn btn-primary" style="padding: 8px 16px; font-size: 0.82rem; min-width: 100px;" onclick="generateSingleImage(${idx})">
+            <span class="btn-text">이걸로 생성</span>
+            <span class="btn-loading">...</span>
+        </button>
+    `;
+    list.appendChild(div);
+}
+
+// 특정 프롬프트 하나로 이미지 생성
+async function generateSingleImage(idx) {
+    const textarea = document.getElementById(`prompt-input-${idx}`);
+    const prompt = textarea.value.trim();
+    if (!prompt) {
+        alert('프롬프트를 입력해주세요.');
+        return;
+    }
+
+    const btn = textarea.nextElementSibling;
+    const finalArea = document.getElementById('final-images-area');
+
+    setLoading(btn, true);
+
+    try {
+        const targetAudience = document.getElementById('target-audience')?.value || '일반 시민';
+        const contentAngle = document.getElementById('content-angle')?.value || '정보전달형';
+
+        const result = await apiRequest('/blog/generate-images', 'POST', {
+            prompts: [prompt],
+            target_audience: targetAudience,
+            content_angle: contentAngle
+        });
+
+        renderGeneratedImages(result.images, true);
+    } catch (e) {
+        alert('이미지 생성 실패: ' + e.message);
+    } finally {
+        setLoading(btn, false);
+    }
+}
+
+// 모든 프롬프트로 이미지 생성
+async function generateAllImages() {
+    const textareas = document.querySelectorAll('#prompt-list textarea');
+    const prompts = Array.from(textareas).map(t => t.value.trim()).filter(p => p !== "");
+
+    if (prompts.length === 0) {
+        alert('생성할 프롬프트가 없습니다.');
+        return;
+    }
+
+    const btn = document.getElementById('btn-generate-all');
+    const finalArea = document.getElementById('final-images-area');
+
+    setLoading(btn, true);
+    finalArea.innerHTML = '<div style="text-align: center; padding: 20px;">전체 이미지 생성 중... (잠시만 기다려주세요)</div>';
+
+    try {
+        const targetAudience = document.getElementById('target-audience')?.value || '일반 시민';
+        const contentAngle = document.getElementById('content-angle')?.value || '정보전달형';
+
+        const result = await apiRequest('/blog/generate-images', 'POST', {
+            prompts: prompts,
+            target_audience: targetAudience,
+            content_angle: contentAngle
+        });
+
+        renderGeneratedImages(result.images);
+    } catch (e) {
+        finalArea.innerHTML = `<p style="color: var(--accent-danger);">이미지 생성 실패: ${e.message}</p>`;
+    } finally {
+        setLoading(btn, false);
+    }
+}
+
+// 생성된 이미지 렌더링
+function renderGeneratedImages(images, append = false) {
+    const area = document.getElementById('final-images-area');
+    if (!area) return;
+
+    if (!window._allImages) window._allImages = [];
+
+    // 중복 제거 및 병합
+    if (append) {
+        window._allImages = [...window._allImages, ...images];
+    } else {
+        window._allImages = images;
+    }
+
+    area.innerHTML = `
+        <div style="margin-top: 24px;">
+            <h4 style="margin-bottom: 12px;">생성된 이미지 (${window._allImages.length}장)</h4>
+            <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px;">
+                ${window._allImages.map((img, idx) => `
+                    <div class="image-card" style="border-radius: 10px; overflow: hidden; border: 1px solid var(--border-color); background: white;">
+                        <img src="${img.data_uri}" alt="AI Generated ${idx + 1}" 
+                             style="width: 100%; height: 180px; object-fit: cover; display: block; cursor: pointer;"
+                             onclick="window.open(this.src, '_blank')" />
+                        <div style="padding: 10px; background: var(--bg-secondary);">
+                            <div style="font-size: 0.72rem; color: var(--text-muted); line-height: 1.4; margin-bottom: 8px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; font-family: monospace;">
+                                ${img.prompt || ''}
+                            </div>
+                            <button onclick="insertImageToBlog('${img.data_uri.substring(0, 50)}...', ${idx})"
+                                    style="width: 100%; padding: 6px 12px; background: var(--gradient-primary); color: white; border: none; border-radius: 6px; font-size: 0.82rem; font-weight: 500; cursor: pointer; transition: var(--transition);"
+                                    id="insert-btn-${idx}">
+                                본문에 삽입
+                            </button>
+                        </div>
+                    </div>
+                `).join('')}
+            </div>
+        </div>
+    `;
+
+    // 이미지 data_uri 정보 갱신
+    window._generatedImages = window._allImages;
 }
 
 // 삽입된 이미지 수 카운터 (문단별 분산 삽입용)
@@ -921,46 +1054,51 @@ function insertImageToBlog(_, imgIdx) {
     if (imgIdx >= images.length) return;
 
     const img = images[imgIdx];
-    const activeContent = document.querySelector('.version-content.active .blog-preview .content');
+    const contents = document.querySelectorAll('.version-content .blog-preview .content');
 
-    if (!activeContent) {
+    if (contents.length === 0) {
         alert('삽입할 블로그 본문을 찾을 수 없습니다.');
         return;
     }
 
-    // 문단(p, div, br 등) 요소들 수집
-    const paragraphs = Array.from(activeContent.children).filter(
-        el => !el.classList.contains('inserted-image')
-    );
+    contents.forEach((activeContent, vIdx) => {
+        // 문단(p, div, br 등) 요소들 수집
+        const paragraphs = Array.from(activeContent.children).filter(
+            el => !el.classList.contains('inserted-image')
+        );
 
-    // 이미지 요소 생성
-    const imgElement = document.createElement('div');
-    imgElement.className = 'inserted-image';
-    imgElement.style.cssText = 'text-align: center; margin: 20px 0;';
-    imgElement.innerHTML = `
-        <img src="${img.data_uri}" alt="AI Generated" 
-             style="max-width: 100%; height: auto; border-radius: 8px; box-shadow: 0 2px 12px rgba(0,0,0,0.08);" />
-    `;
+        // 이미지 요소 생성 (중앙 정렬 스타일 포함)
+        const imgElement = document.createElement('div');
+        imgElement.className = 'inserted-image';
+        imgElement.style.cssText = 'text-align: center; margin: 24px 0;';
+        imgElement.innerHTML = `
+            <img src="${img.data_uri}" alt="AI Generated" 
+                 style="max-width: 100%; height: auto; border-radius: 8px; box-shadow: 0 2px 12px rgba(0,0,0,0.08); display: block; margin: 0 auto;" />
+        `;
 
-    // 문단 사이에 분산 삽입: 전체 문단을 균등 분할하여 배치
-    const totalImages = images.length;
-    const step = Math.max(1, Math.floor(paragraphs.length / (totalImages + 1)));
-    const targetIdx = Math.min(step * (window._insertedImageCount + 1), paragraphs.length) - 1;
+        // 문단 사이에 분산 삽입: 전체 문단을 균등 분할하여 배치
+        const totalImages = images.length;
+        const currentBatchIdx = window._generatedImagesMap ? (window._generatedImagesMap[imgIdx] || 0) : 0;
 
-    if (targetIdx >= 0 && paragraphs[targetIdx]) {
-        // 해당 문단 뒤에 삽입
-        paragraphs[targetIdx].after(imgElement);
-    } else {
-        // fallback: 마지막에 추가
-        activeContent.appendChild(imgElement);
-    }
+        // 각 버전별로 동일한 상대적 위치에 삽입되도록 함
+        const step = Math.max(1, Math.floor(paragraphs.length / (totalImages + 1)));
+        const targetIdx = Math.min(step * (window._insertedImageCount + 1), paragraphs.length) - 1;
+
+        if (targetIdx >= 0 && paragraphs[targetIdx]) {
+            // 해당 문단 뒤에 삽입
+            paragraphs[targetIdx].after(imgElement);
+        } else {
+            // fallback: 마지막에 추가
+            activeContent.appendChild(imgElement);
+        }
+    });
 
     window._insertedImageCount++;
 
     // 삽입 완료 표시
     const btn = document.getElementById(`insert-btn-${imgIdx}`);
     if (btn) {
-        btn.textContent = '삽입 완료';
+        btn.textContent = '모든 버전에 삽입됨';
         btn.disabled = true;
         btn.style.background = 'var(--accent-success)';
         btn.style.opacity = '0.7';

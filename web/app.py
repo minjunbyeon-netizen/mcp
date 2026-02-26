@@ -17,6 +17,8 @@ from authlib.integrations.flask_client import OAuth
 from functools import wraps
 import pdfplumber
 import requests as http_requests
+import docx
+import fitz  # PyMuPDF
 
 # Windows 터미널 UTF-8 출력 설정
 if sys.platform == 'win32' and not isinstance(sys.stdout, io.TextIOWrapper):
@@ -121,11 +123,39 @@ def extract_text_from_file(file_path: Path) -> str:
     
     elif ext == '.pdf':
         text = ""
-        with pdfplumber.open(file_path) as pdf:
-            for page in pdf.pages:
-                page_text = page.extract_text()
-                if page_text:
-                    text += page_text + "\n"
+        # 1차 시도: PyMuPDF (fitz) - 빠르고 레이아웃 보존 우수
+        try:
+            doc = fitz.open(file_path)
+            for page in doc:
+                text += page.get_text("text") + "\n"
+            doc.close()
+        except Exception as e:
+            print(f"[RECOVERY] PyMuPDF 실패, pdfplumber 시도: {e}")
+            # 2차 시도: pdfplumber (기본 백업)
+            with pdfplumber.open(file_path) as pdf:
+                for page in pdf.pages:
+                    page_text = page.extract_text()
+                    if page_text:
+                        text += page_text + "\n"
+        return text
+    
+    elif ext == '.docx':
+        text = ""
+        try:
+            doc = docx.Document(file_path)
+            # 단락 텍스트
+            for para in doc.paragraphs:
+                if para.text.strip():
+                    text += para.text + "\n"
+            
+            # 표(Table) 데이터 추출
+            for table in doc.tables:
+                for row in table.rows:
+                    row_data = [cell.text.strip() for cell in row.cells if cell.text.strip()]
+                    if row_data:
+                        text += " | ".join(row_data) + "\n"
+        except Exception as e:
+            raise ValueError(f"DOCX 파일 읽기 실패: {e}")
         return text
     
     elif ext == '.hwp':
@@ -165,6 +195,39 @@ def save_uploaded_file(file) -> Path:
     temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=ext)
     file.save(temp_file.name)
     return Path(temp_file.name)
+
+
+def upload_to_gemini(path: Path, client: genai.Client):
+    """Gemini File API에 파일 업로드"""
+    try:
+        # 파일 형식에 따라 mime_type 지정
+        ext = path.suffix.lower()
+        mime_types = {
+            '.pdf': 'application/pdf',
+            '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            '.txt': 'text/plain'
+        }
+        mime_type = mime_types.get(ext)
+        
+        # .docx 등 일부 형식은 'text/plain'이나 'application/pdf'처럼 직접 지원되지 않을 수 있음
+        # Gemini 2.0 Flash는 PDF를 직접 지원함. Word는 텍스트 추출 후 전달이 나을 수 있음.
+        if ext not in ['.pdf', '.txt']:
+            print(f"[INFO] {ext} 형식은 텍스트 추출 방식을 사용합니다.")
+            return None
+            
+        file = client.files.upload(file=str(path), config={'mime_type': mime_type})
+        print(f"[OK] Gemini 파일 업로드 성공: {file.name}")
+        
+        # 처리 대기 (필요시)
+        # import time
+        # while file.state.name == 'PROCESSING':
+        #     time.sleep(1)
+        #     file = client.files.get(name=file.name)
+            
+        return file
+    except Exception as e:
+        print(f"[ERROR] Gemini 파일 업로드 실패: {e}")
+        return None
 
 
 # ============================================================
@@ -690,9 +753,12 @@ def generate_blog():
     keywords_str = request.form.get("keywords", "")
     keywords = [k.strip() for k in keywords_str.split(",") if k.strip()]
     blog_dna_folder = request.form.get("blog_dna_folder", "")
+    target_audience = request.form.get("target_audience", "일반 시민")
+    content_angle = request.form.get("content_angle", "정보전달형")
     
     # 보도자료: 파일 또는 직접 입력
     press_release = ""
+    gemini_file = None
     
     if 'file' in request.files and request.files['file'].filename:
         file = request.files['file']
@@ -700,8 +766,16 @@ def generate_blog():
         try:
             temp_path = save_uploaded_file(file)
             press_release = extract_text_from_file(temp_path)
+            
+            # API 키 확인 (파일 업로드 여부 결정 위해 먼저 로드)
+            api_key = os.getenv("GEMINI_API_KEY")
+            if api_key:
+                temp_client = genai.Client(api_key=api_key)
+                # 멀티모달 분석을 위해 파일 업로드 시도 (PDF 등 지원 포맷만)
+                gemini_file = upload_to_gemini(temp_path, temp_client)
+                
         except Exception as e:
-            return jsonify({"error": f"파일 읽기 실패: {str(e)}"}), 500
+            return jsonify({"error": f"파일 처리 실패: {str(e)}"}), 500
         finally:
             if temp_path and temp_path.exists():
                 temp_path.unlink()
@@ -799,76 +873,93 @@ def generate_blog():
 7. 페르소나의 톤/성격과 블로그 DNA의 글쓰기 패턴을 자연스럽게 융합하세요."""
         
         blog_prompt = f"""
-당신은 '{client_name}'의 페르소나에 맞춰 블로그 글을 작성하는 전문가입니다.
-동일한 보도자료를 기반으로 **3가지 톤 버전**의 블로그 글을 작성해야 합니다.
+당신은 대한민국 상위 1% 블로그 마케팅 전문가이자, '{client_name}'의 영혼을 담은 페르소나 작가입니다.
+단순히 글을 쓰는 것이 아니라, **선택된 타겟({target_audience})**의 심리를 꿰뚫고 **선택된 앵글({content_angle})**이라는 그릇에 보도자료를 완벽하게 녹여내야 합니다.
+
+지금부터 당신이 작성할 글의 **'100점짜리 전략 지도'**입니다:
+
+【1. 타겟 초밀착 전략: {target_audience}】
+- **핵심 가치**: 이 타겟이 가장 두려워하거나 갈망하는 것을 문장 사이에 녹이세요.
+- **언어 습관**: {target_audience}가 일상에서 쓰는 단어, 비유, 상황(TPO)을 가져오세요. 
+- **공감 포인트**: "맞아, 내 얘기네"라는 소리가 절로 나오게 하는 도입부 '공감 훅(Hook)'을 배치하세요.
+
+【2. 앵글 구조 설계: {content_angle}】
+- **정보전달형**: [발견 -> 혜택 -> 상세내용 -> 결론] (신뢰도 200%의 깔끔함)
+- **스토리텔링형**: [평범한 일상 -> 문제 인지 -> 보도자료 정보 발견 -> 변화된 미래] (드라마틱한 서사)
+- **Q&A형**: [타겟이 진짜 궁금해할 질문 3가지 -> 전문가적/페르소나적 답변 -> 추가 꿀팁]
+- **체험기형**: [현장 도착 느낌 -> 생생한 오감 묘사 -> 직접 겪어본 장단점 -> 추천 대상]
+- **체크리스트형**: [꼭 알아야 할 요약 -> 항목별 설명 -> 주의사항 -> 마지막 한 줄 평]
+
+【3. 베테랑의 디테일 (The 100pt Finish)】
+- **'나(작성자)'와 '너(독자)'**: 일방적으로 정보를 던지지 말고, 독자의 상황을 가정하며 대화하듯(You-Focus) 작성하세요.
+- **리듬감**: 문장의 길이를 조절하여(단문과 중문의 조합) 가독성을 극대화하세요.
+- **여운**: 글의 마지막에 독자가 바로 행동하거나(공유, 저장, 방문) 기분 좋은 여운을 느낄 수 있는 한 문장을 남기세요.
 
 【페르소나 정보】
 {custom_prompt}
 
-【격식도】
-{formality_score}/10
+【격식도: {formality_score}/10】
 
-【적극 활용】
-{json.dumps(green_flags, ensure_ascii=False)}
-
-【금지 사항】
-{json.dumps(red_flags, ensure_ascii=False)}
+【금지/권장 사항】
+- 적극 활용: {json.dumps(green_flags, ensure_ascii=False)}
+- 절대 금지: {json.dumps(red_flags, ensure_ascii=False)}
 {blog_dna_text}
-【보도자료】
+
+【보도자료 원문】
 {press_release[:5000]}
 
 【타겟 키워드】
 {keywords_text}
 
-【작성 지침】
-1. 위 페르소나의 톤과 스타일을 기본으로 삼되, 3가지 톤 버전으로 변주하세요.
-2. SEO 최적화된 제목 (60자 이내)
-3. 각 버전 본문 1,500~2,000자 분량
-4. **절대 금지 사항**: 마크다운 기호를 절대 사용하지 마세요. ##, **, ***, >, -, ```, [ ], " " 등 어떤 마크다운/서식 기호도 사용 금지.
-   - 소제목이 필요하면 그냥 줄바꿈 후 텍스트로 쓰세요 (예: "첫 번째 이야기")
-   - 강조가 필요하면 문맥으로 표현하세요, 기호로 하지 마세요
-   - 진짜 사람이 블로그에 직접 타이핑한 것처럼 자연스러운 일반 텍스트로 작성하세요
-5. 3가지 버전의 핵심 차이:
-   - formal (포멀): 격식체, 공식적 어투, ~습니다/~입니다 종결, 전문 용어 적극 사용, 정보 중심
-   - balanced (밸런스): 페르소나+DNA 조합 그대로의 자연스러운 어투, 원래 분석된 톤 유지
-   - casual (캐주얼): 더 자유로운 어투, 친근한 표현, 이모티콘/감탄사 활용 가능, 독자와 대화하는 느낌
-{dna_instruction}
+【출력 지침】
+1. 보도자료의 모든 핵심 팩트를 담되, 100% {target_audience} 맞춤형 언어로 재창조할 것.
+2. {dna_instruction}
+3. 3가지 버전(포멀, 밸런스, 캐주얼)을 생성하되, 각 버전은 위 '전략 지도'를 기반으로 서로 다른 매력을 보여줄 것.
+4. **절대 금지**: 마크다운 기호(##, **, >, - 등)를 일절 사용하지 마세요. 오직 줄바꿈과 텍스트만으로 가독성을 확보하세요. (실제 사람이 쓴 블로그처럼!)
+5. 각 버전 본문 분량: 1,800~2,200자 (풍부한 디테일과 사례 포함)
 
-【출력 JSON】
-반드시 아래 형식으로만 출력하세요 (3개 버전 모두 포함):
+【출력 JSON 형식】
+반드시 아래 JSON 형식으로만 출력하세요:
 {{
     "versions": [
         {{
             "version_type": "formal",
             "version_label": "포멀",
             "title": "포멀 버전 제목",
-            "content": "일반 텍스트 본문 (마크다운 기호 절대 금지)",
+            "content": "본문 내용",
             "tags": ["태그1", "태그2", "태그3", "태그4", "태그5"],
-            "meta_description": "155자 이내 요약"
+            "meta_description": "메타 설명"
         }},
         {{
             "version_type": "balanced",
             "version_label": "밸런스",
             "title": "밸런스 버전 제목",
-            "content": "일반 텍스트 본문 (마크다운 기호 절대 금지)",
+            "content": "본문 내용",
             "tags": ["태그1", "태그2", "태그3", "태그4", "태그5"],
-            "meta_description": "155자 이내 요약"
+            "meta_description": "메타 설명"
         }},
         {{
             "version_type": "casual",
             "version_label": "캐주얼",
             "title": "캐주얼 버전 제목",
-            "content": "일반 텍스트 본문 (마크다운 기호 절대 금지)",
+            "content": "본문 내용",
             "tags": ["태그1", "태그2", "태그3", "태그4", "태그5"],
-            "meta_description": "155자 이내 요약"
+            "meta_description": "메타 설명"
         }}
     ]
 }}
 """
         
+        # 프롬프트 구성품
+        prompt_parts = [blog_prompt]
+        if gemini_file:
+            # 멀티모달 파일 객체 추가 (파일 내용을 직접 프롬프트에 주입)
+            prompt_parts.insert(0, gemini_file)
+            print("[INFO] 멀티모달 파일 분석 모드 활성화")
+        
         response = client.models.generate_content(
             model='gemini-2.0-flash',
-            contents=blog_prompt
+            contents=prompt_parts
         )
         
         response_text = response.text
@@ -920,15 +1011,17 @@ def generate_blog():
 # API: Blog Image Generation (On-Demand)
 # ============================================================
 
-@app.route('/api/blog/generate-images', methods=['POST'])
+@app.route('/api/blog/suggest-prompts', methods=['POST'])
 @login_required
-def generate_blog_images():
-    """블로그 본문 기반 AI 이미지 생성 (On-Demand)"""
+def suggest_blog_prompts():
+    """블로그 본문 기반 이미지 생성 프롬프트 제안"""
     data = request.json
-    
     blog_content = data.get("content", "")
+    target_audience = data.get("target_audience", "일반 시민")
+    content_angle = data.get("content_angle", "정보전달형")
+    
     if not blog_content or not blog_content.strip():
-        return jsonify({"error": "이미지 생성을 위한 블로그 본문이 필요합니다."}), 400
+        return jsonify({"error": "프롬프트 제안을 위한 블로그 본문이 필요합니다."}), 400
     
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
@@ -936,9 +1029,44 @@ def generate_blog_images():
     
     try:
         client = genai.Client(api_key=api_key)
+        from image_service import extract_image_prompts
+        prompts = extract_image_prompts(blog_content, client, target_audience, content_angle)
         
-        from image_service import generate_images_for_blog
-        images = generate_images_for_blog(blog_content, client, OUTPUT_DIR)
+        return jsonify({
+            "success": True,
+            "prompts": prompts
+        })
+    except Exception as e:
+        return jsonify({"error": f"프롬프트 추출 실패: {str(e)}"}), 500
+
+
+@app.route('/api/blog/generate-images', methods=['POST'])
+@login_required
+def generate_blog_images():
+    """블로그 본문 또는 커스텀 프롬프트 기반 AI 이미지 생성 (On-Demand)"""
+    data = request.json
+    
+    blog_content = data.get("content", "")
+    target_audience = data.get("target_audience", "일반 시민")
+    content_angle = data.get("content_angle", "정보전달형")
+    custom_prompts = data.get("prompts", [])
+    
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        return jsonify({"error": "GEMINI_API_KEY가 설정되지 않았습니다."}), 500
+    
+    try:
+        client = genai.Client(api_key=api_key)
+        from image_service import generate_images_for_blog, generate_images
+        
+        if custom_prompts:
+            # 사용자가 수정한 프롬프트로 생성
+            images = generate_images(custom_prompts, client, OUTPUT_DIR)
+        else:
+            # 블로그 본문에서 자동 추출하여 생성 (기존 방식)
+            if not blog_content or not blog_content.strip():
+                return jsonify({"error": "이미지 생성을 위한 본문 또는 프롬프트가 필요합니다."}), 400
+            images = generate_images_for_blog(blog_content, client, target_audience, content_angle, OUTPUT_DIR)
         
         if not images:
             return jsonify({"error": "이미지를 생성하지 못했습니다. 다시 시도해주세요."}), 500
@@ -948,7 +1076,6 @@ def generate_blog_images():
             "images": images,
             "count": len(images)
         })
-        
     except Exception as e:
         return jsonify({"error": f"이미지 생성 실패: {str(e)}"}), 500
 
@@ -1702,14 +1829,21 @@ def _build_doc_content(data_type, data, item_id):
         doc_title = f"[블로그] {title}"
 
         versions = data.get('versions', [])
-        for v in versions:
+        for i, v in enumerate(versions):
+            # 두 번째 버전부터 페이지 나누기 삽입
+            if i > 0:
+                requests_list.append({
+                    'insertPageBreak': {'location': {'index': idx}}
+                })
+                idx += 1
+
             ver_label = v.get('version_label', v.get('version_type', ''))
             ver_title = v.get('title', '')
             ver_content = v.get('content', '')
             tags = v.get('tags', [])
 
             # 버전 라벨
-            header = f"\n{'='*40}\n{ver_label} 버전\n{'='*40}\n\n"
+            header = f"{ver_label} 버전\n{'='*40}\n\n"
             requests_list.append({
                 'insertText': {'location': {'index': idx}, 'text': header}
             })

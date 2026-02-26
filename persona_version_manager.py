@@ -224,14 +224,14 @@ def generate_default_blog_config(persona_data: Dict) -> Dict:
                 "punctuation_style": "formal",
                 "emoji_examples": []
             },
-            "content_rules": {
-                "min_length": 1800,
-                "max_length": 2500,
-                "paragraph_length": "medium",
-                "keyword_density": "natural",
-                "technical_terms": "keep",
                 "examples_required": True,
                 "statistics_format": "bold_highlight"
+            },
+            "humanization": {
+                "narrative_flow": "structured",
+                "personal_insight_ratio": 0.1,
+                "human_catchphrases": [],
+                "avoid_cliches": ["혁신적인", "다각도", "기대됩니다", "통해", "다양한"]
             }
         }
     elif formality >= 6:
@@ -264,6 +264,12 @@ def generate_default_blog_config(persona_data: Dict) -> Dict:
                 "technical_terms": "simplify",
                 "examples_required": True,
                 "statistics_format": "bold_highlight"
+            },
+            "humanization": {
+                "narrative_flow": "flexible",
+                "personal_insight_ratio": 0.3,
+                "human_catchphrases": ["사실은 말이죠", "참 다행스럽게도"],
+                "avoid_cliches": ["혁신적인", "다각도", "기대됩니다", "통해", "다양한"]
             }
         }
     elif formality >= 4:
@@ -296,6 +302,12 @@ def generate_default_blog_config(persona_data: Dict) -> Dict:
                 "technical_terms": "avoid",
                 "examples_required": True,
                 "statistics_format": "simple"
+            },
+            "humanization": {
+                "narrative_flow": "storytelling",
+                "personal_insight_ratio": 0.5,
+                "human_catchphrases": ["그거 아세요?", "제 생각에는"],
+                "avoid_cliches": ["혁신적인", "다각도", "기대됩니다", "통해", "다양한"]
             }
         }
     else:  # formality < 4
@@ -328,6 +340,12 @@ def generate_default_blog_config(persona_data: Dict) -> Dict:
                 "technical_terms": "avoid",
                 "examples_required": False,
                 "statistics_format": "simple"
+            },
+            "humanization": {
+                "narrative_flow": "chatty",
+                "personal_insight_ratio": 0.7,
+                "human_catchphrases": ["대박", "진짜"],
+                "avoid_cliches": ["혁신적인", "다각도", "기대됩니다", "통해", "다양한"]
             }
         }
     

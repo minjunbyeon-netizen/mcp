@@ -24,28 +24,42 @@ def is_available() -> bool:
 def extract_image_prompts(blog_content: str, gemini_client) -> list:
     """
     Gemini에게 블로그 본문에서 이미지 생성용 영문 프롬프트를 추출하도록 요청.
+    이때 타겟 독자와 콘텐츠 앵글을 반영하여 최적의 비주얼 스타일을 제안합니다.
     
     Args:
         blog_content: 블로그 본문 텍스트
         gemini_client: google.genai.Client 인스턴스
+        target_audience: 타겟 독자
+        content_angle: 콘텐츠 앵글
     
     Returns:
         영문 이미지 생성 프롬프트 리스트
     """
+def extract_image_prompts(blog_content: str, gemini_client, target_audience: str = "일반 시민", content_angle: str = "정보전달형") -> list:
     try:
-        prompt = f"""아래 한국어 블로그 글의 핵심 주제에 맞는 이미지 생성 프롬프트를 3개 만들어주세요.
+        # 타겟 및 앵글에 따른 비주얼 스타일 가이드라인 정의
+        style_guide = f"""
+- **Target Audience ({target_audience})**: Tailor the visual mood for this group. (e.g., warm/soft for moms, high contrast/clear for seniors, trendy/vibrant for youth)
+- **Content Angle ({content_angle})**: Influence the composition. (e.g., cinematic/wide for storytelling, flat lay/minimalist for information, organized/top-down for checklists)
+"""
 
-규칙:
-1. 블로그 내용의 핵심 장면이나 분위기를 표현하는 프롬프트
-2. 고품질 블로그 삽입 이미지에 적합한 스타일
-3. 영문으로 작성, 각 프롬프트는 1~2문장
-4. "professional photography", "high quality", "editorial style" 등 품질 키워드 포함
-5. 사람 얼굴이 포함되지 않는 이미지로 생성 (풍경, 사물, 추상 등)
+        prompt = f"""You are a professional Creative Director. Create 3 high-quality image generation prompts based on the following blog content. 
+The images must be tailored to the **Target Audience: {target_audience}** and the **Content Angle: {content_angle}**.
 
-블로그 본문 (처음 1500자):
+【Visual Strategy】
+{style_guide}
+
+【Rules】
+1. Describe a scene that captures the core message or mood of the blog.
+2. High-quality editorial style, professional photography.
+3. Write in English, 1-2 descriptive sentences per prompt.
+4. Include quality keywords like "high resolution", "award-winning photography", "soft lighting", "4k".
+5. **CRITICAL**: No human faces or recognizable people. Focus on objects, landscapes, abstract concepts, or environmental shots that imply human presence.
+
+Blog Content (First 1500 chars):
 {blog_content[:1500]}
 
-출력 형식 (JSON 배열만 출력, 다른 텍스트 없이):
+Output Format (JSON array only, no other text):
 ["prompt1", "prompt2", "prompt3"]"""
 
         response = gemini_client.models.generate_content(
@@ -143,18 +157,15 @@ def generate_images(prompts: list, gemini_client, output_dir: Path = None) -> li
     return images
 
 
-def generate_images_for_blog(blog_content: str, gemini_client, output_dir: Path = None) -> list:
+def generate_images_for_blog(blog_content: str, gemini_client, target_audience: str = "일반 시민", content_angle: str = "정보전달형", output_dir: Path = None) -> list:
     """
     블로그 본문에 맞는 이미지를 AI로 직접 생성하는 메인 함수.
-    
-    전체 파이프라인:
-    1. Gemini로 본문에서 이미지 프롬프트 추출
-    2. Imagen API로 이미지 생성
-    3. 결과 반환
     
     Args:
         blog_content: 블로그 본문 텍스트
         gemini_client: google.genai.Client 인스턴스
+        target_audience: 타겟 독자
+        content_angle: 콘텐츠 앵글
         output_dir: 이미지 저장 디렉토리
     
     Returns:
@@ -167,8 +178,8 @@ def generate_images_for_blog(blog_content: str, gemini_client, output_dir: Path 
         return []
     
     try:
-        # Step 1: 프롬프트 추출
-        prompts = extract_image_prompts(blog_content, gemini_client)
+        # Step 1: 프롬프트 추출 (타겟/앵글 반영)
+        prompts = extract_image_prompts(blog_content, gemini_client, target_audience, content_angle)
         
         if not prompts:
             print("[WARN] 이미지 프롬프트를 추출하지 못했습니다.")

@@ -418,6 +418,14 @@ def generate_blog_post(client_id: str, press_release: str, target_keywords: list
     
     # 키워드 문자열
     keywords_str = ", ".join(target_keywords) if target_keywords else ""
+
+    # 인간미 강화 설정 추출
+    writing_config = persona_data.get("blog_writing_config", {})
+    human_config = writing_config.get("humanization", {})
+    narrative_flow = human_config.get("narrative_flow", "flexible")
+    insight_ratio = human_config.get("personal_insight_ratio", 0.3)
+    catchphrases = human_config.get("human_catchphrases", [])
+    avoid_cliches = human_config.get("avoid_cliches", [])
     
     # 페르소나 맞춤형 블로그 프롬프트 생성
     blog_prompt = f"""
@@ -442,31 +450,41 @@ def generate_blog_post(client_id: str, press_release: str, target_keywords: list
       "decision_making": "{comm_style.get('decision_making', 'independent')}"
     }}
   }},
-  "strict_writing_rules": {{
-    "tone_and_manner": {{
-      "overall_tone": "{tone_desc}",
-      "sentence_ending_rule": "{sentence_ending}",
-      "sentence_length": "{length_guide}",
-      "emoji_usage": "{emoji_freq}",
-      "emotional_expression": "{comm_style.get('emotional_tone', 'neutral')} 감정 표현 유지"
-    }},
-    "must_follow_green_flags": {json.dumps(green_flags, ensure_ascii=False)},
-    "must_avoid_red_flags": {json.dumps(red_flags, ensure_ascii=False)},
-    "banned_characters": [
-      "스마트 따옴표 금지: " " ' ' 대신 일반 따옴표 사용",
-      "말줄임표 금지: ... 또는 … 사용 금지"
-    ]
-  }},
+    "strict_writing_rules": {
+      "tone_and_manner": {
+        "overall_tone": "{tone_desc}",
+        "sentence_ending_rule": "{sentence_ending}",
+        "sentence_length": "{length_guide}",
+        "emoji_usage": "{emoji_freq}",
+        "emotional_expression": "{comm_style.get('emotional_tone', 'neutral')} 감정 표현 유지"
+      },
+      "humanization_logic": {
+        "narrative_flow_style": "{narrative_flow}",
+        "personal_insight_requirement": "본문의 {int(insight_ratio*100)}% 이상은 보도자료에 없는 '{client_name}'의 의견이나 느낌을 포함할 것",
+        "catchphrases_to_use": {json.dumps(catchphrases, ensure_ascii=False)},
+        "burstiness_rule": "문장 길이를 의도적으로 다양하게 섞으세요 (연속으로 비슷한 길이 금지). 아주 짧은 문장과 긴 문장의 조화가 필요함",
+        "cliche_blacklist": {json.dumps(avoid_cliches, ensure_ascii=False)}
+      },
+      "must_follow_green_flags": {json.dumps(green_flags, ensure_ascii=False)},
+      "must_avoid_red_flags": {json.dumps(red_flags, ensure_ascii=False)},
+      "banned_characters": [
+        "스마트 따옴표 금지: \" \" ' ' 대신 일반 따옴표 사용",
+        "말줄임표 금지: ... 또는 … 사용 금지",
+        "중복/혼합 기호 금지: '.,', ';;', '!!', '??' 등 지저분한 기호 조합 절대 사용 금지"
+      ]
+    },
   "content_structure": {{
     "intro": "독자의 관심을 끄는 시작 (페르소나 톤 유지)",
     "body": "보도자료 핵심 내용을 페르소나 스타일로 풀어서 설명",
     "outro": "마무리 및 행동 유도 (페르소나 특성 반영)"
   }},
-  "formatting_rules": {{
+  "formatting_rules": {
     "header_style": "소제목은 「 꺽쇠 괄호 」 또는 ## 마크다운 헤더 사용",
-    "emphasis_style": "핵심 내용은 **굵게** 처리",
-    "layout_style": "가독성을 위해 적절한 줄바꿈 사용"
-  }},
+    "emphasis_style": "핵심 내용은 **굵게** 처리 (따옴표 \" \" 사용은 최대한 자제)",
+    "layout_style": "가독성을 위해 적절한 줄바꿈 사용",
+    "punctuation_cleanup": "문장 끝 외에 불필요한 마침표(.) 사용 자제",
+    "emoji_minimalism": "이모지는 문단 끝에만 1개 이내로 아주 가끔씩만 사용"
+  },
   "task_requirements": {{
     "seo_optimization": {{
       "title": "60자 이내, 키워드 포함, 클릭 유도형 제목",
