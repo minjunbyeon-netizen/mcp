@@ -6,8 +6,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>페르소나 도구 대시보드</title>
     <link rel="stylesheet" href="style.css">
-    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700&display=swap"
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Sans+KR:wght@300;400;500;600;700&display=swap"
         rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 
 <body>
@@ -122,6 +124,7 @@
                             </button>
                         </form>
 
+                        <div id="persona-cards-grid" class="persona-cards-grid"></div>
                         <div id="persona-result" class="result-box hidden"></div>
                     </div>
                 </div>
@@ -160,8 +163,22 @@
 
                         <div class="card-section" style="margin-top: 24px;">
                             <h3 class="card-subtitle">수집 이력</h3>
-                            <div id="blog-collections-list" class="collections-list">
-                                <p class="text-muted">로딩 중...</p>
+                            <div id="blog-collections-list" class="data-table-container">
+                                <table class="data-table">
+                                    <thead>
+                                        <tr>
+                                            <th>블로그 ID</th>
+                                            <th>수집 글 수</th>
+                                            <th>총 글자 수</th>
+                                            <th>수집 일시</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="blog-collections-body">
+                                        <tr>
+                                            <td colspan="4" class="text-center text-muted">로딩 중...</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
                             </div>
                         </div>
                     </div>
@@ -191,7 +208,12 @@
                             </button>
                         </form>
 
-                        <div id="blog-status-result" class="result-box hidden"></div>
+                        <div id="blog-status-result" class="result-box hidden">
+                            <div class="dna-visual-container">
+                                <canvas id="dna-radar-chart"></canvas>
+                            </div>
+                            <div id="dna-details-content"></div>
+                        </div>
                     </div>
                 </div>
 
@@ -243,14 +265,17 @@
                     <div class="content-body">
                         <form id="blog-form" class="form">
                             <div class="form-row">
-                                <div class="form-group">
-                                    <label for="persona-select">페르소나 선택</label>
+                                <div class="form-group" style="grid-column: 1 / -1;">
+                                    <label>페르소나 선택 (시각적 선택)</label>
+                                    <div id="writer-persona-cards" class="persona-cards-grid"></div>
+                                    <input type="hidden" id="persona-select" required>
+                                </div>
+                                <div class="form-group" style="display: none;">
+                                    <label for="legacy-persona-select">페르소나 선택 (드롭다운)</label>
                                     <div class="select-with-btn">
-                                        <select id="persona-select" required>
+                                        <select id="legacy-persona-select">
                                             <option value="">페르소나를 선택하세요</option>
                                         </select>
-                                        <button type="button" id="refresh-personas" class="btn-icon"
-                                            title="목록 새로고침">↻</button>
                                     </div>
                                 </div>
                                 <div class="form-group">
@@ -321,7 +346,37 @@
                             </button>
                         </form>
 
-                        <div id="blog-result" class="result-box hidden"></div>
+                        <div id="blog-result" class="result-box hidden">
+                            <div class="result-header-actions"
+                                style="display: flex; justify-content: flex-end; margin-bottom: 20px;">
+                                <button type="button" id="btn-toggle-guide" class="btn btn-outline btn-sm">
+                                    <span class="btn-text">📋 톤앤매너 가이드 보기</span>
+                                </button>
+                            </div>
+                            <div class="blog-writer-layout">
+                                <div id="blog-versions-area" class="blog-versions-area"></div>
+                                <div class="mobile-preview-container">
+                                    <div class="iphone-frame">
+                                        <div class="iphone-screen">
+                                            <div id="mobile-preview-content" class="mobile-content"></div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Writing Guide Side Panel -->
+                                <div id="writing-guide-panel" class="guide-panel">
+                                    <div class="guide-panel-header">
+                                        <h4>톤앤매너 가이드</h4>
+                                        <button type="button" id="btn-close-guide"
+                                            class="close-guide-btn">&times;</button>
+                                    </div>
+                                    <div class="guide-panel-body" id="guide-content">
+                                        <!-- Dynamic content -->
+                                        <div class="guide-loading">페르소나 분석 데이터를 불러오는 중...</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
 
                         <!-- 최근 작성한 글 -->
                         <div class="recent-history" style="margin-top:32px;">
