@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-페르소나 기반 블로그 글 생성기
+auto-blog 블로그 생성기
 사용법: python run_blog_generator.py
 """
 
@@ -19,7 +19,7 @@ from typing import Dict
 if sys.platform == 'win32' and not isinstance(sys.stdout, io.TextIOWrapper):
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
 
-from utils import LoadingSpinner, parse_json_response, load_api_key
+from utils import LoadingSpinner, parse_json_response, load_api_key, extract_text_from_file
 
 # API 키 로드
 load_api_key("GEMINI_API_KEY")
@@ -39,75 +39,15 @@ from persona_version_manager import (
     generate_default_blog_config
 )
 
-# 다중 파일 형식 지원
-import pdfplumber
-from PIL import Image
-import base64
-
-# HWP 지원 (olefile 사용)
-try:
-    import olefile
-    import zlib
-    HWP_SUPPORTED = True
-except ImportError:
-    HWP_SUPPORTED = False
+# [M-5] 파일 텍스트 추출은 utils.py의 extract_text_from_file로 통합
+# pdfplumber/olefile 등은 utils.py 내부에서 lazy import 처리
 
 # 지원 파일 확장자
-SUPPORTED_EXTENSIONS = ['.txt', '.pdf', '.hwp', '.jpg', '.jpeg', '.png']
+SUPPORTED_EXTENSIONS = ['.txt', '.pdf', '.hwp', '.docx', '.jpg', '.jpeg', '.png']
 
 
-def extract_text_from_file(file_path: Path) -> str:
-    """다양한 파일 형식에서 텍스트 추출"""
-    ext = file_path.suffix.lower()
-    
-    if ext == '.txt':
-        with open(file_path, 'r', encoding='utf-8') as f:
-            return f.read()
-    
-    elif ext == '.pdf':
-        text = ""
-        with pdfplumber.open(file_path) as pdf:
-            for page in pdf.pages:
-                page_text = page.extract_text()
-                if page_text:
-                    text += page_text + "\n"
-        return text
-    
-    elif ext == '.hwp':
-        if not HWP_SUPPORTED:
-            raise ValueError("HWP 지원을 위해 'pip install olefile'를 실행하세요.")
-        
-        text_parts = []
-        try:
-            ole = olefile.OleFileIO(str(file_path))
-            # 텍스트 스트림 찾기
-            for stream in ole.listdir():
-                if 'BodyText' in stream or 'Section' in stream:
-                    try:
-                        data = ole.openstream(stream).read()
-                        # 압축 해제 시도
-                        try:
-                            decompressed = zlib.decompress(data, -15)
-                            text = decompressed.decode('utf-16-le', errors='ignore')
-                            text = ''.join(c for c in text if c.isprintable() or c in '\n\r\t')
-                            if text.strip():
-                                text_parts.append(text)
-                        except (zlib.error, UnicodeDecodeError):
-                            pass
-                    except Exception:
-                        pass
-            ole.close()
-        except Exception as e:
-            raise ValueError(f"HWP 파일 읽기 실패: {e}")
-        
-        return "\n".join(text_parts) if text_parts else ""
-    
-    elif ext in ['.jpg', '.jpeg', '.png']:
-        # 이미지는 Gemini Vision으로 처리 (base64 인코딩)
-        return f"[IMAGE_FILE:{file_path}]"
-    
-    else:
-        raise ValueError(f"지원되지 않는 파일 형식: {ext}")
+# [M-5] extract_text_from_file은 utils.py에서 import하여 사용
+# (위 import 라인: from utils import ..., extract_text_from_file)
 
 
 def get_file_type_icon(ext: str) -> str:
@@ -284,15 +224,24 @@ def list_personas():
     """저장된 페르소나 목록"""
     personas = []
     for file_path in PERSONA_DIR.glob("*.json"):
+        # 피드백 파일 제외
+        if file_path.name.endswith("_feedback.json"):
+            continue
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
                 data = json.load(f)
                 if "client_id" in data and "persona_analysis" in data:
+                    pa = data["persona_analysis"]
+                    # [M-1] 스키마 정규화: formality_analysis.overall_score 사용
+                    formality = (
+                        pa.get("formality_analysis", {}).get("overall_score")
+                        or pa.get("formality_level", {}).get("score", 5)
+                    )
                     personas.append({
                         "client_id": data["client_id"],
                         "client_name": data["client_name"],
                         "organization": data["organization"],
-                        "formality": data["persona_analysis"]["formality_level"]["score"]
+                        "formality": formality
                     })
         except Exception:
             pass
@@ -338,12 +287,36 @@ def generate_blog_post(client_id: str, press_release: str, target_keywords: list
     spinner.stop("API 연결 완료")
     
     # 페르소나 분석 데이터 추출
+    # [M-1] 스키마 정규화: run_persona_test.py가 생성하는 실제 키 구조에 맞게 수정
     persona_analysis = persona_data.get("persona_analysis", {})
-    formality = persona_analysis.get("formality_level", {}).get("score", 5)
-    writing_chars = persona_analysis.get("writing_characteristics", {})
+
+    # formality: 신 스키마(formality_analysis.overall_score) → 구 스키마(formality_level.score) 순으로 fallback
+    formality_analysis = persona_analysis.get("formality_analysis", {})
+    formality = (
+        formality_analysis.get("overall_score")
+        or persona_analysis.get("formality_level", {}).get("score", 5)
+        or 5
+    )
+
+    # writing_chars: 신 스키마(writing_dna) → 구 스키마(writing_characteristics) 순으로 fallback
+    writing_dna = persona_analysis.get("writing_dna", {})
+    writing_chars = writing_dna if writing_dna else persona_analysis.get("writing_characteristics", {})
+
     comm_style = persona_analysis.get("communication_style", {})
-    green_flags = persona_analysis.get("green_flags", [])
-    red_flags = persona_analysis.get("red_flags", [])
+
+    # green_flags: 신 스키마에서는 positive_triggers.favorite_expressions 사용
+    positive_triggers = persona_analysis.get("positive_triggers", {})
+    green_flags = (
+        persona_analysis.get("green_flags")
+        or positive_triggers.get("favorite_expressions", [])
+    )
+
+    # red_flags: 신 스키마에서는 sensitive_areas.absolute_dont.expressions 사용
+    sensitive_areas = persona_analysis.get("sensitive_areas", {})
+    red_flags = (
+        persona_analysis.get("red_flags")
+        or sensitive_areas.get("absolute_dont", {}).get("expressions", [])
+    )
     
     # 격식도에 따른 말투 설정
     if formality >= 8:
@@ -364,16 +337,38 @@ def generate_blog_post(client_id: str, press_release: str, target_keywords: list
         emoji_rule = "이모티콘, 'ㅋㅋ', 'ㅎㅎ' 등 자유롭게 사용"
     
     # 문장 길이 설정
-    sentence_length = writing_chars.get("sentence_length", "medium")
+    # [M-1] 신 스키마: writing_dna.sentence_structure.avg_length (short/medium/long)
+    # 구 스키마: writing_characteristics.sentence_length
+    sentence_structure = writing_dna.get("sentence_structure", {})
+    sentence_length = (
+        sentence_structure.get("avg_length")
+        or writing_chars.get("sentence_length", "medium")
+    )
     if sentence_length == "short":
         length_guide = "짧고 간결한 문장 (15자 내외)"
     elif sentence_length == "long":
         length_guide = "상세하고 긴 문장 (30자 이상)"
     else:
         length_guide = "적당한 길이의 문장 (20자 내외)"
-    
+
     # 이모지 사용 빈도
-    emoji_usage = writing_chars.get("emoji_usage", "moderate")
+    # [M-1] 신 스키마: communication_style.emotional_expression.emoji_usage (int 1-10)
+    # 구 스키마: writing_characteristics.emoji_usage (str "frequent"/"none"/"moderate")
+    emoji_usage_raw = (
+        comm_style.get("emotional_expression", {}).get("emoji_usage")
+        or writing_chars.get("emoji_usage", "moderate")
+    )
+    if isinstance(emoji_usage_raw, int):
+        # 숫자 → 문자열 변환 (7이상=frequent, 3이하=none, 나머지=moderate)
+        if emoji_usage_raw >= 7:
+            emoji_usage = "frequent"
+        elif emoji_usage_raw <= 3:
+            emoji_usage = "none"
+        else:
+            emoji_usage = "moderate"
+    else:
+        emoji_usage = emoji_usage_raw
+
     if emoji_usage == "frequent":
         emoji_freq = "문단마다 1-2개 이상 이모티콘 필수"
     elif emoji_usage == "none":
@@ -408,11 +403,11 @@ def generate_blog_post(client_id: str, press_release: str, target_keywords: list
   "persona_profile": {{
     "name": "{client_name}",
     "organization": "{persona_data.get('organization', '')}",
-    "formality_level": "{formality}/10 - {persona_analysis.get('formality_level', {}).get('description', '')}",
+    "formality_level": "{formality}/10",
     "communication_style": {{
-      "directness": "{comm_style.get('directness', 'balanced')}",
-      "emotional_tone": "{comm_style.get('emotional_tone', 'neutral')}",
-      "decision_making": "{comm_style.get('decision_making', 'independent')}"
+      "directness": "{comm_style.get('directness', {{}}).get('style', 'balanced') if isinstance(comm_style.get('directness'), dict) else comm_style.get('directness', 'balanced')}",
+      "emotional_tone": "{comm_style.get('emotional_expression', {{}}).get('level', 'neutral') if isinstance(comm_style.get('emotional_expression'), dict) else comm_style.get('emotional_tone', 'neutral')}",
+      "decision_making": "{comm_style.get('decision_making', {{}}).get('type', 'independent') if isinstance(comm_style.get('decision_making'), dict) else comm_style.get('decision_making', 'independent')}"
     }}
   }},
     "strict_writing_rules": {
@@ -613,6 +608,127 @@ def generate_blog_post(client_id: str, press_release: str, target_keywords: list
     return blog_data, md_path, docx_path, gdrive_docx_path
 
 
+def _parse_free_text_feedback_with_ai(free_text: str) -> Dict:
+    """
+    [M-4] 자유텍스트 피드백 → Gemini API → 조정 파라미터 변환.
+
+    입력 예시: "말투가 너무 딱딱해요. 이모지도 좀 더 써주세요."
+    출력 예시: {"tone_details.sentence_ending": "casual", "formatting.emoji_positions": ["intro","body","outro"]}
+
+    Returns:
+        dict: adjustments (persona_version_manager.create_upgraded_version에 전달 가능한 형태)
+    """
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        print("❌ GEMINI_API_KEY가 없어 AI 분석을 건너뜁니다.")
+        return {}
+
+    client = genai.Client(api_key=api_key)
+
+    prompt = f"""
+당신은 블로그 스타일 조정 파라미터 변환 전문가입니다.
+아래 사용자의 자유 피드백을 분석하여 블로그 설정 조정 파라미터(JSON)로 변환해주세요.
+
+【사용자 피드백】
+{free_text}
+
+【출력 파라미터 규칙】
+아래 키를 사용하여 변경이 필요한 항목만 포함하세요 (변경 불필요한 항목은 제외):
+
+- content_rules.max_length: 정수 (1000~3000, 글 길이 조절)
+- content_rules.paragraph_length: "short" | "medium" | "long"
+- content_rules.technical_terms: "simplify" | "avoid" | "maintain"
+- tone_details.sentence_length: "short" | "medium" | "long"
+- tone_details.punctuation_style: "formal" | "friendly" | "casual"
+- formatting.emoji_positions: 배열 ([], ["intro"], ["intro","outro"], ["intro","body","outro"], ["all"])
+- humanization.personal_insight_ratio: 0.0~1.0 (개인 의견 비율)
+- humanization.narrative_flow: "structured" | "flexible" | "storytelling" | "chatty"
+- structure.body_sections: 정수 (2~5, 본문 섹션 수)
+- formality_adjustment: "+1" | "-1" | "+2" | "-2" (격식도 조절)
+
+【출력 형식】
+반드시 JSON만 출력하세요 (설명 텍스트 없이).
+예시: {{"content_rules.max_length": 1500, "formatting.emoji_positions": ["intro","outro"]}}
+"""
+
+    try:
+        spinner = LoadingSpinner("자유 피드백 AI 분석 중")
+        spinner.start()
+        response = client.models.generate_content(
+            model='gemini-2.0-flash',
+            contents=prompt
+        )
+        spinner.stop("분석 완료")
+
+        adjustments = parse_json_response(response.text)
+        return adjustments if isinstance(adjustments, dict) else {}
+
+    except Exception as e:
+        print(f"\n피드백 분석 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.")
+        return {}
+
+
+def _handle_free_text_feedback(client_id: str, version: int, output_id: str) -> bool:
+    """
+    [M-4] 자유텍스트 피드백 처리 흐름.
+    입력 → AI 파라미터 변환 → 사용자 확인 → create_upgraded_version 호출
+    """
+    print("\n📝 자유 피드백을 입력해주세요.")
+    print("   (예: '말투가 너무 딱딱해요', '이모지 좀 더 써주세요', '글이 너무 길어요')")
+    free_text = input(">>> ").strip()
+
+    if not free_text:
+        print("❌ 피드백을 입력해주세요.")
+        return False
+
+    # AI로 파라미터 변환
+    adjustments = _parse_free_text_feedback_with_ai(free_text)
+
+    if not adjustments:
+        print("\n피드백을 분석하지 못했습니다. 내용을 확인해주세요.")
+        print("   (Tip: '말투가 딱딱해요', '이모지를 더 써주세요' 처럼 구체적으로 적어주시면 더 잘 반영됩니다.)")
+        print("   번호 선택 방식으로 다시 피드백하시겠습니까? (Y/n): ", end="")
+        retry = input().strip().lower()
+        if retry != "n":
+            return False  # 호출자(_collect_feedback_loop)가 번호 선택 메뉴로 안내
+        return False
+
+    # 변환 결과 표시
+    print("\n🔄 AI가 다음과 같이 해석했습니다:")
+    for key, value in adjustments.items():
+        print(f"   - {key}: {value}")
+
+    print("\n이 설정으로 새 버전을 생성할까요? (Y/n): ", end="")
+    confirm = input().strip().lower()
+
+    if confirm == 'n':
+        print("취소되었습니다.")
+        return False
+
+    upgrade_reason = f"자유 피드백 (AI 해석): {free_text}"
+    new_persona = create_upgraded_version(client_id, adjustments, upgrade_reason)
+
+    if new_persona:
+        print("\n✅ 다음 블로그부터 개선된 스타일로 작성됩니다!")
+        # 피드백 히스토리에도 기록
+        feedback_data = get_feedback_history(client_id)
+        feedback_entry = {
+            "timestamp": datetime.now().isoformat(),
+            "blog_id": output_id,
+            "version": version,
+            "rating": None,
+            "issues": [free_text],
+            "adjustments_made": adjustments,
+            "feedback_type": "free_text"
+        }
+        feedback_data["feedback_history"].append(feedback_entry)
+        feedback_data["learning_stats"]["total_blogs"] = len(feedback_data["feedback_history"])
+        save_feedback_history(client_id, feedback_data)
+        return True
+
+    return False
+
+
 def collect_feedback_and_upgrade(blog_data: Dict) -> bool:
     """블로그 생성 후 피드백 수집 및 자동 업그레이드"""
     
@@ -628,19 +744,24 @@ def collect_feedback_and_upgrade(blog_data: Dict) -> bool:
     print("3. 괜찮아요 ⭐⭐⭐")
     print("4. 아쉬워요 ⭐⭐")
     print("5. 다시 써주세요 ⭐")
+    print("f. 자유 피드백 입력 (AI가 분석해서 자동 반영)")
     print("0. 피드백 건너뛰기")
-    
+
     try:
-        rating_input = input("\n>>> ").strip()
-        
+        rating_input = input("\n>>> ").strip().lower()
+
         if rating_input == "0":
             return False
-        
+
+        # [M-4] 자유텍스트 피드백 분기
+        if rating_input == "f":
+            return _handle_free_text_feedback(client_id, version, output_id)
+
         rating = int(rating_input)
         if rating < 1 or rating > 5:
             print("❌ 잘못된 입력입니다.")
             return False
-        
+
     except ValueError:
         print("❌ 숫자를 입력해주세요.")
         return False
@@ -757,9 +878,10 @@ def collect_feedback_and_upgrade(blog_data: Dict) -> bool:
     feedback_data["feedback_history"].append(feedback_entry)
     
     # 통계 업데이트
-    all_ratings = [f["rating"] for f in feedback_data["feedback_history"]]
-    feedback_data["learning_stats"]["total_blogs"] = len(all_ratings)
-    feedback_data["learning_stats"]["average_rating"] = round(sum(all_ratings) / len(all_ratings), 1)
+    all_ratings = [f["rating"] for f in feedback_data["feedback_history"] if f.get("rating") is not None]
+    feedback_data["learning_stats"]["total_blogs"] = len(feedback_data["feedback_history"])
+    if all_ratings:
+        feedback_data["learning_stats"]["average_rating"] = round(sum(all_ratings) / len(all_ratings), 1)
     
     # 최근 5개 vs 전체 평균 비교
     if len(all_ratings) >= 5:
@@ -783,7 +905,7 @@ def collect_feedback_and_upgrade(blog_data: Dict) -> bool:
 def generate_blog_with_persona(client_id: str):
     """페르소나 추출 후 바로 블로그 생성 (연계 호출용)"""
     print("\n" + "=" * 60)
-    print("📝 페르소나 기반 블로그 글 생성기")
+    print("auto-blog 블로그 생성기")
     print("=" * 60)
     
     # 보도자료 선택 (폴더 및 파일)
@@ -830,16 +952,20 @@ def generate_blog_with_persona(client_id: str):
 
 def main():
     print("=" * 60)
-    print("📝 페르소나 기반 블로그 글 생성기")
+    print("auto-blog 블로그 생성기")
     print("=" * 60)
     
     # 페르소나 목록 표시
     personas = list_personas()
     if not personas:
-        print("\n❌ 저장된 페르소나가 없습니다.")
-        print("   먼저 run_persona_test.py로 페르소나를 생성해주세요.")
+        print("\n페르소나가 없습니다. 페르소나를 먼저 추출해야 블로그를 생성할 수 있습니다.")
+        print("   지금 페르소나를 만들어볼까요? (Y/n): ", end="")
+        ans = input().strip().lower()
+        if ans != "n":
+            import subprocess as _sp
+            _sp.run(["python", str(Path(__file__).parent / "run_persona_test.py")])
         return
-    
+
     print("\n📋 사용 가능한 페르소나:")
     print("-" * 50)
     for i, p in enumerate(personas, 1):
@@ -898,6 +1024,149 @@ def main():
             print("   폴더를 열었습니다.")
     else:
         print("\n❌ 블로그 생성에 실패했습니다.")
+
+
+def batch_blog_generation():
+    """
+    [M-3] 배치 블로그 생성.
+    다수 페르소나 선택 → 1개 보도자료 → 순차 생성 (2초 딜레이)
+    """
+    import time
+
+    print("=" * 60)
+    print("📦 배치 블로그 생성 (다수 페르소나 x 1개 보도자료)")
+    print("=" * 60)
+
+    # 페르소나 목록 표시
+    personas = list_personas()
+    if not personas:
+        print("\n페르소나가 없습니다. 페르소나를 먼저 추출해야 블로그를 생성할 수 있습니다.")
+        print("   지금 페르소나를 만들어볼까요? (Y/n): ", end="")
+        ans = input().strip().lower()
+        if ans != "n":
+            import subprocess as _sp
+            _sp.run(["python", str(Path(__file__).parent / "run_persona_test.py")])
+        return
+
+    print("\n📋 사용 가능한 페르소나:")
+    print("-" * 50)
+    for i, p in enumerate(personas, 1):
+        print(f"  {i}. {p['client_name']} ({p['organization']}) - 격식도: {p['formality']}/10")
+
+    # 다중 페르소나 선택
+    print("\n🔢 사용할 페르소나 번호를 입력하세요.")
+    print("   💡 여러 페르소나: 1,2,3 또는 1-3 또는 all")
+    try:
+        choice_input = input(">>> ").strip().lower()
+
+        selected_indices = []
+        if choice_input == "all":
+            selected_indices = list(range(1, len(personas) + 1))
+        elif "-" in choice_input and "," not in choice_input:
+            parts = choice_input.split("-")
+            start, end = int(parts[0]), int(parts[1])
+            selected_indices = list(range(start, end + 1))
+        elif "," in choice_input:
+            selected_indices = [int(x.strip()) for x in choice_input.split(",")]
+        else:
+            selected_indices = [int(choice_input)]
+
+        for idx in selected_indices:
+            if idx < 1 or idx > len(personas):
+                print(f"❌ 잘못된 번호입니다: {idx}")
+                return
+
+        selected_personas = [personas[i - 1] for i in selected_indices]
+
+    except (ValueError, IndexError):
+        print("❌ 올바른 형식으로 입력해주세요. (예: 1 또는 1,2,3 또는 1-3)")
+        return
+
+    print(f"\n✅ 선택된 페르소나 {len(selected_personas)}개:")
+    for p in selected_personas:
+        print(f"   - {p['client_name']} ({p['organization']})")
+
+    # 보도자료 선택 (1개)
+    print("\n📄 보도자료를 선택하세요 (모든 페르소나에 동일하게 적용)")
+    press_release = select_press_release()
+    if not press_release:
+        return
+
+    # SEO 키워드 (공통)
+    print("\n🔑 SEO 키워드를 입력하세요 (쉼표로 구분, 없으면 엔터):")
+    keywords_input = input(">>> ").strip()
+    keywords = [k.strip() for k in keywords_input.split(",")] if keywords_input else None
+
+    # 배치 실행
+    print("\n" + "=" * 60)
+    print(f"🚀 배치 실행 시작: {len(selected_personas)}개 블로그")
+    print("=" * 60)
+
+    success_count = 0
+    fail_count = 0
+    results_summary = []
+
+    for idx, persona in enumerate(selected_personas, 1):
+        client_id = persona["client_id"]
+        client_name = persona["client_name"]
+
+        print(f"\n[{idx}/{len(selected_personas)}] {client_name} 처리 중...")
+
+        try:
+            result = generate_blog_post(client_id, press_release, keywords)
+
+            if result:
+                blog_data, md_path, docx_path, gdrive_path = result
+                blog = blog_data["content"]
+                success_count += 1
+                results_summary.append({
+                    "persona": client_name,
+                    "title": blog.get("title", ""),
+                    "docx": str(docx_path),
+                    "status": "성공"
+                })
+                print(f"  [OK] {client_name}: {blog.get('title', '')}")
+                print(f"       저장: {docx_path}")
+            else:
+                fail_count += 1
+                results_summary.append({
+                    "persona": client_name,
+                    "title": "",
+                    "docx": "",
+                    "status": "실패"
+                })
+                print(f"  [FAIL] {client_name}: 블로그 생성 실패")
+
+        except Exception as e:
+            fail_count += 1
+            results_summary.append({
+                "persona": client_name,
+                "title": "",
+                "docx": "",
+                "status": f"오류: {e}"
+            })
+            print(f"  [ERROR] {client_name}: {e}")
+
+        # rate limit 대비 딜레이 (마지막 항목 제외)
+        if idx < len(selected_personas):
+            print("  다음 블로그 생성을 준비하고 있습니다...")
+            time.sleep(2)
+
+    # 결과 요약
+    print("\n" + "=" * 60)
+    print(f"📊 배치 완료: 성공 {success_count}개 / 실패 {fail_count}개")
+    print("=" * 60)
+    for r in results_summary:
+        status_icon = "[OK]" if r["status"] == "성공" else "[FAIL]"
+        print(f"  {status_icon} {r['persona']}: {r['title'] or r['status']}")
+
+    if success_count > 0:
+        print(f"\n💾 저장 위치: {WORD_OUTPUT_DIR}")
+        print("\n📂 블로그 폴더를 여시겠습니까? (Y/n): ", end="")
+        open_folder = input().strip().lower()
+        if open_folder != 'n':
+            subprocess.run(['explorer', str(WORD_OUTPUT_DIR)])
+            print("   폴더를 열었습니다.")
 
 
 if __name__ == "__main__":

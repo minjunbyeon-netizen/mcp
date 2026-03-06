@@ -4,7 +4,7 @@
 사용법: python run_persona_test.py
 """
 
-import pdfplumber
+import re
 
 import sys
 import os
@@ -20,7 +20,137 @@ if sys.platform == 'win32':
 # 프로젝트 루트 추가
 sys.path.insert(0, str(Path(__file__).parent / "persona-manager"))
 
-from utils import LoadingSpinner, parse_json_response, load_api_key
+from utils import LoadingSpinner, parse_json_response, load_api_key, extract_text_from_file
+
+
+# ============================================================
+# [M-2] 카카오톡 청크 분할 처리
+# 8000자 하드코딩 슬라이싱 제거 → 메시지 단위 청크 분할
+# ============================================================
+
+# 카카오톡 메시지 시작 패턴: "2024년 1월 1일 월요일" 또는 "홍길동 : 텍스트"
+_KAKAO_MSG_PATTERN = re.compile(
+    r'^(\d{4}년\s*\d{1,2}월\s*\d{1,2}일)|^(.+?)\s*:\s*',
+    re.MULTILINE
+)
+# 날짜 구분선 패턴 (날짜 헤더)
+_KAKAO_DATE_PATTERN = re.compile(
+    r'^\d{4}년\s*\d{1,2}월\s*\d{1,2}일',
+    re.MULTILINE
+)
+
+MAX_CHUNKS = 4          # 최대 청크 수
+CHUNK_SIZE = 8000       # 청크당 최대 글자 수 (총 32,000자까지 처리 가능)
+
+
+def split_kakao_into_chunks(text: str) -> list[str]:
+    """
+    카카오톡 텍스트를 메시지 단위로 분할하여 최대 MAX_CHUNKS개의 청크로 반환.
+
+    분할 전략:
+    1. 날짜/이름 패턴 기준으로 메시지 단위 분리
+    2. 각 청크는 CHUNK_SIZE 이내
+    3. 전체를 MAX_CHUNKS개로 균등 분배 (앞/중간/뒤 고르게)
+
+    Returns:
+        list[str]: 최대 MAX_CHUNKS개의 청크 리스트
+    """
+    if len(text) <= CHUNK_SIZE:
+        # 짧으면 그대로 반환
+        return [text]
+
+    # 날짜 헤더 기준으로 단락 분리
+    date_positions = [m.start() for m in _KAKAO_DATE_PATTERN.finditer(text)]
+
+    if date_positions:
+        # 날짜 헤더가 있는 경우: 날짜 단위로 분할
+        segments = []
+        for i, pos in enumerate(date_positions):
+            end = date_positions[i + 1] if i + 1 < len(date_positions) else len(text)
+            segments.append(text[pos:end])
+    else:
+        # 날짜 헤더가 없는 경우: 줄 단위로 분할
+        lines = text.splitlines(keepends=True)
+        # 약 CHUNK_SIZE 글자 단위로 묶기
+        segments = []
+        buf = ""
+        for line in lines:
+            if len(buf) + len(line) > CHUNK_SIZE and buf:
+                segments.append(buf)
+                buf = ""
+            buf += line
+        if buf:
+            segments.append(buf)
+
+    # MAX_CHUNKS개로 균등 선택 (앞/중간/뒤 고르게)
+    if len(segments) <= MAX_CHUNKS:
+        selected = segments
+    else:
+        # 균등 간격으로 인덱스 선택
+        step = len(segments) / MAX_CHUNKS
+        selected = [segments[int(i * step)] for i in range(MAX_CHUNKS)]
+
+    # 청크별 CHUNK_SIZE 초과 시 앞부분만 사용
+    chunks = [seg[:CHUNK_SIZE] for seg in selected if seg.strip()]
+
+    return chunks[:MAX_CHUNKS]
+
+
+def summarize_chunk(client, chunk: str, chunk_idx: int, total: int) -> str:
+    """
+    단일 청크를 Gemini로 요약하여 페르소나 분석용 핵심 특징 추출.
+
+    Returns:
+        str: 요약된 특징 텍스트
+    """
+    prompt = f"""
+아래는 카카오톡 대화 텍스트의 {chunk_idx}/{total} 번째 구간입니다.
+이 구간에서 담당자의 말투, 표현 습관, 커뮤니케이션 스타일, 특이 표현을 간결하게 요약해주세요.
+(원문 인용 포함, 200자 이내)
+
+---
+{chunk}
+---
+
+요약:"""
+
+    try:
+        response = client.models.generate_content(
+            model='gemini-2.0-flash',
+            contents=prompt
+        )
+        return response.text.strip()
+    except Exception as e:
+        print(f"  구간 {chunk_idx} 분석 중 오류가 발생했습니다. 원문 일부를 사용합니다.")
+        return chunk[:500]  # 실패 시 앞 500자 사용
+
+
+def prepare_kakao_text(client, kakao_chat_log: str) -> str:
+    """
+    [M-2] 카카오톡 텍스트 전처리.
+
+    - 8000자 이하: 그대로 반환
+    - 8000자 초과: 최대 MAX_CHUNKS개 청크로 분할 → 각 청크 요약 → 합산 반환
+
+    Returns:
+        str: 페르소나 분석 프롬프트에 삽입할 텍스트
+    """
+    if len(kakao_chat_log) <= CHUNK_SIZE:
+        return kakao_chat_log
+
+    print(f"  카카오톡 대화가 길어 여러 부분으로 나눠 분석합니다... ({len(kakao_chat_log):,}자)")
+    chunks = split_kakao_into_chunks(kakao_chat_log)
+    print(f"  총 {len(chunks)}개 구간으로 나눠 분석합니다.")
+
+    summaries = []
+    for i, chunk in enumerate(chunks, 1):
+        print(f"  구간 {i}/{len(chunks)} 분석 중...")
+        summary = summarize_chunk(client, chunk, i, len(chunks))
+        summaries.append(f"[구간 {i}/{len(chunks)}]\n{summary}")
+
+    combined = "\n\n".join(summaries)
+    print(f"  분석 준비가 완료되었습니다.")
+    return combined
 
 # API 키 로드
 load_api_key("GEMINI_API_KEY")
@@ -54,7 +184,10 @@ def analyze_persona(client_name: str, organization: str, kakao_chat_log: str, ca
     
     client = genai.Client(api_key=api_key)
     spinner.stop("API 연결 완료")
-    
+
+    # [M-2] 카카오톡 청크 분할 처리 (8000자 하드코딩 슬라이싱 제거)
+    prepared_text = prepare_kakao_text(client, kakao_chat_log)
+
     analysis_prompt = f"""
 당신은 광고/마케팅 에이전시의 시니어 페르소나 분석 전문가입니다.
 아래 카카오톡 대화를 철저히 분석하여 광고주의 상세한 페르소나를 추출해주세요.
@@ -70,7 +203,7 @@ def analyze_persona(client_name: str, organization: str, kakao_chat_log: str, ca
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 【분석 대상 카카오톡 대화】
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-{kakao_chat_log[:8000]}
+{prepared_text}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 【분석 지침】
@@ -364,7 +497,7 @@ def analyze_persona(client_name: str, organization: str, kakao_chat_log: str, ca
 
 def main():
     print("=" * 60)
-    print("🎯 카카오톡 페르소나 추출기")
+    print("auto-blog 페르소나 분석기")
     print("=" * 60)
     
     # 입력 폴더 자동 스캔
@@ -412,25 +545,15 @@ def main():
     
     print(f"\n✅ 선택: {selected_file.name}")
     
-    # 파일 읽기 (TXT 또는 PDF)
-    if selected_file.suffix.lower() == '.pdf':
-        print("📄 PDF 파일에서 텍스트 추출 중...")
-        try:
-            with pdfplumber.open(selected_file) as pdf:
-                text_content = ""
-                for page in pdf.pages:
-                    page_text = page.extract_text()
-                    if page_text:
-                        text_content += page_text + "\n"
-            if not text_content.strip():
-                print("❌ PDF에서 텍스트를 추출할 수 없습니다.")
-                return
-        except Exception as e:
-            print(f"❌ PDF 읽기 실패: {e}")
-            return
-    else:
-        with open(selected_file, 'r', encoding='utf-8') as f:
-            text_content = f.read()
+    # 파일 읽기 (TXT, PDF 등 — utils.extract_text_from_file로 통합 처리)
+    try:
+        text_content = extract_text_from_file(selected_file)
+    except Exception as e:
+        print(f"파일을 읽는 중 오류가 발생했습니다: {e}")
+        return
+    if not text_content or not text_content.strip():
+        print("파일에서 텍스트를 추출할 수 없습니다. 파일을 확인해주세요.")
+        return
     
     print(f"📄 내용 길이: {len(text_content):,} 글자")
     
@@ -442,8 +565,16 @@ def main():
     print(f"   소속 기관 [하이브미디어]: ", end="")
     organization = input().strip() or "하이브미디어"
     
-    print(f"   업종 (government/fitness/cosmetics/general) [general]: ", end="")
-    category = input().strip() or "general"
+    print("   업종을 선택하세요:")
+    print("     1. 공공기관")
+    print("     2. 피트니스/헬스")
+    print("     3. 뷰티/화장품")
+    print("     4. 일반 (기타)")
+    print("   번호 입력 (엔터시 4번 선택): ", end="")
+    _cat_map = {"1": "government", "2": "fitness", "3": "cosmetics", "4": "general"}
+    _cat_input = input().strip()
+    category = _cat_map.get(_cat_input, "general")
+    print(f"   선택된 업종: {category}")
     
     # 분석 실행
     result = analyze_persona(client_name, organization, text_content, category)

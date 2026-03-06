@@ -196,10 +196,16 @@ def create_upgraded_version(client_id: str, adjustments: Dict, feedback_reason: 
 
 def generate_default_blog_config(persona_data: Dict) -> Dict:
     """페르소나 분석 기반으로 기본 블로그 설정 생성"""
-    
+
     persona_analysis = persona_data.get("persona_analysis", {})
-    formality = persona_analysis.get("formality_level", {}).get("score", 5)
-    writing_chars = persona_analysis.get("writing_characteristics", {})
+    # [M-1] 스키마 정규화: 신 스키마(formality_analysis.overall_score) → 구 스키마(formality_level.score) 순 fallback
+    formality = (
+        persona_analysis.get("formality_analysis", {}).get("overall_score")
+        or persona_analysis.get("formality_level", {}).get("score", 5)
+        or 5
+    )
+    # [M-1] 스키마 정규화: 신 스키마(writing_dna) → 구 스키마(writing_characteristics) 순 fallback
+    writing_chars = persona_analysis.get("writing_dna") or persona_analysis.get("writing_characteristics", {})
     
     # 격식도에 따른 기본 설정
     if formality >= 8:

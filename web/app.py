@@ -156,83 +156,9 @@ def parse_ai_json(text):
 
 
 # ============================================================
-# File Text Extraction (run_persona_test.py 기능 동일)
+# File Text Extraction — [M-5] utils.py로 통합, 여기서는 re-export
 # ============================================================
-
-def extract_text_from_file(file_path: Path) -> str:
-    """다양한 파일 형식에서 텍스트 추출"""
-    ext = file_path.suffix.lower()
-    
-    if ext == '.txt':
-        with open(file_path, 'r', encoding='utf-8') as f:
-            return f.read()
-    
-    elif ext == '.pdf':
-        text = ""
-        # 1차 시도: PyMuPDF (fitz) - 빠르고 레이아웃 보존 우수
-        try:
-            doc = fitz.open(file_path)
-            for page in doc:
-                text += page.get_text("text") + "\n"
-            doc.close()
-        except Exception as e:
-            print(f"[RECOVERY] PyMuPDF 실패, pdfplumber 시도: {e}")
-            # 2차 시도: pdfplumber (기본 백업)
-            with pdfplumber.open(file_path) as pdf:
-                for page in pdf.pages:
-                    page_text = page.extract_text()
-                    if page_text:
-                        text += page_text + "\n"
-        return text
-    
-    elif ext == '.docx':
-        text = ""
-        try:
-            doc = docx.Document(file_path)
-            # 단락 텍스트
-            for para in doc.paragraphs:
-                if para.text.strip():
-                    text += para.text + "\n"
-            
-            # 표(Table) 데이터 추출
-            for table in doc.tables:
-                for row in table.rows:
-                    row_data = [cell.text.strip() for cell in row.cells if cell.text.strip()]
-                    if row_data:
-                        text += " | ".join(row_data) + "\n"
-        except Exception as e:
-            raise ValueError(f"DOCX 파일 읽기 실패: {e}")
-        return text
-    
-    elif ext == '.hwp':
-        if not HWP_SUPPORTED:
-            raise ValueError("HWP 지원을 위해 'pip install olefile'를 실행하세요.")
-        
-        text_parts = []
-        try:
-            ole = olefile.OleFileIO(str(file_path))
-            for stream in ole.listdir():
-                if 'BodyText' in stream or 'Section' in stream:
-                    try:
-                        data = ole.openstream(stream).read()
-                        try:
-                            decompressed = zlib.decompress(data, -15)
-                            text = decompressed.decode('utf-16-le', errors='ignore')
-                            text = ''.join(c for c in text if c.isprintable() or c in '\n\r\t')
-                            if text.strip():
-                                text_parts.append(text)
-                        except:
-                            pass
-                    except:
-                        pass
-            ole.close()
-        except Exception as e:
-            raise ValueError(f"HWP 파일 읽기 실패: {e}")
-        
-        return "\n".join(text_parts) if text_parts else ""
-    
-    else:
-        raise ValueError(f"지원되지 않는 파일 형식: {ext}")
+from utils import extract_text_from_file  # noqa: F401
 
 
 def save_uploaded_file(file) -> Path:
