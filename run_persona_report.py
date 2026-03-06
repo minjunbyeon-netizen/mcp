@@ -143,7 +143,7 @@ def main():
     try:
         choice = int(input(">>> ").strip())
         selected_id = persona_list[choice - 1]
-    except:
+    except (ValueError, IndexError):
         print("❌ 잘못된 선택입니다.")
         return
     
@@ -154,7 +154,7 @@ def main():
     
     try:
         report_type = int(input(">>> ").strip())
-    except:
+    except (ValueError, IndexError):
         report_type = 3
     
     if report_type == 1:

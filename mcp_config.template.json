@@ -1,30 +1,30 @@
 {
     "mcpServers": {
         "persona-manager": {
-            "command": "C:/xampp/htdocs/00_dev/03_mcp test/venv/Scripts/python.exe",
+            "command": "G:/내 드라이브/01_work/hive-media/auto-blog/venv/Scripts/python.exe",
             "args": [
-                "C:/xampp/htdocs/00_dev/03_mcp test/persona-manager/server.py"
+                "G:/내 드라이브/01_work/hive-media/auto-blog/persona-manager/server.py"
             ],
             "env": {
-                "ANTHROPIC_API_KEY": "YOUR_ANTHROPIC_API_KEY_HERE"
+                "GEMINI_API_KEY": "YOUR_GEMINI_API_KEY_HERE"
             }
         },
         "visual-persona-extractor": {
-            "command": "C:/xampp/htdocs/00_dev/03_mcp test/venv/Scripts/python.exe",
+            "command": "G:/내 드라이브/01_work/hive-media/auto-blog/venv/Scripts/python.exe",
             "args": [
-                "C:/xampp/htdocs/00_dev/03_mcp test/mcp-servers/visual-persona-extractor/server.py"
+                "G:/내 드라이브/01_work/hive-media/auto-blog/mcp-servers/visual-persona-extractor/server.py"
             ],
             "env": {
-                "ANTHROPIC_API_KEY": "YOUR_ANTHROPIC_API_KEY_HERE"
+                "GEMINI_API_KEY": "YOUR_GEMINI_API_KEY_HERE"
             }
         },
         "content-automation": {
-            "command": "C:/xampp/htdocs/00_dev/03_mcp test/venv/Scripts/python.exe",
+            "command": "G:/내 드라이브/01_work/hive-media/auto-blog/venv/Scripts/python.exe",
             "args": [
-                "C:/xampp/htdocs/00_dev/03_mcp test/mcp-servers/content-automation/server.py"
+                "G:/내 드라이브/01_work/hive-media/auto-blog/mcp-servers/content-automation/server.py"
             ],
             "env": {
-                "ANTHROPIC_API_KEY": "YOUR_ANTHROPIC_API_KEY_HERE"
+                "GEMINI_API_KEY": "YOUR_GEMINI_API_KEY_HERE"
             }
         }
     }

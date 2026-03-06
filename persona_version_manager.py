@@ -25,7 +25,7 @@ def get_all_versions(client_id: str) -> List[Dict]:
             with open(file, 'r', encoding='utf-8') as f:
                 data = json.load(f)
                 versions.append(data)
-        except:
+        except Exception:
             continue
     
     # 버전 번호로 정렬
@@ -49,7 +49,7 @@ def load_latest_persona(client_id: str) -> Optional[Dict]:
         if "_v" in file.stem:
             try:
                 version = int(file.stem.split("_v")[1])
-            except:
+            except (ValueError, IndexError):
                 version = 1
         else:
             version = 1
@@ -224,6 +224,12 @@ def generate_default_blog_config(persona_data: Dict) -> Dict:
                 "punctuation_style": "formal",
                 "emoji_examples": []
             },
+            "content_rules": {
+                "min_length": 1500,
+                "max_length": 2000,
+                "paragraph_length": "short",
+                "keyword_density": "natural",
+                "technical_terms": "simplify",
                 "examples_required": True,
                 "statistics_format": "bold_highlight"
             },

@@ -8,9 +8,25 @@ from mcp.server.fastmcp import FastMCP
 from google import genai
 import os
 import json
+import re
 from datetime import datetime
 from pathlib import Path
 from dotenv import load_dotenv
+
+
+def extract_json_from_response(text: str) -> dict:
+    """AI 응답에서 JSON 추출 및 파싱"""
+    if "```json" in text:
+        text = text.split("```json")[1].split("```")[0]
+    elif "```" in text:
+        text = text.split("```")[1].split("```")[0]
+    text = text.strip()
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        text = re.sub(r'\\(?!["\\/bfnrtu])', r'\\\\', text)
+        text = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', text)
+        return json.loads(text)
 
 # .env 파일 로드
 load_dotenv()
@@ -110,14 +126,7 @@ def onboard_new_client(
             model='gemini-2.0-flash',
             contents=analysis_prompt
         )
-        response_text = response.text
-        
-        if "```json" in response_text:
-            response_text = response_text.split("```json")[1].split("```")[0]
-        elif "```" in response_text:
-            response_text = response_text.split("```")[1].split("```")[0]
-        
-        persona_analysis = json.loads(response_text.strip())
+        persona_analysis = extract_json_from_response(response.text)
         
     except Exception as e:
         print(f"❌ 페르소나 분석 실패: {e}")

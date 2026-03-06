@@ -9,6 +9,8 @@ import os
 import json
 import io
 import tempfile
+import truststore
+truststore.inject_into_ssl()
 from pathlib import Path
 from datetime import datetime
 from flask import Flask, request, jsonify, send_from_directory, session, redirect, url_for
@@ -19,6 +21,7 @@ import pdfplumber
 import requests as http_requests
 import docx
 import fitz  # PyMuPDF
+import re
 
 # Windows 터미널 UTF-8 출력 설정
 if sys.platform == 'win32' and not isinstance(sys.stdout, io.TextIOWrapper):
@@ -76,8 +79,11 @@ if GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET:
         name='google',
         client_id=GOOGLE_CLIENT_ID,
         client_secret=GOOGLE_CLIENT_SECRET,
-        server_metadata_url='https://accounts.google.com/.well-known/openid-configuration',
-        client_kwargs={'scope': 'openid email profile https://www.googleapis.com/auth/drive.file'},
+        authorize_url='https://accounts.google.com/o/oauth2/v2/auth',
+        access_token_url='https://oauth2.googleapis.com/token',
+        jwks_uri='https://www.googleapis.com/oauth2/v3/certs',
+        userinfo_endpoint='https://openidconnect.googleapis.com/v1/userinfo',
+        client_kwargs={'scope': 'openid email profile'},
     )
     SSO_ENABLED = True
     print("[OK] Google OAuth SSO 활성화됨")
@@ -107,6 +113,46 @@ sys.path.insert(0, str(PROJECT_ROOT / "blog_pull"))
 
 # Google Gemini API 클라이언트
 from google import genai
+
+def parse_ai_json(text):
+    """AI 응답에서 JSON을 안전하게 추출 및 파싱"""
+    if not text:
+        return {}
+    
+    # 1. 마크다운 코드 블록 제거
+    if "```json" in text:
+        text = text.split("```json")[-1].split("```")[0]
+    elif "```" in text:
+        text = text.split("```")[-1].split("```")[0]
+    
+    text = text.strip()
+    
+    try:
+        # 2. 일반적인 파싱 시도
+        return json.loads(text)
+    except json.JSONDecodeError:
+        # 3. 이스케이프 문자 등 정제 후 재시도
+        # 제어 문자 및 잘못된 백슬래시 처리
+        # (단일 백슬래시가 줄을 깨는 경우가 많음)
+        # JSON 문자열 내의 단일 \를 \\로 변경하려고 시도 (매우 조심스럽게)
+        # 단, 이미 정당한 이스케이프(\", \\, \/, \b, \f, \n, \r, \t, \uXXXX)는 보존해야 함
+        
+        # 간단한 정제: 불필요한 제어 문자 제거 (strict=False로도 어느 정도 해결됨)
+        try:
+            return json.loads(text, strict=False)
+        except json.JSONDecodeError as e:
+            # 마지막 수단: 텍스트를 더 공격적으로 정제
+            # 예: "content": "blah \n blah" -> "content": "blah \\n blah"
+            # 하지만 이미 json.loads(strict=False)가 \n 등은 어느 정도 허용함.
+            # 문제는 문법에 어긋나는 \ 하나임.
+            # 정규식으로 유효하지 않은 \를 찾아 \\로 변환 (lookahead 사용)
+            # 유효한 이스케이프 시퀀스가 아닌 \ 를 찾아냄
+            cleaned = re.sub(r'\\(?![/"\\bfnrtu])', r'\\\\', text)
+            try:
+                return json.loads(cleaned, strict=False)
+            except:
+                print(f"[CRITICAL] JSON 파싱 최종 실패: {e}")
+                raise
 
 
 # ============================================================
@@ -379,6 +425,26 @@ def list_personas():
     return jsonify({"personas": personas})
 
 
+@app.route('/api/persona/get', methods=['GET'])
+@login_required
+def get_persona():
+    """특정 페르소나의 전체 상세 정보를 반환"""
+    client_id = request.args.get("client_id")
+    if not client_id:
+        return jsonify({"error": "client_id가 필요합니다."}), 400
+    
+    file_path = PERSONA_DIR / f"{client_id}.json"
+    if not file_path.exists():
+        return jsonify({"error": "페르소나 데이터를 찾을 수 없습니다."}), 404
+        
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        return jsonify(data)
+    except Exception as e:
+        return jsonify({"error": f"데이터 로드 중 오류 발생: {str(e)}"}), 500
+
+
 @app.route('/api/persona/extract', methods=['POST'])
 @login_required
 def extract_persona():
@@ -629,12 +695,7 @@ def extract_persona():
         
         response_text = response.text
         
-        if "```json" in response_text:
-            response_text = response_text.split("```json")[1].split("```")[0]
-        elif "```" in response_text:
-            response_text = response_text.split("```")[1].split("```")[0]
-        
-        persona_analysis = json.loads(response_text.strip())
+        persona_analysis = parse_ai_json(response_text)
         
         # 저장
         safe_org = organization.replace(' ', '_').replace('/', '_')
@@ -747,16 +808,16 @@ def extract_persona():
 @app.route('/api/blog/generate', methods=['POST'])
 @login_required
 def generate_blog():
-    """페르소나 기반 블로그 글 생성 (파일 업로드 지원)"""
+    """페르소나 기반 블로그 글 생성 (통합 DNA 데이터 지원)"""
     
     client_id = request.form.get("client_id", "")
     keywords_str = request.form.get("keywords", "")
     keywords = [k.strip() for k in keywords_str.split(",") if k.strip()]
-    blog_dna_folder = request.form.get("blog_dna_folder", "")
+    blog_dna_id = request.form.get("blog_dna_id", "") # folder_name -> blog_id
     target_audience = request.form.get("target_audience", "일반 시민")
     content_angle = request.form.get("content_angle", "정보전달형")
     
-    # 보도자료: 파일 또는 직접 입력
+    # (생략: 보도자료 파싱 로직은 동일)
     press_release = ""
     gemini_file = None
     
@@ -766,14 +827,10 @@ def generate_blog():
         try:
             temp_path = save_uploaded_file(file)
             press_release = extract_text_from_file(temp_path)
-            
-            # API 키 확인 (파일 업로드 여부 결정 위해 먼저 로드)
             api_key = os.getenv("GEMINI_API_KEY")
             if api_key:
                 temp_client = genai.Client(api_key=api_key)
-                # 멀티모달 분석을 위해 파일 업로드 시도 (PDF 등 지원 포맷만)
                 gemini_file = upload_to_gemini(temp_path, temp_client)
-                
         except Exception as e:
             return jsonify({"error": f"파일 처리 실패: {str(e)}"}), 500
         finally:
@@ -785,7 +842,7 @@ def generate_blog():
     if not client_id or not press_release.strip():
         return jsonify({"error": "페르소나와 보도자료 내용이 필요합니다."}), 400
     
-    # 페르소나 로드
+    # 페르소나 로드 (항목 동일)
     persona_data = None
     for file_path in PERSONA_DIR.glob("*.json"):
         try:
@@ -794,34 +851,50 @@ def generate_blog():
                 if data_loaded.get("client_id") == client_id:
                     persona_data = data_loaded
                     break
-        except:
-            pass
+        except: pass
     
     if not persona_data:
         return jsonify({"error": f"페르소나를 찾을 수 없습니다: {client_id}"}), 404
     
-    # 블로그 DNA 로드 (선택사항)
+    # 블로그 DNA 통합 로드 (Merging)
     blog_dna_text = ""
-    if blog_dna_folder:
-        dna_data_file = BLOG_COLLECTIONS_DIR / blog_dna_folder / "_data.json"
-        if dna_data_file.exists():
-            try:
-                with open(dna_data_file, 'r', encoding='utf-8') as f:
-                    dna_collection = json.load(f)
-                
-                dna_posts = dna_collection.get("posts", [])
-                dna_blog_id = dna_collection.get("blog_id", "")
-                
-                # 블로그 글 요약 생성 (DNA 분석용)
+    if blog_dna_id:
+        try:
+            all_dna_posts = []
+            if BLOG_COLLECTIONS_DIR.exists():
+                for item in BLOG_COLLECTIONS_DIR.iterdir():
+                    if item.is_dir() and not item.name.startswith('.'):
+                        data_file = item / "_data.json"
+                        if data_file.exists():
+                            try:
+                                with open(data_file, 'r', encoding='utf-8') as f:
+                                    collection = json.load(f)
+                                if collection.get("blog_id") == blog_dna_id:
+                                    all_dna_posts.extend(collection.get("posts", []))
+                            except: pass
+            
+            # 중복 제거 및 최신순 정렬
+            seen_dna_urls = set()
+            unique_dna_posts = []
+            for post in all_dna_posts:
+                url = post.get("url")
+                if url and url not in seen_dna_urls:
+                    seen_dna_urls.add(url)
+                    unique_dna_posts.append(post)
+            unique_dna_posts.sort(key=lambda x: x.get('addDate', ''), reverse=True)
+
+            if unique_dna_posts:
+                # 통합된 포스트 중 핵심 최근 10개 샘플링하여 스타일 가이드 구성
                 dna_summary = ""
-                for i, post in enumerate(dna_posts[:8], 1):
+                for i, post in enumerate(unique_dna_posts[:10], 1):
                     content = post.get("content", "")[:1200]
-                    dna_summary += f"\n--- 글 {i}: {post.get('title', '')} ---\n{content}\n"
+                    dna_summary += f"\n--- 샘플 {i}: {post.get('title', '')} ---\n{content}\n"
                 
                 if dna_summary.strip():
+                    blog_dna_id_disp = blog_dna_id # Display name
                     blog_dna_text = f"""
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-【블로그 DNA - {dna_blog_id}의 실제 글쓰기 스타일】
+【블로그 DNA - {blog_dna_id_disp}의 실제 글쓰기 스타일】
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 아래는 이 블로그의 실제 글들입니다. 이 글들의 구조, 어투, 화법, 자주 쓰는 표현,
 문장 패턴, 문단 구성 등을 철저히 분석하여 동일한 스타일로 글을 작성해야 합니다.
@@ -837,9 +910,9 @@ def generate_blog():
 - 독자를 부르는 방식
 - 감성적 표현 or 정보 전달 비율
 """
-                    print(f"[OK] 블로그 DNA 로드됨: {dna_blog_id} ({len(dna_posts)}개 글)")
-            except Exception as e:
-                print(f"[WARN] 블로그 DNA 로드 실패: {e}")
+                print(f"[OK] 블로그 DNA 로드됨: {blog_dna_id} ({len(unique_dna_posts)}개 글)")
+        except Exception as e:
+            print(f"[WARN] 블로그 DNA 로드 실패: {e}")
     
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
@@ -915,7 +988,11 @@ def generate_blog():
 1. 보도자료의 모든 핵심 팩트를 담되, 100% {target_audience} 맞춤형 언어로 재창조할 것.
 2. {dna_instruction}
 3. 3가지 버전(포멀, 밸런스, 캐주얼)을 생성하되, 각 버전은 위 '전략 지도'를 기반으로 서로 다른 매력을 보여줄 것.
-4. **절대 금지**: 마크다운 기호(##, **, >, - 등)를 일절 사용하지 마세요. 오직 줄바꿈과 텍스트만으로 가독성을 확보하세요. (실제 사람이 쓴 블로그처럼!)
+4. **언어 및 기호 사용 규칙 (필수)**:
+   - **포멀 버전**: 과도한 쉼표(,) 사용을 지양하고, 문장을 간결하게 끊으세요. '**'나 ':' 같은 기호는 사용하지 마세요.
+   - **밸런스 버전**: '**' 기호는 절대 사용하지 마며, ':' 기호도 가급적 자제하세요.
+   - **캐주얼 버전 (이모지 제한)**: 이모지는 1문단에 최대 1개, 전체 글에서 **최대 5개**로 엄격히 제한하세요. (과도한 이모지 사용 금지)
+   - **공통**: 마크다운 기호(##, **, >, - 등)를 일절 사용하지 마세요. 오직 줄바꿈과 텍스트만으로 가독성을 확보하세요.
 5. 각 버전 본문 분량: 1,800~2,200자 (풍부한 디테일과 사례 포함)
 
 【출력 JSON 형식】
@@ -964,12 +1041,7 @@ def generate_blog():
         
         response_text = response.text
         
-        if "```json" in response_text:
-            response_text = response_text.split("```json")[1].split("```")[0]
-        elif "```" in response_text:
-            response_text = response_text.split("```")[1].split("```")[0]
-        
-        blog_result = json.loads(response_text.strip())
+        blog_result = parse_ai_json(response_text)
         versions = blog_result.get("versions", [])
         
         if not versions:
@@ -1079,6 +1151,134 @@ def generate_blog_images():
     except Exception as e:
         return jsonify({"error": f"이미지 생성 실패: {str(e)}"}), 500
 
+# ============================================================
+# API: Blog Save & Export
+# ============================================================
+
+@app.route('/api/blog/save', methods=['POST'])
+@login_required
+def save_blog():
+    """편집된 블로그 글을 JSON 파일로 저장"""
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "데이터가 없습니다."}), 400
+    
+    title = data.get("title", "")
+    content = data.get("content", "")
+    version_type = data.get("version_type", "unknown")
+    version_label = data.get("version_label", "")
+    tags = data.get("tags", [])
+    output_dir = data.get("output_dir", "")
+    
+    if not title or not content:
+        return jsonify({"error": "제목과 본문을 입력해주세요."}), 400
+    
+    try:
+        # 저장 디렉토리 결정
+        if output_dir and Path(output_dir).exists():
+            save_dir = Path(output_dir)
+        else:
+            save_dir = OUTPUT_DIR / "blogs" / datetime.now().strftime("%Y%m%d")
+            save_dir.mkdir(parents=True, exist_ok=True)
+        
+        # 파일명 생성
+        safe_title = re.sub(r'[^\w가-힣\s]', '', title)[:30].strip()
+        timestamp = datetime.now().strftime("%H%M%S")
+        filename = f"{safe_title}_{version_type}_{timestamp}_edited.json"
+        
+        save_data = {
+            "title": title,
+            "content": content,
+            "version_type": version_type,
+            "version_label": version_label,
+            "tags": tags,
+            "edited_at": datetime.now().isoformat(),
+            "is_edited": True
+        }
+        
+        save_path = save_dir / filename
+        with open(save_path, 'w', encoding='utf-8') as f:
+            json.dump(save_data, f, ensure_ascii=False, indent=2)
+        
+        return jsonify({
+            "success": True,
+            "saved_path": str(save_path),
+            "filename": filename
+        })
+    except Exception as e:
+        return jsonify({"error": f"저장 실패: {str(e)}"}), 500
+
+
+@app.route('/api/blog/export-docs', methods=['POST'])
+@login_required
+def export_blog_docs():
+    """편집된 블로그 글을 DOCX 파일로 내보내기"""
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "데이터가 없습니다."}), 400
+    
+    title = data.get("title", "제목 없음")
+    content = data.get("content", "")
+    version_label = data.get("version_label", "")
+    tags = data.get("tags", [])
+    
+    if not content:
+        return jsonify({"error": "본문 내용이 없습니다."}), 400
+    
+    try:
+        from docx.shared import Pt, Inches, RGBColor
+        from docx.enum.text import WD_ALIGN_PARAGRAPH
+        
+        doc = docx.Document()
+        
+        # 스타일 설정
+        style = doc.styles['Normal']
+        font = style.font
+        font.name = '맑은 고딕'
+        font.size = Pt(11)
+        
+        # 버전 라벨
+        if version_label:
+            label_para = doc.add_paragraph()
+            label_run = label_para.add_run(f"[{version_label}]")
+            label_run.font.size = Pt(9)
+            label_run.font.color.rgb = RGBColor(128, 128, 128)
+        
+        # 제목
+        heading = doc.add_heading(title, level=1)
+        
+        # 본문
+        paragraphs = content.split('\n')
+        for para_text in paragraphs:
+            stripped = para_text.strip()
+            if stripped:
+                doc.add_paragraph(stripped)
+        
+        # 태그
+        if tags:
+            doc.add_paragraph()
+            tag_para = doc.add_paragraph()
+            tag_run = tag_para.add_run(' '.join(f'#{t}' for t in tags))
+            tag_run.font.size = Pt(9)
+            tag_run.font.color.rgb = RGBColor(100, 100, 100)
+        
+        # 메모리에 저장 후 전송
+        buffer = io.BytesIO()
+        doc.save(buffer)
+        buffer.seek(0)
+        
+        from flask import send_file
+        safe_title = re.sub(r'[^\w가-힣\s]', '', title)[:30].strip() or 'blog'
+        
+        return send_file(
+            buffer,
+            as_attachment=True,
+            download_name=f"{safe_title}.docx",
+            mimetype='application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+        )
+    except Exception as e:
+        return jsonify({"error": f"DOCX 생성 실패: {str(e)}"}), 500
+
 
 # ============================================================
 # API: Match Rate Tester
@@ -1154,12 +1354,7 @@ def match_test():
         
         response_text = response.text
         
-        if "```json" in response_text:
-            response_text = response_text.split("```json")[1].split("```")[0]
-        elif "```" in response_text:
-            response_text = response_text.split("```")[1].split("```")[0]
-        
-        result = json.loads(response_text.strip())
+        result = parse_ai_json(response_text)
         
         return jsonify({
             "success": True,
@@ -1245,60 +1440,96 @@ def collect_blog():
 @app.route('/api/blog/collections', methods=['GET'])
 @login_required
 def list_blog_collections():
-    """수집된 블로그 컬렉션 목록"""
-    collections = []
+    """수집된 블로그 컬렉션 목록 (블로그 ID별 통합 버전)"""
+    blog_map = {}
     
     if BLOG_COLLECTIONS_DIR.exists():
+        # 날짜 내림차순 정렬 (최신 폴더 먼저)
         for item in sorted(BLOG_COLLECTIONS_DIR.iterdir(), reverse=True):
             if item.is_dir() and not item.name.startswith('.'):
-                # _data.json에서 정보 읽기
                 data_file = item / "_data.json"
                 if data_file.exists():
                     try:
                         with open(data_file, 'r', encoding='utf-8') as f:
                             data = json.load(f)
-                        collections.append({
-                            "folder": item.name,
-                            "blog_id": data.get("blog_id", ""),
-                            "collected_at": data.get("collected_at", ""),
-                            "post_count": len(data.get("posts", [])),
-                            "total_chars": sum(len(p.get("content", "")) for p in data.get("posts", []))
-                        })
+                        
+                        blog_id = data.get("blog_id", "")
+                        if not blog_id: continue
+                        
+                        posts = data.get("posts", [])
+                        post_count = len(posts)
+                        total_chars = sum(len(p.get("content", "")) for p in posts)
+                        collected_at = data.get("collected_at", item.name)
+                        
+                        if blog_id not in blog_map:
+                            blog_map[blog_id] = {
+                                "blog_id": blog_id,
+                                "folders": [item.name],
+                                "post_count": post_count,
+                                "total_chars": total_chars,
+                                "last_collected_at": collected_at
+                            }
+                        else:
+                            # 기존 데이터에 합치기 (Merging)
+                            blog_map[blog_id]["folders"].append(item.name)
+                            blog_map[blog_id]["post_count"] += post_count
+                            blog_map[blog_id]["total_chars"] += total_chars
+                            # (이미 날짜 역순 정렬이므로 처음 발견된 게 가장 최신일 가능성이 높음)
                     except:
                         pass
     
+    # 결과를 리스트로 변환
+    collections = list(blog_map.values())
     return jsonify({"collections": collections})
 
 
 @app.route('/api/blog/analyze-status', methods=['POST'])
 @login_required
 def analyze_blog_status():
-    """수집된 블로그 글을 AI로 분석하여 상태 파악"""
+    """수집된 블로그 글을 AI로 분석하여 상태 파악 (모든 수집 데이터 통합 분석)"""
     data = request.json
-    folder_name = data.get("folder", "")
+    blog_id = data.get("blog_id", "")  # 이제 folder 대신 blog_id를 직접 받음
     
-    if not folder_name:
-        return jsonify({"error": "분석할 컬렉션 폴더를 선택해주세요."}), 400
+    if not blog_id:
+        return jsonify({"error": "분석할 블로그 ID를 선택해주세요."}), 400
     
-    folder_path = BLOG_COLLECTIONS_DIR / folder_name
-    data_file = folder_path / "_data.json"
+    all_posts = []
     
-    if not data_file.exists():
-        return jsonify({"error": "컬렉션 데이터를 찾을 수 없습니다."}), 404
+    # 해당 blog_id를 가진 모든 폴더 찾아서 데이터 합치기
+    if BLOG_COLLECTIONS_DIR.exists():
+        for item in BLOG_COLLECTIONS_DIR.iterdir():
+            if item.is_dir() and not item.name.startswith('.'):
+                data_file = item / "_data.json"
+                if data_file.exists():
+                    try:
+                        with open(data_file, 'r', encoding='utf-8') as f:
+                            collection = json.load(f)
+                        if collection.get("blog_id") == blog_id:
+                            all_posts.extend(collection.get("posts", []))
+                    except:
+                        pass
+    
+    if not all_posts:
+        return jsonify({"error": f"'{blog_id}'에 대한 수집 데이터를 찾을 수 없습니다."}), 404
+    
+    # 중복 글 제거 (url 또는 logNo 기준)
+    seen_urls = set()
+    unique_posts = []
+    for post in all_posts:
+        url = post.get("url")
+        if url and url not in seen_urls:
+            seen_urls.add(url)
+            unique_posts.append(post)
     
     try:
-        with open(data_file, 'r', encoding='utf-8') as f:
-            collection = json.load(f)
+        # 날짜순 정렬 (최신순)
+        unique_posts.sort(key=lambda x: x.get('addDate', ''), reverse=True)
         
-        posts = collection.get("posts", [])
-        blog_id = collection.get("blog_id", "")
-        
-        # 블로그 글 요약 텍스트 생성
+        # 블로그 글 요약 텍스트 생성 (통합된 데이터 중 최근 15개 정도 분석)
         blog_summary = ""
-        for i, post in enumerate(posts[:10], 1):  # 최대 10개
+        for i, post in enumerate(unique_posts[:15], 1):
             content = post.get("content", "")[:1500]  # 글당 1500자
             blog_summary += f"\n\n--- 글 {i}: {post.get('title', '')} (날짜: {post.get('addDate', '')}) ---\n{content}"
-        
         api_key = os.getenv("GEMINI_API_KEY")
         if not api_key:
             return jsonify({"error": "GEMINI_API_KEY가 설정되지 않았습니다."}), 500
@@ -1420,11 +1651,7 @@ def analyze_blog_status():
         )
         
         result_text = response.text.strip()
-        if result_text.startswith("```"):
-            result_text = result_text.split("\n", 1)[1] if "\n" in result_text else result_text
-            result_text = result_text.rsplit("```", 1)[0]
-        
-        result = json.loads(result_text)
+        result = parse_ai_json(result_text)
         result["blog_id"] = blog_id
         result["post_count"] = len(posts)
         result["folder"] = folder_name
@@ -1448,13 +1675,13 @@ def analyze_blog_status():
 @app.route('/api/persona/business-analysis', methods=['POST'])
 @login_required
 def business_analysis():
-    """페르소나 + 블로그 교차 분석으로 업무적 성격 파악"""
+    """페르소나 + 블로그 교차 분석으로 업무적 성격 파악 (통합 데이터 기반)"""
     data = request.json
     client_id = data.get("client_id", "")
-    folder_name = data.get("folder", "")
+    blog_id = data.get("blog_id", "")
     
-    if not client_id or not folder_name:
-        return jsonify({"error": "페르소나와 블로그 컬렉션을 모두 선택해주세요."}), 400
+    if not client_id or not blog_id:
+        return jsonify({"error": "페르소나와 블로그 ID를 모두 선택해주세요."}), 400
     
     # 페르소나 데이터 로드
     persona_path = PERSONA_DIR / f"{client_id}.json"
@@ -1464,21 +1691,40 @@ def business_analysis():
     with open(persona_path, 'r', encoding='utf-8') as f:
         persona_data = json.load(f)
     
-    # 블로그 데이터 로드
-    data_file = BLOG_COLLECTIONS_DIR / folder_name / "_data.json"
-    if not data_file.exists():
-        return jsonify({"error": "블로그 컬렉션을 찾을 수 없습니다."}), 404
+    # 블로그 데이터 통합 로드
+    all_posts = []
+    if BLOG_COLLECTIONS_DIR.exists():
+        for item in BLOG_COLLECTIONS_DIR.iterdir():
+            if item.is_dir() and not item.name.startswith('.'):
+                data_file = item / "_data.json"
+                if data_file.exists():
+                    try:
+                        with open(data_file, 'r', encoding='utf-8') as f:
+                            collection = json.load(f)
+                        if collection.get("blog_id") == blog_id:
+                            all_posts.extend(collection.get("posts", []))
+                    except: pass
     
-    with open(data_file, 'r', encoding='utf-8') as f:
-        blog_data = json.load(f)
+    if not all_posts:
+        return jsonify({"error": f"'{blog_id}'에 대한 수집 데이터를 찾을 수 없습니다."}), 404
     
+    # 중복 제거 및 최신순 정렬
+    seen_urls = set()
+    unique_posts = []
+    for post in all_posts:
+        url = post.get("url")
+        if url and url not in seen_urls:
+            seen_urls.add(url)
+            unique_posts.append(post)
+    unique_posts.sort(key=lambda x: x.get('addDate', ''), reverse=True)
+
     try:
         # 페르소나 요약
         persona_text = json.dumps(persona_data, ensure_ascii=False, indent=2)[:3000]
         
-        # 블로그 글 요약
+        # 블로그 글 요약 (통합 데이터 중 최근 10개)
         blog_summary = ""
-        for i, post in enumerate(blog_data.get("posts", [])[:8], 1):
+        for i, post in enumerate(unique_posts[:10], 1):
             content = post.get("content", "")[:1000]
             blog_summary += f"\n--- 글 {i}: {post.get('title', '')} ---\n{content}\n"
         
@@ -1538,11 +1784,7 @@ def business_analysis():
         )
         
         result_text = response.text.strip()
-        if result_text.startswith("```"):
-            result_text = result_text.split("\n", 1)[1] if "\n" in result_text else result_text
-            result_text = result_text.rsplit("```", 1)[0]
-        
-        result = json.loads(result_text)
+        result = parse_ai_json(result_text)
         result["client_id"] = client_id
         result["blog_folder"] = folder_name
         result["created_at"] = datetime.now().isoformat()

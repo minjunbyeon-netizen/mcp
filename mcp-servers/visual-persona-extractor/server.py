@@ -8,12 +8,28 @@ from mcp.server.fastmcp import FastMCP
 from google import genai
 import os
 import json
+import re
 import base64
 from datetime import datetime
 from pathlib import Path
 from PIL import Image
 from collections import Counter
 from dotenv import load_dotenv
+
+
+def extract_json_from_response(text: str) -> dict:
+    """AI 응답에서 JSON 추출 및 파싱"""
+    if "```json" in text:
+        text = text.split("```json")[1].split("```")[0]
+    elif "```" in text:
+        text = text.split("```")[1].split("```")[0]
+    text = text.strip()
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        text = re.sub(r'\\(?!["\\/bfnrtu])', r'\\\\', text)
+        text = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', text)
+        return json.loads(text)
 
 # .env 파일 로드
 load_dotenv()
@@ -195,14 +211,7 @@ def analyze_images_with_gemini(
             model='gemini-2.0-flash',
             contents=full_content
         )
-        response_text = response.text
-        
-        if "```json" in response_text:
-            response_text = response_text.split("```json")[1].split("```")[0]
-        elif "```" in response_text:
-            response_text = response_text.split("```")[1].split("```")[0]
-        
-        visual_dna = json.loads(response_text.strip())
+        visual_dna = extract_json_from_response(response.text)
         
     except Exception as e:
         print(f"❌ Gemini Vision 분석 실패: {e}")

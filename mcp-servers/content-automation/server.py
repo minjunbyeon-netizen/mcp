@@ -8,9 +8,25 @@ from mcp.server.fastmcp import FastMCP
 from google import genai
 import os
 import json
+import re
 from datetime import datetime
 from pathlib import Path
 from dotenv import load_dotenv
+
+
+def extract_json_from_response(text: str) -> dict:
+    """AI 응답에서 JSON 추출 및 파싱"""
+    if "```json" in text:
+        text = text.split("```json")[1].split("```")[0]
+    elif "```" in text:
+        text = text.split("```")[1].split("```")[0]
+    text = text.strip()
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        text = re.sub(r'\\(?!["\\/bfnrtu])', r'\\\\', text)
+        text = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', text)
+        return json.loads(text)
 
 # .env 파일 로드
 load_dotenv()
@@ -98,15 +114,8 @@ JSON으로 반환:
             model='gemini-2.0-flash',
             contents=blog_prompt
         )
-        response_text = response.text
-        
-        if "```json" in response_text:
-            response_text = response_text.split("```json")[1].split("```")[0]
-        elif "```" in response_text:
-            response_text = response_text.split("```")[1].split("```")[0]
-        
-        blog_content = json.loads(response_text.strip())
-        
+        blog_content = extract_json_from_response(response.text)
+
     except Exception as e:
         print(f"❌ 블로그 생성 실패: {e}")
         return {"error": str(e)}
@@ -223,15 +232,8 @@ JSON으로:
             model='gemini-2.0-flash',
             contents=script_prompt
         )
-        response_text = response.text
-        
-        if "```json" in response_text:
-            response_text = response_text.split("```json")[1].split("```")[0]
-        elif "```" in response_text:
-            response_text = response_text.split("```")[1].split("```")[0]
-        
-        script = json.loads(response_text.strip())
-        
+        script = extract_json_from_response(response.text)
+
     except Exception as e:
         print(f"❌ 스크립트 생성 실패: {e}")
         return {"error": str(e)}

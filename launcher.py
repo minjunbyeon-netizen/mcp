@@ -57,7 +57,7 @@ def check_environment():
     
     folders = [
         ("input/1_personas", "페르소나 입력"),
-        ("input/2_blog_writhing", "보도자료 입력"),
+        ("input/2_blog_writing", "보도자료 입력"),
         ("output/personas", "페르소나 저장"),
         ("output/blog", "블로그 저장"),
     ]
@@ -80,11 +80,11 @@ def check_environment():
         try:
             __import__(pkg.replace(".", "_") if "." in pkg else pkg)
             print(f"  ✅ {pkg}")
-        except:
+        except Exception:
             try:
                 __import__(pkg.split(".")[0])
                 print(f"  ✅ {pkg}")
-            except:
+            except Exception:
                 print(f"  ❌ {pkg} - pip install 필요")
     
     print()

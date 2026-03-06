@@ -32,6 +32,102 @@ navItems.forEach(item => {
     });
 });
 
+// Writing Guide Toggle Event
+document.addEventListener('click', async (e) => {
+    if (e.target.closest('#btn-toggle-guide')) {
+        const guidePanel = document.getElementById('writing-guide-panel');
+        if (guidePanel.classList.contains('active')) {
+            guidePanel.classList.remove('active');
+        } else {
+            await updateWritingGuide();
+            guidePanel.classList.add('active');
+        }
+    }
+
+    if (e.target.closest('#btn-close-guide')) {
+        document.getElementById('writing-guide-panel').classList.remove('active');
+    }
+});
+
+async function updateWritingGuide() {
+    const clientId = document.getElementById('persona-select').value;
+    if (!clientId) return;
+
+    const guideContent = document.getElementById('guide-content');
+
+    // Only fetch if persona changed or not loaded
+    if (!currentPersonaData || currentPersonaData.client_id !== clientId) {
+        guideContent.innerHTML = '<div class="guide-loading">페르소나 분석 데이터를 불러오는 중...</div>';
+        try {
+            currentPersonaData = await apiRequest(`/persona/get?client_id=${clientId}`);
+        } catch (error) {
+            guideContent.innerHTML = `<div class="error-text">페르소나 로드 실패: ${error.message}</div>`;
+            return;
+        }
+    }
+
+    const pa = currentPersonaData.persona_analysis || {};
+    const commStyle = pa.communication_style || {};
+    const positiveTriggers = pa.positive_triggers || {};
+    const sensitiveAreas = pa.sensitive_areas || {};
+    const practical = pa.practical_guidelines || {};
+
+    let html = `
+        <div class="guide-section fade-in">
+            <div class="guide-section-title">✨ 전체적인 어조</div>
+            <div class="guide-item">
+                <div style="font-weight:700; color:var(--accent-primary); margin-bottom:4px;">${pa.overall_summary?.persona_type || '전문적 소통'}</div>
+                <p style="font-size: 0.9rem; line-height: 1.5; color: var(--text-secondary); margin:0;">
+                    ${pa.overall_summary?.primary_caution || '간결하고 명확한 정보 전달에 집중하세요.'}
+                </p>
+            </div>
+        </div>
+    `;
+
+    const expressions = positiveTriggers.favorite_expressions || [];
+    if (expressions.length > 0) {
+        html += `
+            <div class="guide-section fade-in">
+                <div class="guide-section-title">🗣️ 선호하는 표현 (DNA)</div>
+                <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+                    ${expressions.map(exp => `<span class="guide-tag">${exp}</span>`).join('')}
+                </div>
+            </div>
+        `;
+    }
+
+    const doItems = [
+        ...(practical.opening_recommendations || []).map(r => `시작 권장: "${r}"`),
+        ...(practical.closing_recommendations || []).map(r => `맺음 권장: "${r}"`),
+        ...(positiveTriggers.appreciated_approaches || [])
+    ];
+
+    if (doItems.length > 0) {
+        html += `
+            <div class="guide-section fade-in">
+                <div class="guide-section-title">✅ 필수 권장 사항 (Do's)</div>
+                ${doItems.map(item => `<div class="guide-item do">${item}</div>`).join('')}
+            </div>
+        `;
+    }
+
+    const dontItems = [
+        ...(sensitiveAreas.absolute_dont?.expressions || []),
+        ...(sensitiveAreas.absolute_dont?.styles || [])
+    ];
+
+    if (dontItems.length > 0) {
+        html += `
+            <div class="guide-section fade-in">
+                <div class="guide-section-title">❌ 지양 사항 (Don'ts)</div>
+                ${dontItems.map(item => `<div class="guide-item dont">${item}</div>`).join('')}
+            </div>
+        `;
+    }
+
+    guideContent.innerHTML = html;
+}
+
 // ============================================================
 // Authentication Status Check
 // ============================================================
@@ -74,6 +170,9 @@ async function checkAuthStatus() {
         if (appContent) appContent.classList.add('hidden');
     }
 }
+
+// Global state
+let currentPersonaData = null;
 
 // ============================================================
 // Utility Functions
@@ -263,19 +362,81 @@ async function loadPersonas() {
         const data = await apiRequest('/persona/list');
         const personas = data.personas || [];
 
+        // 1. Dropdown options (legacy support)
         const optionsHTML = personas.map(p =>
-            `<option value="${p.client_id}">${p.client_name} (${p.organization}) - 격식도: ${p.formality}/10</option>`
+            `<option value="${p.client_id}">${p.client_name} (${p.organization})</option>`
         ).join('');
 
         const defaultOpt = '<option value="">페르소나를 선택하세요</option>';
-
-        // Populate all persona select elements
-        ['persona-select', 'match-persona-select', 'biz-persona-select'].forEach(id => {
+        ['legacy-persona-select', 'match-persona-select', 'biz-persona-select'].forEach(id => {
             const el = document.getElementById(id);
             if (el) el.innerHTML = defaultOpt + optionsHTML;
         });
 
-        console.log(`${personas.length}개 페르소나 로드됨`);
+        // 2. Persona List (Visual Selection)
+        const containers = [
+            document.getElementById('persona-cards-grid'),
+            document.getElementById('writer-persona-cards')
+        ];
+
+        const listHeaderHTML = `
+            <div class="persona-list-header">
+                <div style="flex:0; width:32px;"></div>
+                <div class="persona-col-name">이름</div>
+                <div class="persona-col-org">소속</div>
+                <div class="persona-col-tags">핵심 유형 및 태그</div>
+            </div>
+        `;
+
+        containers.forEach(container => {
+            if (!container) return;
+
+            const itemsHTML = personas.map(p => `
+                <div class="persona-card fade-in" data-client-id="${p.client_id}">
+                    <div class="persona-avatar">${p.client_name.charAt(0)}</div>
+                    <div class="persona-col-name name">${p.client_name}</div>
+                    <div class="persona-col-org org">${p.organization}</div>
+                    <div class="persona-col-tags persona-tags">
+                        <span class="p-tag">격식 ${p.formality}/10</span>
+                        <span class="p-tag">${p.persona_type || '전문적'}</span>
+                        <span class="p-tag">${p.category || '일반'}</span>
+                    </div>
+                </div>
+            `).join('');
+
+            container.innerHTML = listHeaderHTML + itemsHTML;
+
+            // Card Click Event
+            container.querySelectorAll('.persona-card').forEach(card => {
+                card.addEventListener('click', () => {
+                    const clientId = card.dataset.clientId;
+
+                    // Update UI: Highlight selected cards everywhere
+                    document.querySelectorAll(`.persona-card`).forEach(c => {
+                        if (c.dataset.clientId === clientId) c.classList.add('selected');
+                        else c.classList.remove('selected');
+                    });
+
+                    // Sync with hidden input (Generator)
+                    const hiddenInput = document.getElementById('persona-select');
+                    if (hiddenInput) {
+                        hiddenInput.value = clientId;
+                        // Trigger synthetic change event if needed
+                        hiddenInput.dispatchEvent(new Event('change'));
+                    }
+
+                    // Sync with legacy dropdowns
+                    ['legacy-persona-select', 'match-persona-select', 'biz-persona-select'].forEach(id => {
+                        const el = document.getElementById(id);
+                        if (el) el.value = clientId;
+                    });
+
+                    console.log(`Persona selected: ${clientId}`);
+                });
+            });
+        });
+
+        console.log(`${personas.length}개 페르소나 카드 동기화 완료`);
     } catch (error) {
         console.error('페르소나 로드 실패:', error);
     }
@@ -290,9 +451,9 @@ async function loadCollections() {
         const data = await apiRequest('/blog/collections');
         const collections = data.collections || [];
 
-        // Populate select dropdowns
+        // Populate select dropdowns (Aggregated by blog_id)
         const optionsHTML = collections.map(c =>
-            `<option value="${c.folder}">${c.blog_id} (${c.post_count}개, ${(c.total_chars / 1000).toFixed(1)}K자)</option>`
+            `<option value="${c.blog_id}">${c.blog_id} (${c.post_count}개, ${(c.total_chars / 1000).toFixed(1)}K자)</option>`
         ).join('');
 
         const defaultOpt = '<option value="">컬렉션을 선택하세요</option>';
@@ -307,19 +468,22 @@ async function loadCollections() {
             }
         });
 
-        // Populate collection list in 1-2 tab
-        const listEl = document.getElementById('blog-collections-list');
-        if (listEl) {
+        // Populate collection list in 1-2 tab (Table View)
+        const listBody = document.getElementById('blog-collections-body');
+        if (listBody) {
             if (collections.length === 0) {
-                listEl.innerHTML = '<p class="text-muted">수집된 블로그가 없습니다.</p>';
+                listBody.innerHTML = '<tr><td colspan="4" class="text-center text-muted">수집된 블로그가 없습니다.</td></tr>';
             } else {
-                listEl.innerHTML = collections.map(c => `
-                    <div class="collection-item">
-                        <div class="collection-info">
-                            <span class="collection-name">${c.blog_id}</span>
-                            <span class="collection-meta">${c.post_count}개 글 | ${(c.total_chars / 1000).toFixed(1)}K자 | ${c.collected_at || c.folder}</span>
-                        </div>
-                    </div>
+                listBody.innerHTML = collections.map(c => `
+                    <tr>
+                        <td class="font-medium">
+                            <i class="fas fa-history" style="font-size: 0.75rem; color: var(--accent-primary); margin-right: 4px;"></i>
+                            ${c.blog_id}
+                        </td>
+                        <td>${c.post_count}개</td>
+                        <td>${(c.total_chars / 1000).toFixed(1)}K자</td>
+                        <td class="text-muted" style="font-size: 0.85rem;">${c.last_collected_at}</td>
+                    </tr>
                 `).join('');
             }
         }
@@ -527,17 +691,57 @@ document.getElementById('blog-status-form')?.addEventListener('submit', async (e
     const form = e.target;
     const submitBtn = form.querySelector('button[type="submit"]');
     const resultBox = document.getElementById('blog-status-result');
+    const detailsContent = document.getElementById('dna-details-content');
 
-    const folder = document.getElementById('status-collection-select').value;
-    if (!folder) {
-        showError(resultBox, '분석할 컬렉션을 선택해주세요.');
+    const blog_id = document.getElementById('status-collection-select').value;
+    if (!blog_id) {
+        showError(resultBox, '분석할 블로그를 선택해주세요.');
         return;
     }
 
     setLoading(submitBtn, true);
 
     try {
-        const result = await apiRequest('/blog/analyze-status', 'POST', { folder });
+        const result = await apiRequest('/blog/analyze-status', 'POST', { blog_id });
+
+        // Chart.js Radar Chart
+        const ctx = document.getElementById('dna-radar-chart');
+        if (ctx) {
+            if (window.dnaChart) window.dnaChart.destroy();
+            window.dnaChart = new Chart(ctx, {
+                type: 'radar',
+                data: {
+                    labels: ['격식도', '친밀감', '유머/위트', '비유/수사', '이모지 활용'],
+                    datasets: [{
+                        label: '블로그 DNA 지표',
+                        data: [
+                            result.c2_tone_mood?.formality_level || 5,
+                            result.c2_tone_mood?.warmth_level || 5,
+                            result.c4_rhetoric?.humor_usage || 5,
+                            result.c4_rhetoric?.metaphor_usage || 5,
+                            result.c10_visual_formatting?.emoji_usage || 5
+                        ],
+                        backgroundColor: 'rgba(0, 0, 0, 0.05)',
+                        borderColor: '#000000',
+                        pointBackgroundColor: '#000000',
+                        borderWidth: 2
+                    }]
+                },
+                options: {
+                    scales: {
+                        r: {
+                            beginAtZero: true,
+                            max: 10,
+                            ticks: { stepSize: 2, display: false },
+                            grid: { color: 'rgba(0,0,0,0.05)' },
+                            angleLines: { color: 'rgba(0,0,0,0.05)' },
+                            pointLabels: { font: { size: 11, weight: '600' } }
+                        }
+                    },
+                    plugins: { legend: { display: false } }
+                }
+            });
+        }
 
         // 10가지 카테고리 렌더링 헬퍼
         function renderCategory(cat) {
@@ -553,8 +757,8 @@ document.getElementById('blog-status-form')?.addEventListener('submit', async (e
                 }
                 return `<div style="margin-top: 6px;"><span style="color: var(--text-muted); font-size: 0.8rem;">${label}: </span><span style="font-size: 0.9rem;">${val}</span></div>`;
             }).join('');
-            return `<div style="background: var(--bg-tertiary); padding: 16px; border-radius: 10px; margin-bottom: 12px;">
-                <h4 style="color: var(--accent-primary); margin-bottom: 10px; font-size: 1rem;">${cat.title || ''}</h4>
+            return `<div class="dna-cat-card">
+                <h4 class="dna-cat-title">${cat.title || ''}</h4>
                 ${itemsHTML}
             </div>`;
         }
@@ -572,13 +776,12 @@ document.getElementById('blog-status-form')?.addEventListener('submit', async (e
             result.c10_visual_formatting
         ];
 
-        const html = `
-            <h3>블로그 글쓰기 DNA 분석 리포트</h3>
-            <p style="color: var(--text-muted); margin-bottom: 20px;">${result.blog_id} | 분석 글 수: ${result.post_count}개 | 10가지 카테고리</p>
-            ${categories.map((cat, i) => renderCategory(cat)).join('')}
+        resultBox.classList.remove('hidden');
+        detailsContent.innerHTML = `
+            <div class="dna-details-grid">
+                ${categories.map((cat, i) => renderCategory(cat)).join('')}
+            </div>
         `;
-
-        showResult(resultBox, html);
 
     } catch (error) {
         showError(resultBox, error.message);
@@ -599,9 +802,9 @@ document.getElementById('business-form')?.addEventListener('submit', async (e) =
     const resultBox = document.getElementById('business-result');
 
     const clientId = document.getElementById('biz-persona-select').value;
-    const folder = document.getElementById('biz-collection-select').value;
+    const blogId = document.getElementById('biz-collection-select').value;
 
-    if (!clientId || !folder) {
+    if (!clientId || !blogId) {
         showError(resultBox, '페르소나와 블로그 컬렉션을 모두 선택해주세요.');
         return;
     }
@@ -611,7 +814,7 @@ document.getElementById('business-form')?.addEventListener('submit', async (e) =
     try {
         const result = await apiRequest('/persona/business-analysis', 'POST', {
             client_id: clientId,
-            folder: folder
+            blog_id: blogId
         });
 
         const bp = result.business_personality || {};
@@ -724,10 +927,10 @@ document.getElementById('blog-form')?.addEventListener('submit', async (e) => {
     formData.append('target_audience', document.getElementById('target-audience').value);
     formData.append('content_angle', document.getElementById('content-angle').value);
 
-    // 블로그 DNA 선택 (선택사항)
-    const blogDnaFolder = document.getElementById('blog-dna-select')?.value;
-    if (blogDnaFolder) {
-        formData.append('blog_dna_folder', blogDnaFolder);
+    // 블로그 DNA 선택 (선택사항 - 통합 블로그 ID 사용)
+    const blogDnaId = document.getElementById('blog-dna-select')?.value;
+    if (blogDnaId) {
+        formData.append('blog_dna_id', blogDnaId);
     }
 
     if (hasFile) {
@@ -764,18 +967,31 @@ document.getElementById('blog-form')?.addEventListener('submit', async (e) => {
             </button>`;
         }).join('');
 
-        // 각 버전 컨텐츠
+        // 각 버전 컨텐츠 (편집 가능)
         const contentsHTML = versions.map((v, i) => {
             const paragraphs = v.content.split('\n').filter(p => p.trim() !== '');
             const contentHTML = paragraphs.map(p => `<p>${p}</p>`).join('');
 
             return `
                 <div class="version-content ${i === 0 ? 'active' : ''}" data-version-idx="${i}">
-                    <div class="blog-preview">
-                        <h1>${v.title}</h1>
-                        <div class="content">${contentHTML}</div>
+                    <div class="blog-preview editable-preview">
+                        <h1 contenteditable="true" class="editable-field" data-field="title">${v.title}</h1>
+                        <div class="content editable-field" contenteditable="true" data-field="content">${contentHTML}</div>
                         <div class="tags">
                             ${(v.tags || []).map(tag => `<span class="tag">#${tag}</span>`).join('')}
+                        </div>
+                    </div>
+                    <div class="blog-action-toolbar">
+                        <div class="toolbar-hint">클릭하여 직접 수정할 수 있습니다</div>
+                        <div class="toolbar-actions">
+                            <button type="button" class="btn btn-save-blog" onclick="saveBlogVersion(${i})">
+                                <span class="btn-text">💾 저장</span>
+                                <span class="btn-loading">저장 중...</span>
+                            </button>
+                            <button type="button" class="btn btn-export-docs" onclick="exportBlogDocs(${i})">
+                                <span class="btn-text">📄 DOCX 내보내기</span>
+                                <span class="btn-loading">내보내기 중...</span>
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -800,8 +1016,10 @@ document.getElementById('blog-form')?.addEventListener('submit', async (e) => {
         `;
 
         const html = `
-            <h3>블로그 3가지 버전 생성 완료</h3>
-            <p style="color: var(--text-muted); margin-bottom: 16px;">동일한 내용을 3가지 톤으로 작성했습니다. 탭을 클릭하여 비교해보세요.</p>
+            <div style="margin-bottom: 20px;">
+                <h3>블로그 3가지 버전 생성 완료</h3>
+                <p style="color: var(--text-muted);">동일한 내용을 3가지 톤으로 작성했습니다. 탭을 클릭하여 비교해보세요.</p>
+            </div>
             <div class="version-tabs">${tabsHTML}</div>
             <div class="version-panels">${contentsHTML}</div>
             ${imageGenHTML}
@@ -810,7 +1028,21 @@ document.getElementById('blog-form')?.addEventListener('submit', async (e) => {
             </div>
         `;
 
-        showResult(resultBox, html);
+        // Store versions data for save/export
+        window._blogVersions = versions;
+        window._blogOutputDir = result.output_dir;
+
+        // Update the versions area and mobile preview
+        const versionsArea = document.getElementById('blog-versions-area');
+        const mobilePreview = document.getElementById('mobile-preview-content');
+        if (versionsArea) versionsArea.innerHTML = html;
+        if (mobilePreview) {
+            mobilePreview.innerHTML = `<h1>${versions[0].title}</h1>` +
+                versions[0].content.split('\n').map(p => p.trim() ? `<p>${p}</p>` : '').join('');
+        }
+
+        resultBox.classList.remove('hidden');
+        resultBox.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
         // 탭 클릭 이벤트
         resultBox.querySelectorAll('.version-tab').forEach(tab => {
@@ -820,6 +1052,20 @@ document.getElementById('blog-form')?.addEventListener('submit', async (e) => {
                 resultBox.querySelectorAll('.version-content').forEach(c => c.classList.remove('active'));
                 tab.classList.add('active');
                 resultBox.querySelector(`.version-content[data-version-idx="${idx}"]`).classList.add('active');
+
+                // Update mobile preview with current editable content
+                syncMobilePreview(resultBox, idx);
+            });
+        });
+
+        // Sync edits to mobile preview in real-time
+        resultBox.querySelectorAll('.editable-field').forEach(field => {
+            field.addEventListener('input', () => {
+                const versionContent = field.closest('.version-content');
+                if (versionContent && versionContent.classList.contains('active')) {
+                    const idx = versionContent.dataset.versionIdx;
+                    syncMobilePreview(resultBox, idx);
+                }
             });
         });
 
@@ -832,6 +1078,115 @@ document.getElementById('blog-form')?.addEventListener('submit', async (e) => {
         setLoading(submitBtn, false);
     }
 });
+
+// ============================================================
+// 2-1-A: Blog Edit / Save / Export Helpers
+// ============================================================
+
+function syncMobilePreview(resultBox, idx) {
+    const mobilePreview = document.getElementById('mobile-preview-content');
+    const versionEl = resultBox.querySelector(`.version-content[data-version-idx="${idx}"]`);
+    if (!mobilePreview || !versionEl) return;
+
+    const titleEl = versionEl.querySelector('[data-field="title"]');
+    const contentEl = versionEl.querySelector('[data-field="content"]');
+    mobilePreview.innerHTML = `<h1>${titleEl?.innerHTML || ''}</h1>${contentEl?.innerHTML || ''}`;
+}
+
+async function saveBlogVersion(idx) {
+    const versionEl = document.querySelector(`.version-content[data-version-idx="${idx}"]`);
+    if (!versionEl) return;
+
+    const btn = versionEl.querySelector('.btn-save-blog');
+    const titleEl = versionEl.querySelector('[data-field="title"]');
+    const contentEl = versionEl.querySelector('[data-field="content"]');
+
+    const title = titleEl?.innerText?.trim() || '';
+    const content = contentEl?.innerText?.trim() || '';
+    const versionData = window._blogVersions?.[idx] || {};
+
+    setLoading(btn, true);
+    try {
+        const result = await apiRequest('/blog/save', 'POST', {
+            title: title,
+            content: content,
+            version_type: versionData.version_type || 'unknown',
+            version_label: versionData.version_label || `Version ${idx + 1}`,
+            tags: versionData.tags || [],
+            output_dir: window._blogOutputDir || ''
+        });
+
+        // Show success feedback
+        btn.classList.add('save-success');
+        const btnText = btn.querySelector('.btn-text');
+        const origText = btnText.textContent;
+        btnText.textContent = '✅ 저장 완료!';
+        setTimeout(() => {
+            btnText.textContent = origText;
+            btn.classList.remove('save-success');
+        }, 2000);
+
+    } catch (error) {
+        alert('저장 실패: ' + error.message);
+    } finally {
+        setLoading(btn, false);
+    }
+}
+
+async function exportBlogDocs(idx) {
+    const versionEl = document.querySelector(`.version-content[data-version-idx="${idx}"]`);
+    if (!versionEl) return;
+
+    const btn = versionEl.querySelector('.btn-export-docs');
+    const titleEl = versionEl.querySelector('[data-field="title"]');
+    const contentEl = versionEl.querySelector('[data-field="content"]');
+
+    const title = titleEl?.innerText?.trim() || '';
+    const content = contentEl?.innerText?.trim() || '';
+    const versionData = window._blogVersions?.[idx] || {};
+
+    setLoading(btn, true);
+    try {
+        const response = await fetch(`${API_BASE}/blog/export-docs`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                title: title,
+                content: content,
+                version_type: versionData.version_type || 'unknown',
+                version_label: versionData.version_label || `Version ${idx + 1}`,
+                tags: versionData.tags || []
+            })
+        });
+
+        if (!response.ok) {
+            const errData = await response.json();
+            throw new Error(errData.error || 'DOCX 내보내기 실패');
+        }
+
+        // Download the DOCX file
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${title.replace(/[^가-힣a-zA-Z0-9\s]/g, '').trim() || 'blog'}_${versionData.version_type || 'v'}.docx`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(url);
+
+        // Success feedback
+        const btnText = btn.querySelector('.btn-text');
+        const origText = btnText.textContent;
+        btnText.textContent = '✅ 다운로드 완료!';
+        setTimeout(() => { btnText.textContent = origText; }, 2000);
+
+    } catch (error) {
+        alert('내보내기 실패: ' + error.message);
+    } finally {
+        setLoading(btn, false);
+    }
+}
 
 // ============================================================
 // 2-1-B: Blog Image Generation (On-Demand)

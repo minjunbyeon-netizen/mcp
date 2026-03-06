@@ -8,27 +8,21 @@ import sys
 import os
 import json
 import io
-import threading
-import time
+import re
+import shutil
 import subprocess
 from datetime import datetime
 from pathlib import Path
+from typing import Dict
 
 # Windows 터미널 UTF-8 출력 설정 (중복 래핑 방지)
 if sys.platform == 'win32' and not isinstance(sys.stdout, io.TextIOWrapper):
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
 
-# mcp_config.json에서 API 키 로드
-from dotenv import load_dotenv
-load_dotenv()
+from utils import LoadingSpinner, parse_json_response, load_api_key
 
-config_path = Path(__file__).parent / "mcp_config.json"
-if config_path.exists() and not os.getenv("GEMINI_API_KEY"):
-    with open(config_path, 'r', encoding='utf-8') as f:
-        config = json.load(f)
-        api_key = config.get("mcpServers", {}).get("content-automation", {}).get("env", {}).get("GEMINI_API_KEY")
-        if api_key:
-            os.environ["GEMINI_API_KEY"] = api_key
+# API 키 로드
+load_api_key("GEMINI_API_KEY")
 
 from google import genai
 from docx import Document
@@ -94,15 +88,13 @@ def extract_text_from_file(file_path: Path) -> str:
                         # 압축 해제 시도
                         try:
                             decompressed = zlib.decompress(data, -15)
-                            # 한글 디코딩 시도
                             text = decompressed.decode('utf-16-le', errors='ignore')
-                            # 제어 문자 제거
                             text = ''.join(c for c in text if c.isprintable() or c in '\n\r\t')
                             if text.strip():
                                 text_parts.append(text)
-                        except:
+                        except (zlib.error, UnicodeDecodeError):
                             pass
-                    except:
+                    except Exception:
                         pass
             ole.close()
         except Exception as e:
@@ -270,32 +262,6 @@ def select_press_release():
     return press_release
 
 
-class LoadingSpinner:
-    """로딩 스피너 애니메이션"""
-    def __init__(self, message="처리 중"):
-        self.message = message
-        self.running = False
-        self.thread = None
-    
-    def start(self):
-        self.running = True
-        self.thread = threading.Thread(target=self._animate)
-        self.thread.start()
-    
-    def _animate(self):
-        frames = ['|', '/', '-', '\\']
-        i = 0
-        while self.running:
-            print(f"\r  {frames[i % 4]} {self.message}...", end="", flush=True)
-            time.sleep(0.2)
-            i += 1
-    
-    def stop(self, success_msg="완료"):
-        self.running = False
-        if self.thread:
-            self.thread.join()
-        print(f"\r  [OK] {success_msg}" + " " * 20)
-
 # 경로 설정
 PERSONA_DIR = Path(__file__).parent / "output" / "personas"
 PERSONA_DIR.mkdir(parents=True, exist_ok=True)
@@ -310,7 +276,7 @@ WORD_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 GDRIVE_DIR = Path(r"G:\내 드라이브\01_auto_system\02_Archive_to_blog")
 
 # 입력 폴더 (보도자료 텍스트 파일 넣는 곳)
-INPUT_DIR = Path(__file__).parent / "input" / "2_blog_writhing"
+INPUT_DIR = Path(__file__).parent / "input" / "2_blog_writing"
 INPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 
@@ -328,7 +294,7 @@ def list_personas():
                         "organization": data["organization"],
                         "formality": data["persona_analysis"]["formality_level"]["score"]
                     })
-        except:
+        except Exception:
             pass
     return personas
 
@@ -362,7 +328,6 @@ def generate_blog_post(client_id: str, press_release: str, target_keywords: list
     print("[1/3] API 연결 준비")
     spinner = LoadingSpinner("Gemini AI 연결 중")
     spinner.start()
-    time.sleep(0.5)
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
         spinner.stop("실패")
@@ -527,25 +492,7 @@ def generate_blog_post(client_id: str, press_release: str, target_keywords: list
         
         response_text = response.text
         
-        # JSON 추출
-        if "```json" in response_text:
-            response_text = response_text.split("```json")[1].split("```")[0]
-        elif "```" in response_text:
-            response_text = response_text.split("```")[1].split("```")[0]
-        
-        # 잘못된 이스케이프 문자 정리
-        import re
-        response_text = response_text.strip()
-        # 잘못된 백슬래시 이스케이프 수정 (예: \escape -> \\escape)
-        response_text = re.sub(r'\\(?!["\\/bfnrtu])', r'\\\\', response_text)
-        
-        try:
-            blog_content = json.loads(response_text)
-        except json.JSONDecodeError as je:
-            # 마지막 시도: 더 공격적인 정리
-            response_text = response_text.replace('\\"', '"').replace('\\n', '\n')
-            response_text = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', response_text)
-            blog_content = json.loads(response_text)
+        blog_content = parse_json_response(response_text)
         
     except Exception as e:
         spinner.stop("오류 발생")
@@ -650,7 +597,6 @@ def generate_blog_post(client_id: str, press_release: str, target_keywords: list
     # Google Drive에도 복사 (폴더가 있으면)
     gdrive_docx_path = None
     if GDRIVE_DIR.exists():
-        import shutil
         try:
             gdrive_docx_path = GDRIVE_DIR / docx_filename
             shutil.copy2(docx_path, gdrive_docx_path)
@@ -906,7 +852,7 @@ def main():
         choice = int(input(">>> ").strip())
         selected = personas[choice - 1]
         client_id = selected["client_id"]
-    except:
+    except (ValueError, IndexError):
         print("❌ 잘못된 선택입니다.")
         return
     
