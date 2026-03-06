@@ -83,7 +83,9 @@ if GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET:
         access_token_url='https://oauth2.googleapis.com/token',
         jwks_uri='https://www.googleapis.com/oauth2/v3/certs',
         userinfo_endpoint='https://openidconnect.googleapis.com/v1/userinfo',
-        client_kwargs={'scope': 'openid email profile'},
+        client_kwargs={
+            'scope': 'openid email profile https://www.googleapis.com/auth/documents',
+        },
     )
     SSO_ENABLED = True
     print("[OK] Google OAuth SSO 활성화됨")
@@ -225,7 +227,8 @@ def login():
     if not SSO_ENABLED:
         return jsonify({"error": "SSO가 설정되지 않았습니다."}), 500
     redirect_uri = url_for('callback', _external=True)
-    return google.authorize_redirect(redirect_uri)
+    # access_type=offline → refresh_token 발급, prompt=consent → 재로그인 시에도 refresh_token 재발급
+    return google.authorize_redirect(redirect_uri, access_type='offline', prompt='consent')
 
 
 @app.route('/callback')
@@ -260,8 +263,11 @@ def callback():
             'name': user_info.get('name', ''),
             'picture': user_info.get('picture', '')
         }
-        # Google API 호출을 위한 액세스 토큰 저장
+        # Google API 호출을 위한 액세스 토큰 + 갱신 토큰 저장
+        import time as _time
         session['google_token'] = token.get('access_token', '')
+        session['google_refresh_token'] = token.get('refresh_token', '')
+        session['google_token_expires_at'] = _time.time() + token.get('expires_in', 3600)
         
         print(f"[OK] 로그인 성공: {email}")
         return redirect('/')
@@ -1910,13 +1916,40 @@ def mypage_delete(data_type, item_id):
 # Google Docs Export
 # ============================================================
 
+def _get_valid_google_token():
+    """유효한 access_token 반환. 만료 5분 전이면 refresh_token으로 자동 갱신."""
+    import time as _time
+    access_token = session.get('google_token', '')
+    expires_at = session.get('google_token_expires_at', 0)
+    refresh_token = session.get('google_refresh_token', '')
+
+    # 만료까지 5분 미만이면 갱신 시도
+    if expires_at and _time.time() > expires_at - 300:
+        if not refresh_token:
+            return None  # refresh_token 없으면 재로그인 필요
+        resp = http_requests.post('https://oauth2.googleapis.com/token', data={
+            'client_id': GOOGLE_CLIENT_ID,
+            'client_secret': GOOGLE_CLIENT_SECRET,
+            'refresh_token': refresh_token,
+            'grant_type': 'refresh_token',
+        })
+        if resp.status_code == 200:
+            new_token = resp.json()
+            session['google_token'] = new_token.get('access_token', '')
+            session['google_token_expires_at'] = _time.time() + new_token.get('expires_in', 3600)
+            return session['google_token']
+        return None  # 갱신 실패
+
+    return access_token or None
+
+
 @app.route('/api/export/google-docs', methods=['POST'])
 @login_required
 def export_to_google_docs():
     """블로그 글을 Google Docs로 내보내기"""
-    access_token = session.get('google_token')
+    access_token = _get_valid_google_token()
     if not access_token:
-        return jsonify({"error": "Google 로그인이 필요합니다. 다시 로그인해주세요."}), 401
+        return jsonify({"error": "Google 로그인이 필요합니다. 다시 로그인해주세요.", "login_required": True}), 401
 
     data = request.get_json()
     data_type = data.get('type', 'blogs')
@@ -1960,7 +1993,8 @@ def export_to_google_docs():
 
     if create_resp.status_code == 401:
         session.pop('google_token', None)
-        return jsonify({"error": "토큰이 만료되었습니다. 다시 로그인해주세요."}), 401
+        session.pop('google_refresh_token', None)
+        return jsonify({"error": "Google 인증이 만료되었습니다. 다시 로그인해주세요.", "login_required": True}), 401
 
     if create_resp.status_code != 200:
         return jsonify({"error": f"Google Docs 생성 실패: {create_resp.text}"}), 500
