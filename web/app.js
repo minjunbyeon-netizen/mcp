@@ -1551,27 +1551,30 @@ async function loadMyPersonas() {
     try {
         const res = await fetch(`${API_BASE}/mypage/personas`);
         const data = await res.json();
-        const tbody = document.querySelector('#my-personas-table tbody');
+        const grid = document.getElementById('my-personas-grid');
         const empty = document.getElementById('my-personas-empty');
-        tbody.innerHTML = '';
+        grid.innerHTML = '';
         if (!data.items || data.items.length === 0) {
-            document.getElementById('my-personas-table').style.display = 'none';
-            empty.style.display = 'block';
-            return;
+            empty.style.display = 'block'; return;
         }
-        document.getElementById('my-personas-table').style.display = 'table';
         empty.style.display = 'none';
         data.items.forEach(item => {
-            const tr = document.createElement('tr');
-            tr.innerHTML = `
-                <td>${item.client_name || item.id}</td>
-                <td>${item.organization || '-'}</td>
-                <td>${formatDate(item.created_at)}</td>
-                <td class="td-actions">
-                    <button class="btn-view" onclick="viewDetail('personas','${item.id}','페르소나 상세')">상세</button>
+            const card = document.createElement('div');
+            card.className = 'article-card';
+            card.innerHTML = `
+                <div class="article-card-top">
+                    <span class="article-badge persona">페르소나</span>
+                    <span class="article-date">${formatDate(item.created_at)}</span>
+                </div>
+                <div class="article-title">${item.client_name || item.id}</div>
+                <div class="article-meta">
+                    <span>${item.organization || '-'}</span>
+                </div>
+                <div class="article-actions">
+                    <button class="btn-view" onclick="viewDetail('personas','${item.id}','페르소나 상세')">상세보기</button>
                     <button class="btn-delete" onclick="deleteItem('personas','${item.id}',this)">삭제</button>
-                </td>`;
-            tbody.appendChild(tr);
+                </div>`;
+            grid.appendChild(card);
         });
     } catch (e) { console.error('페르소나 목록 로드 실패:', e); }
 }
@@ -1581,29 +1584,32 @@ async function loadMyBlogs() {
     try {
         const res = await fetch(`${API_BASE}/mypage/blogs`);
         const data = await res.json();
-        const tbody = document.querySelector('#my-blogs-table tbody');
+        const grid = document.getElementById('my-blogs-grid');
         const empty = document.getElementById('my-blogs-empty');
-        tbody.innerHTML = '';
+        grid.innerHTML = '';
         if (!data.items || data.items.length === 0) {
-            document.getElementById('my-blogs-table').style.display = 'none';
-            empty.style.display = 'block';
-            return;
+            empty.style.display = 'block'; return;
         }
-        document.getElementById('my-blogs-table').style.display = 'table';
         empty.style.display = 'none';
         data.items.forEach(item => {
-            const tr = document.createElement('tr');
-            tr.innerHTML = `
-                <td>${item.title || '(제목없음)'}</td>
-                <td>${item.client_id || '-'}</td>
-                <td>${item.version_count || 0}개</td>
-                <td>${formatDate(item.created_at)}</td>
-                <td class="td-actions">
-                    <button class="btn-view" onclick="viewDetail('blogs','${item.id}','블로그 상세')">상세</button>
+            const card = document.createElement('div');
+            card.className = 'article-card';
+            card.innerHTML = `
+                <div class="article-card-top">
+                    <span class="article-badge blog">블로그</span>
+                    <span class="article-date">${formatDate(item.created_at)}</span>
+                </div>
+                <div class="article-title">${item.title || '(제목없음)'}</div>
+                <div class="article-meta">
+                    <span>${item.client_id || '-'}</span>
+                    <span>버전 ${item.version_count || 0}개</span>
+                </div>
+                <div class="article-actions">
+                    <button class="btn-view" onclick="viewDetail('blogs','${item.id}','블로그 상세')">상세보기</button>
                     <button class="btn-view" onclick="exportToGoogleDocs('blogs','${item.id}')" style="background:rgba(52,168,83,0.15);color:#34a853;">Docs</button>
                     <button class="btn-delete" onclick="deleteItem('blogs','${item.id}',this)">삭제</button>
-                </td>`;
-            tbody.appendChild(tr);
+                </div>`;
+            grid.appendChild(card);
         });
     } catch (e) { console.error('블로그 목록 로드 실패:', e); }
 }
@@ -1613,28 +1619,31 @@ async function loadMyDna() {
     try {
         const res = await fetch(`${API_BASE}/mypage/dna`);
         const data = await res.json();
-        const tbody = document.querySelector('#my-dna-table tbody');
+        const grid = document.getElementById('my-dna-grid');
         const empty = document.getElementById('my-dna-empty');
-        tbody.innerHTML = '';
+        grid.innerHTML = '';
         if (!data.items || data.items.length === 0) {
-            document.getElementById('my-dna-table').style.display = 'none';
-            empty.style.display = 'block';
-            return;
+            empty.style.display = 'block'; return;
         }
-        document.getElementById('my-dna-table').style.display = 'table';
         empty.style.display = 'none';
         data.items.forEach(item => {
-            const tr = document.createElement('tr');
-            tr.innerHTML = `
-                <td>${item.blog_id || '-'}</td>
-                <td>${item.folder || '-'}</td>
-                <td>${item.post_count || 0}개</td>
-                <td>${formatDate(item.created_at)}</td>
-                <td class="td-actions">
-                    <button class="btn-view" onclick="viewDetail('dna','${item.id}','DNA 분석 상세')">상세</button>
+            const card = document.createElement('div');
+            card.className = 'article-card';
+            card.innerHTML = `
+                <div class="article-card-top">
+                    <span class="article-badge dna">DNA</span>
+                    <span class="article-date">${formatDate(item.created_at)}</span>
+                </div>
+                <div class="article-title">${item.blog_id || '-'}</div>
+                <div class="article-meta">
+                    <span>${item.folder || '-'}</span>
+                    <span>${item.post_count || 0}개 글</span>
+                </div>
+                <div class="article-actions">
+                    <button class="btn-view" onclick="viewDetail('dna','${item.id}','DNA 분석 상세')">상세보기</button>
                     <button class="btn-delete" onclick="deleteItem('dna','${item.id}',this)">삭제</button>
-                </td>`;
-            tbody.appendChild(tr);
+                </div>`;
+            grid.appendChild(card);
         });
     } catch (e) { console.error('DNA 목록 로드 실패:', e); }
 }
@@ -1644,28 +1653,31 @@ async function loadMyBusiness() {
     try {
         const res = await fetch(`${API_BASE}/mypage/business`);
         const data = await res.json();
-        const tbody = document.querySelector('#my-business-table tbody');
+        const grid = document.getElementById('my-business-grid');
         const empty = document.getElementById('my-business-empty');
-        tbody.innerHTML = '';
+        grid.innerHTML = '';
         if (!data.items || data.items.length === 0) {
-            document.getElementById('my-business-table').style.display = 'none';
-            empty.style.display = 'block';
-            return;
+            empty.style.display = 'block'; return;
         }
-        document.getElementById('my-business-table').style.display = 'table';
         empty.style.display = 'none';
         data.items.forEach(item => {
-            const tr = document.createElement('tr');
-            tr.innerHTML = `
-                <td>${item.type || '-'}</td>
-                <td>${item.client_id || '-'}</td>
-                <td>${item.blog_folder || '-'}</td>
-                <td>${formatDate(item.created_at)}</td>
-                <td class="td-actions">
-                    <button class="btn-view" onclick="viewDetail('business','${item.id}','업무적 성격 상세')">상세</button>
+            const card = document.createElement('div');
+            card.className = 'article-card';
+            card.innerHTML = `
+                <div class="article-card-top">
+                    <span class="article-badge biz">업무성격</span>
+                    <span class="article-date">${formatDate(item.created_at)}</span>
+                </div>
+                <div class="article-title">${item.type || '분석 결과'}</div>
+                <div class="article-meta">
+                    <span>${item.client_id || '-'}</span>
+                    <span>${item.blog_folder || '-'}</span>
+                </div>
+                <div class="article-actions">
+                    <button class="btn-view" onclick="viewDetail('business','${item.id}','업무적 성격 상세')">상세보기</button>
                     <button class="btn-delete" onclick="deleteItem('business','${item.id}',this)">삭제</button>
-                </td>`;
-            tbody.appendChild(tr);
+                </div>`;
+            grid.appendChild(card);
         });
     } catch (e) { console.error('업무적 성격 목록 로드 실패:', e); }
 }
@@ -1861,32 +1873,33 @@ async function loadRecentBlogs() {
     try {
         const res = await fetch(`${API_BASE}/mypage/blogs`);
         const data = await res.json();
-        const tbody = document.querySelector('#recent-blogs-table tbody');
+        const grid = document.getElementById('recent-blogs-grid');
         const empty = document.getElementById('recent-blogs-empty');
-        if (!tbody) return;
-        tbody.innerHTML = '';
+        if (!grid) return;
+        grid.innerHTML = '';
         if (!data.items || data.items.length === 0) {
-            document.getElementById('recent-blogs-table').style.display = 'none';
-            empty.style.display = 'block';
-            return;
+            empty.style.display = 'block'; return;
         }
-        document.getElementById('recent-blogs-table').style.display = 'table';
         empty.style.display = 'none';
-        // 최근 10건만 표시
-        const items = data.items.slice(0, 10);
-        items.forEach(item => {
-            const tr = document.createElement('tr');
-            tr.innerHTML = `
-                <td>${item.title || '(제목없음)'}</td>
-                <td>${item.client_id || '-'}</td>
-                <td>${item.version_count || 0}개</td>
-                <td>${formatDate(item.created_at)}</td>
-                <td class="td-actions">
-                    <button class="btn-view" onclick="viewDetail('blogs','${item.id}','블로그 상세')">상세</button>
+        data.items.slice(0, 10).forEach(item => {
+            const card = document.createElement('div');
+            card.className = 'article-card';
+            card.innerHTML = `
+                <div class="article-card-top">
+                    <span class="article-badge blog">블로그</span>
+                    <span class="article-date">${formatDate(item.created_at)}</span>
+                </div>
+                <div class="article-title">${item.title || '(제목없음)'}</div>
+                <div class="article-meta">
+                    <span>${item.client_id || '-'}</span>
+                    <span>버전 ${item.version_count || 0}개</span>
+                </div>
+                <div class="article-actions">
+                    <button class="btn-view" onclick="viewDetail('blogs','${item.id}','블로그 상세')">상세보기</button>
                     <button class="btn-view" onclick="exportToGoogleDocs('blogs','${item.id}')" style="background:rgba(52,168,83,0.15);color:#34a853;">Docs</button>
                     <button class="btn-delete" onclick="deleteItem('blogs','${item.id}',this); setTimeout(loadRecentBlogs,300);">삭제</button>
-                </td>`;
-            tbody.appendChild(tr);
+                </div>`;
+            grid.appendChild(card);
         });
     } catch (e) { console.error('최근 블로그 로드 실패:', e); }
 }

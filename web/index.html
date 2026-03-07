@@ -383,21 +383,8 @@
                         <!-- 최근 작성한 글 -->
                         <div class="recent-history" style="margin-top:32px;">
                             <h3 class="recent-history-title">최근 작성한 글</h3>
-                            <div class="data-table-wrap">
-                                <table class="data-table" id="recent-blogs-table">
-                                    <thead>
-                                        <tr>
-                                            <th>제목</th>
-                                            <th>페르소나</th>
-                                            <th>버전</th>
-                                            <th>생성일</th>
-                                            <th>관리</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody></tbody>
-                                </table>
-                                <div class="empty-state" id="recent-blogs-empty">아직 작성된 글이 없습니다.</div>
-                            </div>
+                            <div class="article-grid" id="recent-blogs-grid"></div>
+                            <div class="empty-state" id="recent-blogs-empty">아직 작성된 글이 없습니다.</div>
                         </div>
                     </div>
                 </div>
@@ -439,20 +426,8 @@
                         <p class="content-desc">저장된 페르소나를 조회하고 관리합니다.</p>
                     </div>
                     <div class="content-body">
-                        <div class="data-table-wrap">
-                            <table class="data-table" id="my-personas-table">
-                                <thead>
-                                    <tr>
-                                        <th>이름</th>
-                                        <th>소속</th>
-                                        <th>생성일</th>
-                                        <th>관리</th>
-                                    </tr>
-                                </thead>
-                                <tbody></tbody>
-                            </table>
-                            <div class="empty-state" id="my-personas-empty">저장된 페르소나가 없습니다.</div>
-                        </div>
+                        <div class="article-grid" id="my-personas-grid"></div>
+                        <div class="empty-state" id="my-personas-empty">저장된 페르소나가 없습니다.</div>
                     </div>
                 </div>
 
@@ -463,21 +438,8 @@
                         <p class="content-desc">생성된 블로그 글을 조회하고 관리합니다.</p>
                     </div>
                     <div class="content-body">
-                        <div class="data-table-wrap">
-                            <table class="data-table" id="my-blogs-table">
-                                <thead>
-                                    <tr>
-                                        <th>제목</th>
-                                        <th>페르소나</th>
-                                        <th>버전수</th>
-                                        <th>생성일</th>
-                                        <th>관리</th>
-                                    </tr>
-                                </thead>
-                                <tbody></tbody>
-                            </table>
-                            <div class="empty-state" id="my-blogs-empty">생성된 블로그 글이 없습니다.</div>
-                        </div>
+                        <div class="article-grid" id="my-blogs-grid"></div>
+                        <div class="empty-state" id="my-blogs-empty">생성된 블로그 글이 없습니다.</div>
                     </div>
                 </div>
 
@@ -488,21 +450,8 @@
                         <p class="content-desc">블로그 글쓰기 DNA 분석 결과를 관리합니다.</p>
                     </div>
                     <div class="content-body">
-                        <div class="data-table-wrap">
-                            <table class="data-table" id="my-dna-table">
-                                <thead>
-                                    <tr>
-                                        <th>블로그 ID</th>
-                                        <th>컬렉션</th>
-                                        <th>분석글수</th>
-                                        <th>생성일</th>
-                                        <th>관리</th>
-                                    </tr>
-                                </thead>
-                                <tbody></tbody>
-                            </table>
-                            <div class="empty-state" id="my-dna-empty">DNA 분석 결과가 없습니다.</div>
-                        </div>
+                        <div class="article-grid" id="my-dna-grid"></div>
+                        <div class="empty-state" id="my-dna-empty">DNA 분석 결과가 없습니다.</div>
                     </div>
                 </div>
 
@@ -513,21 +462,8 @@
                         <p class="content-desc">업무적 성격 분석 결과를 관리합니다.</p>
                     </div>
                     <div class="content-body">
-                        <div class="data-table-wrap">
-                            <table class="data-table" id="my-business-table">
-                                <thead>
-                                    <tr>
-                                        <th>유형</th>
-                                        <th>페르소나</th>
-                                        <th>블로그</th>
-                                        <th>생성일</th>
-                                        <th>관리</th>
-                                    </tr>
-                                </thead>
-                                <tbody></tbody>
-                            </table>
-                            <div class="empty-state" id="my-business-empty">업무적 성격 분석 결과가 없습니다.</div>
-                        </div>
+                        <div class="article-grid" id="my-business-grid"></div>
+                        <div class="empty-state" id="my-business-empty">업무적 성격 분석 결과가 없습니다.</div>
                     </div>
                 </div>
 
