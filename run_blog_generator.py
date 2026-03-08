@@ -248,97 +248,96 @@ def list_personas():
     return personas
 
 
-def generate_blog_post(client_id: str, press_release: str, target_keywords: list = None):
-    """블로그 글 생성"""
-    
-    print(f"\n{'='*50}")
-    print(f"  AI 블로그 글 생성 시작")
-    print(f"{'='*50}")
-    
-    # 페르소나 최신 버전 로드
-    result = load_latest_persona(client_id)
-    if not result:
-        print(f"❌ 페르소나를 찾을 수 없습니다: {client_id}")
-        return None
-    
-    persona_data, version, persona_file = result
-    custom_prompt = persona_data.get("custom_prompt", "")
-    client_name = persona_data.get("client_name", client_id)
-    
-    # blog_writing_config가 없으면 자동 생성
-    if "blog_writing_config" not in persona_data:
-        persona_data["blog_writing_config"] = generate_default_blog_config(persona_data)
-    
-    print(f"  페르소나: {client_name} (v{version})")
-    print(f"  보도자료: {len(press_release):,} 글자")
-    print(f"{'='*50}\n")
-    
-    # Step 1: API 연결
-    print("[1/3] API 연결 준비")
-    spinner = LoadingSpinner("Gemini AI 연결 중")
-    spinner.start()
-    api_key = os.getenv("GEMINI_API_KEY")
-    if not api_key:
-        spinner.stop("실패")
-        print("❌ GEMINI_API_KEY 환경 변수가 없습니다.")
-        return None
-    
-    client = genai.Client(api_key=api_key)
-    spinner.stop("API 연결 완료")
-    
-    # 페르소나 분석 데이터 추출
-    # [M-1] 스키마 정규화: run_persona_test.py가 생성하는 실제 키 구조에 맞게 수정
-    persona_analysis = persona_data.get("persona_analysis", {})
+def _analyze_press_release(client, press_release: str) -> dict | None:
+    """
+    [V4-M2] 단계 1: 배포자료 분석 → press_analysis dict 반환.
+    실패 시 None 반환 (폴백: 기존 단일호출 방식으로 전환).
+    """
+    prompt = f"""배포자료를 분석하여 아래 JSON 형식으로만 반환하세요. 다른 텍스트 없이 JSON만 출력하세요.
 
-    # formality: 신 스키마(formality_analysis.overall_score) → 구 스키마(formality_level.score) 순으로 fallback
+배포자료:
+{press_release}
+
+출력 JSON:
+{{
+  "key_messages": ["핵심 메시지1", "핵심 메시지2", "핵심 메시지3"],
+  "target_audience": "주요 독자층 설명",
+  "call_to_action": "독자에게 유도하고 싶은 행동",
+  "emphasis_points": ["강조할 포인트1", "강조할 포인트2"]
+}}"""
+    try:
+        resp = client.models.generate_content(model='gemini-2.0-flash', contents=prompt)
+        return parse_json_response(resp.text)
+    except Exception:
+        return None
+
+
+def _design_blog_structure(client, press_analysis: dict, persona_data: dict) -> dict | None:
+    """
+    [V4-M2] 단계 2: 블로그 구조 설계 → blog_design dict 반환.
+    실패 시 None 반환.
+    """
+    client_name = persona_data.get("client_name", "")
+    prompt = f"""핵심 메시지와 페르소나를 고려해 블로그 구조를 JSON으로 설계하세요. 다른 텍스트 없이 JSON만 출력하세요.
+
+페르소나: {client_name}
+핵심 메시지: {json.dumps(press_analysis.get('key_messages', []), ensure_ascii=False)}
+독자층: {press_analysis.get('target_audience', '')}
+행동 유도: {press_analysis.get('call_to_action', '')}
+강조 포인트: {json.dumps(press_analysis.get('emphasis_points', []), ensure_ascii=False)}
+
+출력 JSON:
+{{
+  "intro_hook": "독자의 관심을 끄는 인트로 방향",
+  "sections": [
+    {{"title": "섹션 제목1", "content_points": ["다룰 내용1", "다룰 내용2"]}},
+    {{"title": "섹션 제목2", "content_points": ["다룰 내용1"]}}
+  ],
+  "outro": "마무리 및 행동 유도 방향"
+}}"""
+    try:
+        resp = client.models.generate_content(model='gemini-2.0-flash', contents=prompt)
+        return parse_json_response(resp.text)
+    except Exception:
+        return None
+
+
+def _build_persona_prompt_parts(persona_data: dict) -> dict:
+    """페르소나 공통 파라미터를 한 번만 추출해 dict로 반환."""
+    persona_analysis = persona_data.get("persona_analysis", {})
     formality_analysis = persona_analysis.get("formality_analysis", {})
     formality = (
         formality_analysis.get("overall_score")
         or persona_analysis.get("formality_level", {}).get("score", 5)
         or 5
     )
-
-    # writing_chars: 신 스키마(writing_dna) → 구 스키마(writing_characteristics) 순으로 fallback
     writing_dna = persona_analysis.get("writing_dna", {})
     writing_chars = writing_dna if writing_dna else persona_analysis.get("writing_characteristics", {})
-
     comm_style = persona_analysis.get("communication_style", {})
-
-    # green_flags: 신 스키마에서는 positive_triggers.favorite_expressions 사용
     positive_triggers = persona_analysis.get("positive_triggers", {})
     green_flags = (
         persona_analysis.get("green_flags")
         or positive_triggers.get("favorite_expressions", [])
     )
-
-    # red_flags: 신 스키마에서는 sensitive_areas.absolute_dont.expressions 사용
     sensitive_areas = persona_analysis.get("sensitive_areas", {})
     red_flags = (
         persona_analysis.get("red_flags")
         or sensitive_areas.get("absolute_dont", {}).get("expressions", [])
     )
-    
-    # 격식도에 따른 말투 설정
+
     if formality >= 8:
         sentence_ending = "합쇼체(~습니다, ~입니다) 위주로 작성"
         tone_desc = "매우 격식있고 공식적인 톤"
-        emoji_rule = "이모티콘 사용 최소화 또는 금지"
     elif formality >= 6:
         sentence_ending = "해요체(~해요, ~이에요) 70% + 합쇼체(~습니다) 30% 혼용"
         tone_desc = "정중하되 친근한 톤"
-        emoji_rule = "적절한 이모티콘 사용 (^^, ~, 😊 등)"
     elif formality >= 4:
         sentence_ending = "해요체(~해요) 위주, 가끔 반말 섞어도 무방"
         tone_desc = "편안하고 친근한 톤"
-        emoji_rule = "이모티콘 자유롭게 사용"
     else:
         sentence_ending = "반말(~해, ~야) 또는 해요체 자유롭게 사용"
         tone_desc = "매우 캐주얼하고 친구같은 톤"
-        emoji_rule = "이모티콘, 'ㅋㅋ', 'ㅎㅎ' 등 자유롭게 사용"
-    
-    # 문장 길이 설정
-    # [M-1] 신 스키마: writing_dna.sentence_structure.avg_length (short/medium/long)
-    # 구 스키마: writing_characteristics.sentence_length
+
     sentence_structure = writing_dna.get("sentence_structure", {})
     sentence_length = (
         sentence_structure.get("avg_length")
@@ -351,15 +350,11 @@ def generate_blog_post(client_id: str, press_release: str, target_keywords: list
     else:
         length_guide = "적당한 길이의 문장 (20자 내외)"
 
-    # 이모지 사용 빈도
-    # [M-1] 신 스키마: communication_style.emotional_expression.emoji_usage (int 1-10)
-    # 구 스키마: writing_characteristics.emoji_usage (str "frequent"/"none"/"moderate")
     emoji_usage_raw = (
         comm_style.get("emotional_expression", {}).get("emoji_usage")
         or writing_chars.get("emoji_usage", "moderate")
     )
     if isinstance(emoji_usage_raw, int):
-        # 숫자 → 문자열 변환 (7이상=frequent, 3이하=none, 나머지=moderate)
         if emoji_usage_raw >= 7:
             emoji_usage = "frequent"
         elif emoji_usage_raw <= 3:
@@ -375,76 +370,146 @@ def generate_blog_post(client_id: str, press_release: str, target_keywords: list
         emoji_freq = "이모티콘 사용 금지"
     else:
         emoji_freq = "적절히 이모티콘 사용"
-    
-    # 키워드 문자열
-    keywords_str = ", ".join(target_keywords) if target_keywords else ""
 
-    # 인간미 강화 설정 추출
     writing_config = persona_data.get("blog_writing_config", {})
     human_config = writing_config.get("humanization", {})
     narrative_flow = human_config.get("narrative_flow", "flexible")
     insight_ratio = human_config.get("personal_insight_ratio", 0.3)
     catchphrases = human_config.get("human_catchphrases", [])
     avoid_cliches = human_config.get("avoid_cliches", [])
-    
-    # 페르소나 맞춤형 블로그 프롬프트 생성
+
+    unified_persona = persona_data.get("unified_persona")
+    unified_guide_section = ""
+    if unified_persona:
+        unified_guide_section = f"""
+  "unified_persona_guide": {{
+    "writing_guide": "{unified_persona.get('writing_guide', '')}",
+    "title_guide": "{unified_persona.get('title_guide', '')}",
+    "structure_guide": "{unified_persona.get('structure_guide', '')}",
+    "tone_guide": "{unified_persona.get('tone_guide', '')}",
+    "hashtag_guide": "{unified_persona.get('hashtag_guide', '')}",
+    "priority": "이 가이드는 블로그 DNA와 카톡 DNA를 병합한 최우선 가이드입니다. 위 strict_writing_rules보다 우선 적용하세요."
+  }},"""
+
+    return dict(
+        formality=formality,
+        tone_desc=tone_desc,
+        sentence_ending=sentence_ending,
+        length_guide=length_guide,
+        emoji_freq=emoji_freq,
+        narrative_flow=narrative_flow,
+        insight_ratio=insight_ratio,
+        catchphrases=catchphrases,
+        avoid_cliches=avoid_cliches,
+        green_flags=green_flags,
+        red_flags=red_flags,
+        comm_style=comm_style,
+        unified_guide_section=unified_guide_section,
+    )
+
+
+def _generate_final_blog(
+    client,
+    blog_design: dict,
+    persona_data: dict,
+    keywords_str: str,
+    few_shots: list,
+    press_release_fallback: str = "",
+) -> dict | None:
+    """
+    [V4-M2] 단계 3: 최종 블로그 생성.
+    blog_design이 있으면 구조 기반, 없으면 press_release_fallback 직접 사용.
+    few_shots: few_shot_examples 리스트 (없으면 []).
+    title_variants 3개를 output_schema에 포함.
+    """
+    client_name = persona_data.get("client_name", "")
+    custom_prompt = persona_data.get("custom_prompt", "")
+    p = _build_persona_prompt_parts(persona_data)
+
+    # 입력 컨텍스트: blog_design 우선, 없으면 press_release 원본
+    if blog_design:
+        input_context = f"""블로그 구조 설계:
+인트로 방향: {blog_design.get('intro_hook', '')}
+섹션 구성: {json.dumps(blog_design.get('sections', []), ensure_ascii=False)}
+아웃트로 방향: {blog_design.get('outro', '')}"""
+    else:
+        input_context = f"배포자료:\n{press_release_fallback}"
+
+    # Few-shot 섹션 (블로그 DNA — 글쓰기 스타일의 1순위 기준)
+    few_shot_section = ""
+    if few_shots:
+        examples = []
+        for idx, ex in enumerate(few_shots[:2], 1):
+            examples.append(f"예시{idx} 제목: {ex.get('title', '')}\n예시{idx} 본문 발췌:\n{ex.get('excerpt', '')}")
+        few_shot_section = f"""
+  "blog_style_primary_reference": {{
+    "priority": "HIGHEST — 아래 실제 블로그 글 예시가 글쓰기 스타일의 최우선 기준입니다. 문단 구조, 문장 길이, 어휘 수준, 소제목 방식, 마무리 패턴을 이 예시에서 학습하세요.",
+    "CRITICAL_WARNING": "예시의 주제·소재·정보(정월대보름, 야외놀이장 등 예시 속 내용)를 절대 블로그에 옮기지 마세요. 오직 글쓰기 스타일(문체, 어휘 선택, 문단 구성)만 참고하고, 블로그의 실제 주제와 내용은 반드시 input_context의 배포자료에서만 가져오세요.",
+    "examples": {json.dumps(examples, ensure_ascii=False)}
+  }},"""
+
     blog_prompt = f"""
 {{
   "system_settings": {{
-    "role": "{client_name} 페르소나 기반 블로그 콘텐츠 작성자 (페르소나 일치율 100% 목표)",
-    "objective": "보도자료를 '{client_name}'의 고유한 말투와 스타일로 완벽하게 변환",
-    "persona_enforcement_level": "CRITICAL (이 페르소나 가이드를 따르지 않을 경우 오답으로 간주함)"
+    "role": "블로그 콘텐츠 전문 작가",
+    "objective": "배포자료를 아래 [블로그 스타일 기준]에 맞는 완성도 높은 블로그 글로 변환. 광고주의 카카오톡 말투를 그대로 옮기는 것이 아니라, 블로그 글쓰기 DNA에서 학습한 스타일로 작성",
+    "two_layer_rule": "Layer 1(블로그 DNA) = 실제 글쓰기 스타일 기준 (문장 구조·어휘·단락 구성). Layer 2(페르소나) = 톤·격식도·감성 조절용 참고. Layer 1이 항상 우선합니다."
   }},
   "input_context": {{
-    "press_release": "{press_release}",
+    "blog_design": "{input_context}",
     "target_keywords": ["{keywords_str}"],
     "persona_custom_request": "{custom_prompt}"
   }},
-  "persona_profile": {{
-    "name": "{client_name}",
+  {few_shot_section}
+  "persona_tone_guide": {{
+    "note": "아래는 글쓰기 스타일이 아닌 톤(격식도·감성) 조절용 참고 데이터입니다. 카카오톡 말버릇을 블로그에 그대로 쓰지 마세요.",
     "organization": "{persona_data.get('organization', '')}",
-    "formality_level": "{formality}/10",
-    "communication_style": {{
-      "directness": "{comm_style.get('directness', {{}}).get('style', 'balanced') if isinstance(comm_style.get('directness'), dict) else comm_style.get('directness', 'balanced')}",
-      "emotional_tone": "{comm_style.get('emotional_expression', {{}}).get('level', 'neutral') if isinstance(comm_style.get('emotional_expression'), dict) else comm_style.get('emotional_tone', 'neutral')}",
-      "decision_making": "{comm_style.get('decision_making', {{}}).get('type', 'independent') if isinstance(comm_style.get('decision_making'), dict) else comm_style.get('decision_making', 'independent')}"
+    "formality_level": "{p['formality']}/10",
+    "tone_adjustment": {{
+      "overall_tone": "{p['tone_desc']}",
+      "sentence_ending_rule": "{p['sentence_ending']}",
+      "sentence_length": "{p['length_guide']}",
+      "emoji_usage": "{p['emoji_freq']}",
+      "emotional_weight": "{p['comm_style'].get('emotional_expression', dict()).get('level', 'neutral') if isinstance(p['comm_style'].get('emotional_expression'), dict) else p['comm_style'].get('emotional_tone', 'neutral')}"
+    }},
+    "personality_traits_reference_only": {{
+      "note": "아래 표현은 광고주의 성격을 이해하기 위한 참고용입니다. 블로그 본문에 직접 인용하지 마세요.",
+      "kakao_communication_patterns": {json.dumps(p['catchphrases'], ensure_ascii=False)},
+      "positive_signals": {json.dumps(p['green_flags'], ensure_ascii=False)},
+      "avoid_signals": {json.dumps(p['red_flags'], ensure_ascii=False)}
     }}
   }},
-    "strict_writing_rules": {
-      "tone_and_manner": {
-        "overall_tone": "{tone_desc}",
-        "sentence_ending_rule": "{sentence_ending}",
-        "sentence_length": "{length_guide}",
-        "emoji_usage": "{emoji_freq}",
-        "emotional_expression": "{comm_style.get('emotional_tone', 'neutral')} 감정 표현 유지"
-      },
-      "humanization_logic": {
-        "narrative_flow_style": "{narrative_flow}",
-        "personal_insight_requirement": "본문의 {int(insight_ratio*100)}% 이상은 보도자료에 없는 '{client_name}'의 의견이나 느낌을 포함할 것",
-        "catchphrases_to_use": {json.dumps(catchphrases, ensure_ascii=False)},
-        "burstiness_rule": "문장 길이를 의도적으로 다양하게 섞으세요 (연속으로 비슷한 길이 금지). 아주 짧은 문장과 긴 문장의 조화가 필요함",
-        "cliche_blacklist": {json.dumps(avoid_cliches, ensure_ascii=False)}
-      },
-      "must_follow_green_flags": {json.dumps(green_flags, ensure_ascii=False)},
-      "must_avoid_red_flags": {json.dumps(red_flags, ensure_ascii=False)},
+    "blog_writing_rules": {{
+      "style_source": "위 blog_style_primary_reference 예시의 글쓰기 패턴을 따르세요",
+      "humanization": {{
+        "narrative_flow_style": "{p['narrative_flow']}",
+        "personal_insight": "본문의 {int(p['insight_ratio']*100)}% 이상은 배포자료에 없는 필자의 시각이나 해석을 포함할 것 (실명 노출 금지)",
+        "burstiness_rule": "문장 길이를 의도적으로 다양하게 섞으세요 (아주 짧은 문장과 긴 문장의 조화)",
+        "cliche_blacklist": {json.dumps(p['avoid_cliches'], ensure_ascii=False)}
+      }},
       "banned_characters": [
+        "마크다운 볼드 기호 완전 금지: ** 기호를 블로그 본문에 단 한 번도 사용하지 마세요. **굵게** 형식 절대 금지",
+        "마크다운 헤더 완전 금지: ## 기호를 사용하지 마세요. 소제목은 「꺽쇠 괄호」로만 표현하세요",
+        "마크다운 인용/목록 금지: >, - (목록 기호)로 시작하는 줄 금지",
         "스마트 따옴표 금지: \" \" ' ' 대신 일반 따옴표 사용",
         "말줄임표 금지: ... 또는 … 사용 금지",
         "중복/혼합 기호 금지: '.,', ';;', '!!', '??' 등 지저분한 기호 조합 절대 사용 금지"
       ]
-    },
+    }},
+  {p['unified_guide_section']}
   "content_structure": {{
-    "intro": "독자의 관심을 끄는 시작 (페르소나 톤 유지)",
-    "body": "보도자료 핵심 내용을 페르소나 스타일로 풀어서 설명",
-    "outro": "마무리 및 행동 유도 (페르소나 특성 반영)"
+    "intro": "독자의 관심을 끄는 시작 (블로그 DNA 스타일 기준)",
+    "body": "배포자료 핵심 내용을 블로그 글쓰기 스타일로 풀어서 설명",
+    "outro": "마무리 및 행동 유도 (블로그 DNA 마무리 패턴 따름)"
   }},
-  "formatting_rules": {
-    "header_style": "소제목은 「 꺽쇠 괄호 」 또는 ## 마크다운 헤더 사용",
-    "emphasis_style": "핵심 내용은 **굵게** 처리 (따옴표 \" \" 사용은 최대한 자제)",
+  "formatting_rules": {{
+    "header_style": "소제목은 「꺽쇠 괄호」 사용. ## 마크다운 헤더 절대 금지",
+    "emphasis_style": "강조 시 「」 괄호 활용. ** 볼드 기호 절대 금지",
     "layout_style": "가독성을 위해 적절한 줄바꿈 사용",
     "punctuation_cleanup": "문장 끝 외에 불필요한 마침표(.) 사용 자제",
-    "emoji_minimalism": "이모지는 문단 끝에만 1개 이내로 아주 가끔씩만 사용"
-  },
+    "emoji_minimalism": "이모지는 문단 끝에만 1개 이내로 아주 가끔씩만 사용",
+    "anonymity_rule": "본문과 제목 어디에도 작성자 개인의 실명을 절대 노출하지 마세요. 소속 기관명({persona_data.get('organization', '')})은 사용 가능합니다"
+  }},
   "task_requirements": {{
     "seo_optimization": {{
       "title": "60자 이내, 키워드 포함, 클릭 유도형 제목",
@@ -456,7 +521,8 @@ def generate_blog_post(client_id: str, press_release: str, target_keywords: list
   "output_schema": {{
     "description": "반드시 아래 JSON 포맷으로만 출력",
     "format": {{
-      "title": "블로그 제목 String",
+      "title_variants": ["클릭유도형 제목 (60자 이내, 작성자 실명 제외)", "정보형 제목 (60자 이내, 작성자 실명 제외)", "감성형 제목 (60자 이내, 작성자 실명 제외)"],
+      "title": "title_variants[0] 과 동일한 값",
       "content": "Markdown 형식 본문 String (페르소나 톤 100% 반영)",
       "tags": ["태그1", "태그2", "태그3", "태그4", "태그5"],
       "meta_description": "155자 이내 String"
@@ -464,35 +530,209 @@ def generate_blog_post(client_id: str, press_release: str, target_keywords: list
   }}
 }}
 
-**중요**: 위 페르소나 프로필과 custom_request를 철저히 따라 '{client_name}'의 말투와 스타일로만 작성하세요.
+**핵심 원칙**: 블로그 DNA 예시(blog_style_primary_reference)가 글쓰기 스타일의 최우선 기준입니다. 페르소나는 톤·격식도 조절용 참고이며, 카카오톡 말버릇을 블로그에 그대로 옮기지 마세요.
+**절대 금지**: 본문과 제목에 작성자의 실명({client_name})을 절대 노출하지 마세요. 기관명은 사용 가능합니다.
 (다른 텍스트 없이 오직 JSON만 출력해주세요)
 """
-    
-    # Step 2: AI 블로그 생성
-    print("\n[2/3] 블로그 글 생성 중")
+    try:
+        resp = client.models.generate_content(model='gemini-2.0-flash', contents=blog_prompt)
+        return parse_json_response(resp.text)
+    except Exception:
+        return None
+
+
+def _self_review(client, blog_content: dict, persona_data: dict) -> tuple[int, dict | None]:
+    """
+    [V4-M3] 단계 4: 자기 검토 패스.
+    블로그 글이 페르소나 기준에 맞는지 평가 후 total < 70이면 revised_blog 반환.
+    실패 시 (0, None) 반환 → 호출자가 원본 사용.
+    재생성/재귀/while 루프 절대 없음. AI가 직접 수정한 버전만 반환.
+    """
+    client_name = persona_data.get("client_name", "")
+    p = _build_persona_prompt_parts(persona_data)
+
+    review_prompt = f"""당신은 '{client_name}' 페르소나 블로그 품질 검토 전문가입니다.
+아래 블로그 글이 페르소나 기준에 맞는지 10개 항목으로 평가하고, 필요 시 직접 수정된 버전을 제공하세요.
+
+[페르소나 기준]
+- 격식도: {p['formality']}/10
+- 톤: {p['tone_desc']}
+- 문장 끝: {p['sentence_ending']}
+- 이모지 규칙: {p['emoji_freq']}
+- 그린플래그(써야 할 표현): {json.dumps(p['green_flags'], ensure_ascii=False)}
+- 레드플래그(쓰면 안 되는 표현): {json.dumps(p['red_flags'], ensure_ascii=False)}
+
+[검토할 블로그 글]
+제목: {blog_content.get('title', '')}
+본문:
+{blog_content.get('content', '')}
+
+[평가 항목 10개] (각 10점 만점)
+1. 페르소나 말투 일치 (문장 끝, 호칭)
+2. 격식도 적정 여부
+3. 그린플래그 표현 사용
+4. 레드플래그 표현 미사용
+5. 문장 길이 다양성 (burstiness)
+6. 금지 기호 미사용 (스마트 따옴표, 말줄임표)
+7. 이모지 규칙 준수
+8. 본문 분량 (1500~2000자)
+9. 개인 의견/통찰 포함 여부
+10. 전체 가독성
+
+[출력 JSON 형식 - JSON만 출력]
+{{
+  "scores": {{
+    "persona_tone": 0,
+    "formality": 0,
+    "green_flags": 0,
+    "red_flags": 0,
+    "burstiness": 0,
+    "banned_chars": 0,
+    "emoji_rule": 0,
+    "length": 0,
+    "personal_insight": 0,
+    "readability": 0
+  }},
+  "total": 0,
+  "issues": ["발견된 문제점1", "발견된 문제점2"],
+  "revised_blog": {{
+    "title_variants": ["클릭유도형 제목", "정보형 제목", "감성형 제목"],
+    "title": "수정된 제목",
+    "content": "수정된 본문 (문제점을 직접 고친 버전)",
+    "tags": ["태그1", "태그2"],
+    "meta_description": "수정된 메타 설명"
+  }}
+}}"""
+    try:
+        resp = client.models.generate_content(model='gemini-2.0-flash', contents=review_prompt)
+        review_data = parse_json_response(resp.text)
+        if not isinstance(review_data, dict):
+            return 0, None
+        total = review_data.get("total", 0)
+        revised = review_data.get("revised_blog")
+        return total, revised
+    except Exception:
+        return 0, None
+
+
+def generate_blog_post(client_id: str, press_release: str, target_keywords: list = None):
+    """블로그 글 생성 (V4: 3단계 파이프라인 + 자기검토 + 제목 3변형)"""
+
+    print(f"\n{'='*50}")
+    print(f"  AI 블로그 글 생성 시작")
+    print(f"{'='*50}")
+
+    # 페르소나 최신 버전 로드
+    result = load_latest_persona(client_id)
+    if not result:
+        print(f"페르소나를 찾을 수 없습니다: {client_id}")
+        return None
+
+    persona_data, version, persona_file = result
+    client_name = persona_data.get("client_name", client_id)
+
+    # blog_writing_config가 없으면 자동 생성
+    if "blog_writing_config" not in persona_data:
+        persona_data["blog_writing_config"] = generate_default_blog_config(persona_data)
+
+    print(f"  페르소나: {client_name} (v{version})")
+    print(f"  보도자료: {len(press_release):,} 글자")
+    print(f"{'='*50}\n")
+
+    # Step 1: API 연결
+    print("[블로그 생성 1/4] AI 연결 준비")  # [티켓 #T002] 소비자팀 V4-MAJOR-2: 진행률 레이블 명확화
+    spinner = LoadingSpinner("Gemini AI 연결 중")
+    spinner.start()
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        spinner.stop("실패")
+        print("GEMINI_API_KEY 환경 변수가 없습니다.")
+        return None
+
+    client = genai.Client(api_key=api_key)
+    spinner.stop("API 연결 완료")
+
+    # few_shot_examples 추출 (blog_dna에 있으면 사용, 없으면 빈 리스트)
+    blog_dna = persona_data.get("blog_dna", {})
+    few_shots = blog_dna.get("few_shot_examples", [])
+
+    # 키워드 문자열
+    keywords_str = ", ".join(target_keywords) if target_keywords else ""
+
+    # Step 2: 배포자료 분석 (단계 1)
+    print("\n[블로그 생성 2/4] 배포자료 분석")  # [티켓 #T002]
+    spinner = LoadingSpinner("배포자료 핵심 메시지 추출 중")
+    spinner.start()
+    press_analysis = _analyze_press_release(client, press_release)
+    if press_analysis:
+        spinner.stop("배포자료 분석 완료")
+    else:
+        spinner.stop("분석 실패 — 기존 방식으로 진행")
+
+    # Step 3: 블로그 구조 설계 (단계 2) — press_analysis 있을 때만
+    blog_design = None
+    if press_analysis:
+        print("\n[블로그 생성 3/4] 블로그 구조 설계")  # [티켓 #T002]
+        spinner = LoadingSpinner("페르소나 맞춤 블로그 구조 설계 중")
+        spinner.start()
+        blog_design = _design_blog_structure(client, press_analysis, persona_data)
+        if blog_design:
+            spinner.stop("블로그 구조 설계 완료")
+        else:
+            spinner.stop("구조 설계 실패 — 원본 배포자료 직접 사용")
+    else:
+        print("\n[블로그 생성 3/4] 블로그 구조 설계 건너뜀")  # [티켓 #T002]
+
+    # Step 4: 최종 블로그 생성 (단계 3)
+    print("\n[블로그 생성 4/4] 블로그 글 작성")  # [티켓 #T002]
     spinner = LoadingSpinner("AI가 페르소나 스타일로 글을 작성하고 있습니다")
     spinner.start()
-    
-    try:
-        response = client.models.generate_content(
-            model='gemini-2.0-flash',
-            contents=blog_prompt
-        )
-        spinner.stop("블로그 글 생성 완료")
-        
-        # Step 3: 결과 처리
-        print("\n[3/3] 파일 저장 중")
-        spinner = LoadingSpinner("Word/Markdown 파일 생성 중")
-        spinner.start()
-        
-        response_text = response.text
-        
-        blog_content = parse_json_response(response_text)
-        
-    except Exception as e:
+
+    blog_content = _generate_final_blog(
+        client,
+        blog_design,
+        persona_data,
+        keywords_str,
+        few_shots,
+        press_release_fallback=press_release,
+    )
+
+    if not blog_content:
         spinner.stop("오류 발생")
-        print(f"\n❌ 블로그 생성 실패: {e}")
+        print("\n블로그 생성에 실패했습니다.")
         return None
+    spinner.stop("블로그 글 생성 완료")
+
+    # title_variants 하위 호환 보정: 없으면 title로 채움
+    if "title_variants" not in blog_content or not isinstance(blog_content.get("title_variants"), list):
+        blog_content["title_variants"] = [blog_content.get("title", ""), "", ""]
+
+    # Step 5: 자기 검토 패스 (단계 4)
+    print("\n  자기 검토 중...")
+    spinner = LoadingSpinner("AI 품질 자기 검토 중")
+    spinner.start()
+    quality_score, revised = _self_review(client, blog_content, persona_data)
+    if quality_score > 0:
+        if quality_score < 70 and revised:
+            spinner.stop(f"자기 검토 완료 (점수: {quality_score}/100) — 수정본 적용")
+            # revised_blog의 title_variants 보정
+            if "title_variants" not in revised or not isinstance(revised.get("title_variants"), list):
+                revised["title_variants"] = [revised.get("title", ""), "", ""]
+            blog_content = revised
+        else:
+            spinner.stop(f"자기 검토 완료 (점수: {quality_score}/100) — 원본 유지")
+    else:
+        spinner.stop("자기 검토 실패 — 원본 사용")
+
+    # title 필드를 title_variants[0]과 일치시킴
+    variants = blog_content.get("title_variants", [])
+    if variants and variants[0]:
+        blog_content["title"] = variants[0]
+
+    # 파일 저장
+    print("\n  파일 저장 중")
+    spinner = LoadingSpinner("Word/Markdown 파일 생성 중")
+    spinner.start()
     
     # 저장
     output_id = f"BLOG_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
@@ -502,6 +742,7 @@ def generate_blog_post(client_id: str, press_release: str, target_keywords: list
         "client_name": client_name,
         "type": "blog",
         "content": blog_content,
+        "title_variants": blog_content.get("title_variants", []),
         "created_at": datetime.now().isoformat()
     }
     

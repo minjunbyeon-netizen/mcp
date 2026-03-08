@@ -1223,7 +1223,7 @@ select {
 }
 
 /* ============================================================
-   Persona Card System (Visual Storytelling)
+   Persona Card System — Apple-style
    ============================================================ */
 .persona-cards-grid {
     display: flex;
@@ -1232,26 +1232,28 @@ select {
     margin-top: 20px;
     margin-bottom: 24px;
     background: var(--bg-secondary);
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-md);
-    max-height: 310px;
+    border: 1px solid rgba(255,255,255,0.07);
+    border-radius: 12px;
+    max-height: 320px;
     overflow-y: auto;
+    overflow-x: hidden;
 }
 
 .persona-list-header {
     display: flex;
     align-items: center;
-    padding: 12px 20px;
-    background: var(--bg-secondary);
-    border-bottom: 1px solid var(--border-color);
-    font-size: 0.75rem;
-    font-weight: 600;
-    color: var(--text-muted);
+    padding: 10px 20px;
+    background: rgba(255,255,255,0.03);
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+    font-size: 0.7rem;
+    font-weight: 500;
+    color: rgba(255,255,255,0.3);
+    letter-spacing: 0.06em;
     text-transform: uppercase;
-    letter-spacing: 0.5px;
     position: sticky;
     top: 0;
     z-index: 10;
+    backdrop-filter: blur(8px);
 }
 
 .persona-list-header>div,
@@ -1260,29 +1262,29 @@ select {
 }
 
 .persona-col-name {
-    flex: 1.5 !important;
+    flex: 1.4 !important;
 }
 
 .persona-col-org {
-    flex: 1.5 !important;
+    flex: 1.6 !important;
 }
 
 .persona-col-tags {
-    flex: 2 !important;
+    flex: 2.2 !important;
 }
 
 .persona-card {
     background: transparent;
     border: none;
-    border-bottom: 1px solid var(--border-color);
+    border-bottom: 1px solid rgba(255,255,255,0.05);
     border-radius: 0;
-    padding: 12px 20px;
+    padding: 13px 20px;
     cursor: pointer;
-    transition: var(--transition);
+    transition: background 0.12s ease;
     display: flex;
     flex-direction: row;
     align-items: center;
-    gap: 20px;
+    gap: 16px;
     position: relative;
 }
 
@@ -1291,12 +1293,12 @@ select {
 }
 
 .persona-card:hover {
-    background: rgba(255, 255, 255, 0.05);
+    background: rgba(255,255,255,0.04);
 }
 
 .persona-card.selected {
-    background: rgba(13, 153, 255, 0.08);
-    box-shadow: inset 4px 0 0 0 var(--accent-primary);
+    background: rgba(13,153,255,0.07);
+    box-shadow: inset 3px 0 0 0 var(--accent-primary);
 }
 
 .persona-card-header {
@@ -1304,49 +1306,97 @@ select {
 }
 
 .persona-avatar {
-    width: 32px;
-    height: 32px;
-    border-radius: 6px;
-    background: var(--bg-tertiary);
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #0d99ff 0%, #9747ff 100%);
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 0.9rem;
-    font-weight: 600;
-    color: var(--accent-primary);
-    border: 1px solid var(--border-color);
+    font-size: 0.82rem;
+    font-weight: 700;
+    color: #fff;
+    border: none;
     flex-shrink: 0;
+    letter-spacing: -0.02em;
 }
 
 .persona-info {
     display: contents;
 }
 
-.persona-info .name {
-    font-size: 0.95rem;
+.persona-info .name,
+.persona-card .name {
+    font-size: 0.875rem;
     font-weight: 600;
-    color: var(--text-primary);
+    color: #fff;
+    letter-spacing: -0.015em;
 }
 
-.persona-info .org {
-    font-size: 0.82rem;
-    color: var(--text-secondary);
+.persona-info .org,
+.persona-card .org {
+    font-size: 0.78rem;
+    color: rgba(255,255,255,0.38);
+    font-weight: 400;
 }
 
 .persona-tags {
     display: flex;
     flex-wrap: wrap;
-    gap: 6px;
+    gap: 5px;
+    align-items: center;
 }
 
 .p-tag {
-    padding: 4px 12px;
+    display: inline-flex;
+    align-items: center;
+    padding: 3px 9px;
     border-radius: 20px;
-    font-size: 0.75rem;
-    font-weight: 600;
-    background: var(--bg-tertiary);
-    color: var(--text-secondary);
-    border: 1px solid var(--border-color);
+    font-size: 0.68rem;
+    font-weight: 500;
+    letter-spacing: 0.01em;
+    border: none;
+    line-height: 1.4;
+}
+
+.p-tag.tag-formality {
+    background: rgba(13,153,255,0.15);
+    color: #60bbff;
+}
+
+.p-tag.tag-type {
+    background: rgba(151,71,255,0.15);
+    color: #b47fff;
+}
+
+.p-tag.tag-category {
+    background: rgba(20,174,92,0.15);
+    color: #3dd87e;
+}
+
+.p-tag.tag-expr {
+    background: rgba(255,205,41,0.1);
+    color: rgba(255,205,41,0.8);
+    font-style: italic;
+}
+
+/* fallback for unclassed tags */
+.p-tag:not([class*="tag-"]) {
+    background: rgba(255,255,255,0.08);
+    color: rgba(255,255,255,0.5);
+}
+
+/* 페르소나 유형 한 줄 설명 */
+.persona-type-desc {
+    font-size: 0.72rem;
+    color: rgba(255,255,255,0.38);
+    font-weight: 400;
+    margin-bottom: 5px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+    letter-spacing: -0.01em;
 }
 
 /* ============================================================

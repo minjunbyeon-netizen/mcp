@@ -539,9 +539,38 @@ def main():
         print("❌ 숫자를 입력해주세요.")
         return
     
-    # 파일명에서 정보 자동 추출
+    # [M5] 파일명에서 정보 자동 추출 강화
+    # 패턴 우선순위:
+    #   1. KakaoTalk_YYYYMMDD_HHMMSS_이름.txt  (카카오 공식 내보내기)
+    #   2. 이름_카카오.txt, 카카오_이름.txt
+    #   3. _ 구분자 마지막 세그먼트
+    #   4. 파일명 전체 사용 (기존 "담당자" 기본값 개선)
+    import re as _re
     filename = selected_file.stem
-    name_guess = filename.split("_")[-1] if "_" in filename else "담당자"
+
+    # 패턴 1: KakaoTalk_YYYYMMDD_HHMMSS_이름 또는 KakaoTalk_이름_...
+    _kakao_pattern = _re.match(
+        r'^KakaoTalk[_\s]+(?:\d{8}[_\s]+\d{6}[_\s]+)?(.+?)(?:[_\s]+\d+)?$',
+        filename,
+        _re.IGNORECASE
+    )
+    if _kakao_pattern:
+        name_guess = _kakao_pattern.group(1).replace('_', ' ').strip()
+    # 패턴 2: 이름_카카오 또는 카카오_이름
+    elif _re.search(r'카카오|kakao', filename, _re.IGNORECASE):
+        _parts = _re.split(r'[_\s]+', filename)
+        _parts = [p for p in _parts if not _re.search(r'카카오|kakao', p, _re.IGNORECASE)]
+        name_guess = _parts[-1] if _parts else filename
+    # 패턴 3: _ 구분자 마지막 세그먼트
+    elif "_" in filename:
+        name_guess = filename.split("_")[-1].strip()
+    # 패턴 4: 파일명 전체 사용
+    else:
+        name_guess = filename.strip() or "담당자"
+
+    # 빈 문자열 방지
+    if not name_guess or not name_guess.strip():
+        name_guess = filename if filename else "담당자"
     
     print(f"\n✅ 선택: {selected_file.name}")
     

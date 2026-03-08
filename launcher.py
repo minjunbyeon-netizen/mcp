@@ -29,6 +29,14 @@ def show_menu():
     print("  5. 환경 설정 확인")
     print("  6. 출력 폴더 열기")
     print()
+    # [MINOR-2] 구분선 기호 통일: "── ver3 신기능 ──" -> "=" * 60 기준 동일한 스타일
+    print("=" * 60)
+    print("  ver3 신기능")
+    print("=" * 60)
+    # [MINOR-3] 프로그램명 통일: 메뉴 표시명과 실행 헤더명 일치
+    print("  7. 원클릭 블로그 생성 (배포자료 → 즉시 출력)")
+    print("  8. 블로그 글쓰기 스타일 분석 (담당자 블로그 학습)")
+    print()
     print("  0. 종료")
     print()
     print("=" * 60)
@@ -56,9 +64,11 @@ def check_environment():
     print()
     print("폴더 상태:")
 
+    # [MINOR-5] ver3 신규 폴더 input/3_oneclick/ 목록에 추가
     folders = [
         ("input/1_personas", "페르소나 입력"),
         ("input/2_blog_writing", "보도자료 입력"),
+        ("input/3_oneclick", "원클릭 배포자료 입력"),
         ("output/personas", "페르소나 저장"),
         ("output/blog", "블로그 저장"),
     ]
@@ -142,6 +152,18 @@ def main():
 
         elif choice == "6":
             open_output_folder()
+
+        elif choice == "7":
+            # 원클릭 블로그 생성
+            clear_screen()
+            subprocess.run([sys.executable, "run_oneclick.py"], cwd=Path(__file__).parent)
+            input("\n엔터를 누르면 메뉴로 돌아갑니다...")
+
+        elif choice == "8":
+            # 블로그 글쓰기 스타일 분석
+            clear_screen()
+            subprocess.run([sys.executable, "run_blog_dna.py"], cwd=Path(__file__).parent)
+            input("\n엔터를 누르면 메뉴로 돌아갑니다...")
 
         elif choice == "0":
             print("\n종료합니다.")

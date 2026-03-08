@@ -415,6 +415,113 @@ def compare_versions(client_id: str):
     print("\n" + "=" * 80)
 
 
+def merge_dna(client_id: str, blog_dna: Dict) -> Optional[Dict]:
+    """
+    [M2] 이중 DNA 병합: persona_analysis(카톡 DNA) + blog_dna -> unified_persona.
+
+    가중치 규칙:
+    - 글쓰기 스타일: 블로그 70% + 카톡 30%
+    - 말투/어조: 카톡 60% + 블로그 40%
+
+    Args:
+        client_id: 대상 페르소나 client_id
+        blog_dna: run_blog_dna.py가 생성한 blog_dna dict
+
+    Returns:
+        업데이트된 persona_data dict (파일도 저장됨), 실패 시 None
+    """
+    import os
+    from google import genai
+
+    result = load_latest_persona(client_id)
+    if not result:
+        print(f"페르소나를 찾을 수 없습니다: {client_id}")
+        return None
+
+    persona_data, version, persona_file = result
+
+    persona_analysis = persona_data.get("persona_analysis", {})
+    if not persona_analysis:
+        print("persona_analysis(카톡 DNA)가 없습니다. 페르소나를 먼저 추출해주세요.")
+        return None
+
+    # Gemini API로 지능형 병합
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        print("GEMINI_API_KEY가 없어 unified_persona를 생성할 수 없습니다.")
+        return None
+
+    client = genai.Client(api_key=api_key)
+
+    merge_prompt = f"""
+당신은 광고 콘텐츠 페르소나 전문가입니다.
+아래 두 가지 DNA 소스를 병합하여 최적의 블로그 작성 가이드를 만들어주세요.
+
+[가중치 규칙]
+- 글쓰기 스타일(제목, 구조, 단락): 블로그 DNA 70% + 카톡 DNA 30%
+- 말투/어조/종결어미: 카톡 DNA 60% + 블로그 DNA 40%
+- 해시태그/이미지: 블로그 DNA 100% 기준
+
+[카톡 DNA (persona_analysis 요약)]
+격식도: {persona_analysis.get("formality_analysis", {}).get("overall_score", 5)}/10
+선호 종결어미: {persona_analysis.get("formality_analysis", {}).get("honorifics_level", {}).get("preferred_endings", [])}
+글쓰기 스타일: {json.dumps(persona_analysis.get("writing_dna", {}), ensure_ascii=False)[:800]}
+톤 선호도: {persona_analysis.get("content_preferences", {}).get("tone_preference", {})}
+절대 금지: {persona_analysis.get("sensitive_areas", {}).get("absolute_dont", {}).get("expressions", [])}
+긍정 표현: {persona_analysis.get("positive_triggers", {}).get("favorite_expressions", [])}
+
+[블로그 DNA]
+제목 스타일: {json.dumps(blog_dna.get("title_patterns", {}), ensure_ascii=False)}
+구조 패턴: {json.dumps(blog_dna.get("structure_patterns", {}), ensure_ascii=False)}
+인트로 패턴: {blog_dna.get("opening_patterns", [])[:3]}
+아웃트로 패턴: {blog_dna.get("closing_patterns", [])[:3]}
+이미지 빈도: {blog_dna.get("image_placeholder_frequency", 0)} (단락당)
+해시태그 스타일: {json.dumps(blog_dna.get("hashtag_style", {}), ensure_ascii=False)}
+주요 어휘: {json.dumps(blog_dna.get("vocabulary_profile", {}), ensure_ascii=False)[:400]}
+
+[출력 JSON 스키마 - 반드시 JSON만 출력]
+{{
+  "writing_guide": "실제 블로그 작성 시 따라야 할 핵심 스타일 가이드 (3-5문장, 구체적으로)",
+  "title_guide": "제목 작성 규칙 (길이, 형식, 키워드 배치 등)",
+  "structure_guide": "단락 구성, 소제목 사용, 인트로-본문-아웃트로 지침",
+  "tone_guide": "말투와 어조 지침 (종결어미, 격식도, 이모티콘 규칙)",
+  "hashtag_guide": "해시태그 개수, 위치, 형식 규칙",
+  "merge_weights": {{
+    "style_from_blog": 0.7,
+    "style_from_kakao": 0.3,
+    "tone_from_kakao": 0.6,
+    "tone_from_blog": 0.4
+  }},
+  "generated_at": "{datetime.now().isoformat()}"
+}}
+"""
+
+    try:
+        response = client.models.generate_content(
+            model='gemini-2.0-flash',
+            contents=merge_prompt
+        )
+
+        from utils import parse_json_response
+        unified = parse_json_response(response.text)
+
+    except Exception as e:
+        print(f"unified_persona 생성 중 오류: {e}")
+        return None
+
+    # 페르소나 JSON 업데이트
+    persona_data["blog_dna"] = blog_dna
+    persona_data["unified_persona"] = unified
+    persona_data["schema_version"] = "3.0"
+
+    # 파일 저장
+    with open(persona_file, 'w', encoding='utf-8') as f:
+        json.dump(persona_data, f, ensure_ascii=False, indent=2)
+
+    print(f"unified_persona 생성 완료 -> {persona_file.name}")
+    return persona_data
+
+
 if __name__ == "__main__":
     # 테스트
     print("페르소나 버전 관리 시스템")

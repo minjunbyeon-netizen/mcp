@@ -9,7 +9,63 @@ import json
 import re
 import threading
 import time
+import logging
 from pathlib import Path
+from datetime import datetime
+
+
+def setup_logger(name: str = "auto_blog", log_dir: Path = None) -> logging.Logger:
+    """
+    [M6] 공통 로거 설정.
+
+    - INFO 레벨: 콘솔 + 파일 출력
+    - DEBUG 레벨: 파일 전용 출력
+    - ERROR 레벨: 콘솔 + 파일 출력
+
+    Args:
+        name: 로거 이름 (기본 "auto_blog")
+        log_dir: 로그 저장 폴더 (기본 프로젝트 루트/logs)
+
+    Returns:
+        logging.Logger 인스턴스
+    """
+    logger = logging.getLogger(name)
+
+    # 중복 핸들러 방지
+    if logger.handlers:
+        return logger
+
+    logger.setLevel(logging.DEBUG)
+
+    # 로그 디렉토리 설정
+    if log_dir is None:
+        log_dir = Path(__file__).parent / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+
+    log_filename = f"auto_blog_{datetime.now().strftime('%Y-%m-%d')}.log"
+    log_file = log_dir / log_filename
+
+    # 포맷터
+    file_fmt = logging.Formatter(
+        "[%(asctime)s] %(levelname)s %(name)s — %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S"
+    )
+    console_fmt = logging.Formatter("%(levelname)s: %(message)s")
+
+    # 파일 핸들러 (DEBUG 이상 모두 기록)
+    fh = logging.FileHandler(log_file, encoding="utf-8")
+    fh.setLevel(logging.DEBUG)
+    fh.setFormatter(file_fmt)
+
+    # 콘솔 핸들러 (INFO 이상만)
+    ch = logging.StreamHandler()
+    ch.setLevel(logging.INFO)
+    ch.setFormatter(console_fmt)
+
+    logger.addHandler(fh)
+    logger.addHandler(ch)
+
+    return logger
 
 
 class LoadingSpinner:

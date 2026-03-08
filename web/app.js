@@ -381,28 +381,55 @@ async function loadPersonas() {
 
         const listHeaderHTML = `
             <div class="persona-list-header">
-                <div style="flex:0; width:32px;"></div>
+                <div style="flex:0; width:34px;"></div>
                 <div class="persona-col-name">이름</div>
                 <div class="persona-col-org">소속</div>
-                <div class="persona-col-tags">핵심 유형 및 태그</div>
+                <div class="persona-col-tags">페르소나 분석</div>
             </div>
         `;
 
         containers.forEach(container => {
             if (!container) return;
 
-            const itemsHTML = personas.map(p => `
+            const itemsHTML = personas.map(p => {
+                // 격식도 레이블
+                const fScore = p.formality || 5;
+                const fLabel = fScore >= 8 ? '고격식' : fScore >= 5 ? '중격식' : '캐주얼';
+
+                // 커뮤니케이션 스타일 칩
+                const directMap = { direct: '직접적', balanced: '균형적', indirect: '간접적' };
+                const directLabel = directMap[p.directness] || p.directness || '균형적';
+
+                // 감성 톤 칩
+                const emoMap = { high: '감성적', neutral: '중립적', low: '이성적' };
+                const emoLabel = emoMap[p.emotional_tone] || p.emotional_tone || '중립적';
+
+                // 대표 표현 (있을 때만)
+                const cpChip = p.catchphrase
+                    ? `<span class="p-tag tag-expr" title="${p.catchphrase}">"${p.catchphrase.slice(0,10)}${p.catchphrase.length>10?'…':''}"</span>`
+                    : '';
+
+                // 페르소나 유형 한 줄 설명 (있을 때만)
+                const typeDesc = p.persona_type
+                    ? `<div class="persona-type-desc">${p.persona_type}</div>`
+                    : '';
+
+                return `
                 <div class="persona-card fade-in" data-client-id="${p.client_id}">
                     <div class="persona-avatar">${p.client_name.charAt(0)}</div>
                     <div class="persona-col-name name">${p.client_name}</div>
                     <div class="persona-col-org org">${p.organization}</div>
-                    <div class="persona-col-tags persona-tags">
-                        <span class="p-tag">격식 ${p.formality}/10</span>
-                        <span class="p-tag">${p.persona_type || '전문적'}</span>
-                        <span class="p-tag">${p.category || '일반'}</span>
+                    <div class="persona-col-tags">
+                        ${typeDesc}
+                        <div class="persona-tags">
+                            <span class="p-tag tag-formality">${fLabel} ${fScore}/10</span>
+                            <span class="p-tag tag-type">${directLabel}</span>
+                            <span class="p-tag tag-category">${emoLabel}</span>
+                            ${cpChip}
+                        </div>
                     </div>
-                </div>
-            `).join('');
+                </div>`;
+            }).join('');
 
             container.innerHTML = listHeaderHTML + itemsHTML;
 

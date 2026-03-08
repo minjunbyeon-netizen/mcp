@@ -342,12 +342,39 @@ def list_personas():
                     if score == 5 and "formality_analysis" in pa:
                         score = pa.get("formality_analysis", {}).get("overall_score", 5)
                     
+                    summary    = pa.get("overall_summary", {})
+                    comm_style = pa.get("communication_style", {})
+                    writing    = pa.get("writing_dna", {})
+                    pm         = pa.get("personality_metrics", {})
+
+                    # 커뮤니케이션 직접성
+                    direct_raw = comm_style.get("directness", {})
+                    directness = direct_raw.get("style", direct_raw) if isinstance(direct_raw, dict) else direct_raw
+
+                    # 감성 톤
+                    emo_raw = comm_style.get("emotional_expression", {})
+                    emo_level = emo_raw.get("level", emo_raw) if isinstance(emo_raw, dict) else emo_raw
+
+                    # 대표 표현 (첫 번째 catchphrase)
+                    sig_exprs = writing.get("signature_expressions", [])
+                    catchphrase = sig_exprs[0] if isinstance(sig_exprs, list) and sig_exprs else ""
+
+                    # 완벽주의 점수
+                    perf_raw = pm.get("perfectionism", {})
+                    perf_score = perf_raw.get("score", 0) if isinstance(perf_raw, dict) else perf_raw
+
                     personas.append({
                         "client_id": data["client_id"],
                         "client_name": data.get("client_name", data["client_id"]),
                         "organization": data.get("organization", ""),
                         "formality": score,
-                        "created_at": data.get("created_at", "")
+                        "created_at": data.get("created_at", ""),
+                        "persona_type": summary.get("persona_type", ""),
+                        "category": data.get("category", ""),
+                        "directness": directness,
+                        "emotional_tone": emo_level,
+                        "catchphrase": catchphrase,
+                        "perfectionism": perf_score,
                     })
         except Exception as e:
             print(f"페르소나 로드 오류: {file_path.name} - {e}")
@@ -874,40 +901,53 @@ def generate_blog():
         # 블로그 DNA 관련 작성 지침 추가
         dna_instruction = ""
         if blog_dna_text:
-            dna_instruction = """6. 【중요】 블로그 DNA에서 분석된 글쓰기 스타일(구조, 어투, 화법, 표현)을 최우선으로 반영하세요.
-7. 페르소나의 톤/성격과 블로그 DNA의 글쓰기 패턴을 자연스럽게 융합하세요."""
-        
-        blog_prompt = f"""
-당신은 대한민국 상위 1% 블로그 마케팅 전문가이자, '{client_name}'의 영혼을 담은 페르소나 작가입니다.
-단순히 글을 쓰는 것이 아니라, **선택된 타겟({target_audience})**의 심리를 꿰뚫고 **선택된 앵글({content_angle})**이라는 그릇에 보도자료를 완벽하게 녹여내야 합니다.
+            dna_instruction = """6. 【최우선】 블로그 DNA 글쓰기 스타일(문단 구조, 어휘, 소제목 방식, 마무리 패턴)을 글쓰기의 1순위 기준으로 따르세요.
+7. 페르소나(격식도·감성 톤)는 블로그 DNA 스타일 위에 톤 조절용으로만 사용하세요. 카카오톡 말버릇을 블로그에 그대로 쓰지 마세요."""
 
-지금부터 당신이 작성할 글의 **'100점짜리 전략 지도'**입니다:
+        blog_prompt = f"""
+당신은 대한민국 상위 1% 블로그 콘텐츠 전문 작가입니다.
+핵심 원칙: 광고주의 블로그 글쓰기 스타일(DNA)을 1순위 기준으로 따르고, 페르소나 분석은 격식도·감성 톤 조절용 참고로만 활용합니다. 카카오톡 말투를 블로그에 그대로 옮기지 마세요.
+선택된 타겟({target_audience})의 심리를 꿰뚫고 선택된 앵글({content_angle})로 보도자료를 블로그 글로 완성합니다.
+【주의】 출력 블로그 본문에 **, ##, >, - 같은 마크다운 기호를 절대 사용하지 마세요.
+
+지금부터 당신이 작성할 글의 '100점짜리 전략 지도'입니다:
+
+【0. 보도자료 사전 분석 (글 작성 전 필수 실행)】
+아래 보도자료를 읽고, 본격적인 글쓰기에 앞서 다음 4가지를 내부적으로 분석하세요:
+1. 핵심 메시지: 이 보도자료가 독자에게 전달해야 할 가장 중요한 메시지 2~3가지
+2. 타겟 독자: {target_audience}의 관점에서 가장 관심을 끌 포인트는 무엇인가
+3. 감정 유발 포인트: 독자가 "오, 이건 나한테 해당되는 얘기네"라고 느낄 수 있는 상황이나 표현
+4. 행동 유도: 독자가 글을 읽고 취하길 바라는 행동(방문, 신청, 공유 등)
+이 분석 결과를 3버전 작성의 뼈대로 활용하세요. (분석 내용 자체는 출력 JSON에 포함하지 않아도 됩니다.)
 
 【1. 타겟 초밀착 전략: {target_audience}】
-- **핵심 가치**: 이 타겟이 가장 두려워하거나 갈망하는 것을 문장 사이에 녹이세요.
-- **언어 습관**: {target_audience}가 일상에서 쓰는 단어, 비유, 상황(TPO)을 가져오세요. 
-- **공감 포인트**: "맞아, 내 얘기네"라는 소리가 절로 나오게 하는 도입부 '공감 훅(Hook)'을 배치하세요.
+- 핵심 가치: 이 타겟이 가장 두려워하거나 갈망하는 것을 문장 사이에 녹이세요.
+- 언어 습관: {target_audience}가 일상에서 쓰는 단어, 비유, 상황(TPO)을 가져오세요.
+- 공감 포인트: "맞아, 내 얘기네"라는 소리가 절로 나오게 하는 도입부 공감 훅을 배치하세요.
 
 【2. 앵글 구조 설계: {content_angle}】
-- **정보전달형**: [발견 -> 혜택 -> 상세내용 -> 결론] (신뢰도 200%의 깔끔함)
-- **스토리텔링형**: [평범한 일상 -> 문제 인지 -> 보도자료 정보 발견 -> 변화된 미래] (드라마틱한 서사)
-- **Q&A형**: [타겟이 진짜 궁금해할 질문 3가지 -> 전문가적/페르소나적 답변 -> 추가 꿀팁]
-- **체험기형**: [현장 도착 느낌 -> 생생한 오감 묘사 -> 직접 겪어본 장단점 -> 추천 대상]
-- **체크리스트형**: [꼭 알아야 할 요약 -> 항목별 설명 -> 주의사항 -> 마지막 한 줄 평]
+- 정보전달형: [발견 → 혜택 → 상세내용 → 결론] (신뢰도 200%의 깔끔함)
+- 스토리텔링형: [평범한 일상 → 문제 인지 → 보도자료 정보 발견 → 변화된 미래] (드라마틱한 서사)
+- Q&A형: [타겟이 진짜 궁금해할 질문 3가지 → 전문가적/페르소나적 답변 → 추가 꿀팁]
+- 체험기형: [현장 도착 느낌 → 생생한 오감 묘사 → 직접 겪어본 장단점 → 추천 대상]
+- 체크리스트형: [꼭 알아야 할 요약 → 항목별 설명 → 주의사항 → 마지막 한 줄 평]
 
 【3. 베테랑의 디테일 (The 100pt Finish)】
-- **'나(작성자)'와 '너(독자)'**: 일방적으로 정보를 던지지 말고, 독자의 상황을 가정하며 대화하듯(You-Focus) 작성하세요.
-- **리듬감**: 문장의 길이를 조절하여(단문과 중문의 조합) 가독성을 극대화하세요.
-- **여운**: 글의 마지막에 독자가 바로 행동하거나(공유, 저장, 방문) 기분 좋은 여운을 느낄 수 있는 한 문장을 남기세요.
+- '나(작성자)'와 '너(독자)': 일방적으로 정보를 던지지 말고, 독자의 상황을 가정하며 대화하듯(You-Focus) 작성하세요.
+- 리듬감: 문장의 길이를 조절하여(단문과 중문의 조합) 가독성을 극대화하세요.
+- 여운: 글의 마지막에 독자가 바로 행동하거나(공유, 저장, 방문) 기분 좋은 여운을 느낄 수 있는 한 문장을 남기세요.
 
-【페르소나 정보】
+【페르소나 톤 참고 (글쓰기 스타일이 아닌 톤 조절용)】
+격식도: {formality_score}/10
 {custom_prompt}
 
-【격식도: {formality_score}/10】
+【성격 참고 — 카카오톡 분석 데이터, 블로그에 직접 인용 금지】
+- 광고주가 선호하는 소통 방식: {json.dumps(green_flags, ensure_ascii=False)}
+- 광고주가 꺼리는 표현 유형: {json.dumps(red_flags, ensure_ascii=False)}
+- 위 데이터는 광고주의 성격을 이해하는 참고용입니다. 블로그 본문에 그대로 사용하지 마세요.
 
-【금지/권장 사항】
-- 적극 활용: {json.dumps(green_flags, ensure_ascii=False)}
-- 절대 금지: {json.dumps(red_flags, ensure_ascii=False)}
+【익명성 규칙】
+본문과 제목 어디에도 작성자 개인의 실명을 절대 노출하지 마세요. 소속 기관명은 사용 가능합니다.
 {blog_dna_text}
 
 【보도자료 원문】
@@ -920,12 +960,21 @@ def generate_blog():
 1. 보도자료의 모든 핵심 팩트를 담되, 100% {target_audience} 맞춤형 언어로 재창조할 것.
 2. {dna_instruction}
 3. 3가지 버전(포멀, 밸런스, 캐주얼)을 생성하되, 각 버전은 위 '전략 지도'를 기반으로 서로 다른 매력을 보여줄 것.
-4. **언어 및 기호 사용 규칙 (필수)**:
-   - **포멀 버전**: 과도한 쉼표(,) 사용을 지양하고, 문장을 간결하게 끊으세요. '**'나 ':' 같은 기호는 사용하지 마세요.
-   - **밸런스 버전**: '**' 기호는 절대 사용하지 마며, ':' 기호도 가급적 자제하세요.
-   - **캐주얼 버전 (이모지 제한)**: 이모지는 1문단에 최대 1개, 전체 글에서 **최대 5개**로 엄격히 제한하세요. (과도한 이모지 사용 금지)
-   - **공통**: 마크다운 기호(##, **, >, - 등)를 일절 사용하지 마세요. 오직 줄바꿈과 텍스트만으로 가독성을 확보하세요.
-5. 각 버전 본문 분량: 1,800~2,200자 (풍부한 디테일과 사례 포함)
+4. 〔각 버전 자기 검토 — 출력 전 필수〕: 각 버전을 완성한 직후 아래 항목을 점검하고 미달 시 즉시 수정하세요.
+   - 페르소나 말투 일치 여부 (격식도 {formality_score}/10 기준, 문장 종결어미)
+   - 그린플래그 표현 1개 이상 포함 여부
+   - 레드플래그 표현 전무 여부
+   - 제목 및 본문에 작성자 실명 미포함 여부 (기관명은 허용)
+   - 마크다운 기호(**, ##, >, -) 미사용 여부
+5. 〔언어 및 기호 사용 규칙 — 필수〕:
+   - 포멀 버전: 과도한 쉼표(,) 사용 지양, 문장을 간결하게 끊으세요. ':' 기호 자제.
+   - 밸런스 버전: ':' 기호도 가급적 자제하세요.
+   - 캐주얼 버전 (이모지 제한): 이모지는 1문단에 최대 1개, 전체 글에서 최대 5개로 엄격히 제한하세요.
+   - 〔공통 절대 금지〕: ** 기호를 단 한 개도 사용하지 마세요. ## 기호도 금지. > 인용 기호도 금지. - 목록 기호도 금지. 오직 줄바꿈과 일반 텍스트만으로 가독성을 확보하세요. 강조가 필요하면 「꺽쇠 괄호」를 사용하세요.
+6. 각 버전 본문 분량: 1,800~2,200자 (풍부한 디테일과 사례 포함)
+
+〔절대 금지〕: 제목과 본문 어디에도 작성자의 실명을 노출하지 마세요. 소속 기관명은 사용 가능합니다.
+〔마크다운 완전 금지 재확인〕: 출력 JSON의 title 및 content 필드에 **, ##, >, - (목록) 같은 마크다운 기호를 단 하나도 포함하면 안 됩니다. 위반 시 출력 전체가 무효 처리됩니다.
 
 【출력 JSON 형식】
 반드시 아래 JSON 형식으로만 출력하세요:
@@ -988,7 +1037,7 @@ def generate_blog():
             with open(md_path, 'w', encoding='utf-8') as f:
                 f.write(f"# [{ver.get('version_label', vtype)}] {ver.get('title', '')}\n\n")
                 f.write(f"{ver.get('content', '')}\n\n")
-                f.write(f"**태그:** {', '.join(ver.get('tags', []))}\n")
+                f.write(f"태그: {', '.join(ver.get('tags', []))}\n")
         
         # 전체 JSON 저장
         json_path = OUTPUT_DIR / f"{output_id}.json"
