@@ -116,6 +116,26 @@ sys.path.insert(0, str(PROJECT_ROOT / "blog_pull"))
 # Google Gemini API 클라이언트
 from google import genai
 
+def _strip_markdown(text: str) -> str:
+    """블로그 본문에서 마크다운 기호를 모두 제거"""
+    import re as _re
+    # ** bold **, __bold__
+    text = _re.sub(r'\*{1,3}(.*?)\*{1,3}', r'\1', text)
+    text = _re.sub(r'_{1,2}(.*?)_{1,2}', r'\1', text)
+    # ## 헤딩
+    text = _re.sub(r'^#{1,6}\s+', '', text, flags=_re.MULTILINE)
+    # ``` 코드블록
+    text = _re.sub(r'```.*?```', '', text, flags=_re.DOTALL)
+    text = _re.sub(r'`([^`]*)`', r'\1', text)
+    # <태그>
+    text = _re.sub(r'<[^>]+>', '', text)
+    # --- === 구분선
+    text = _re.sub(r'^[-=]{3,}\s*$', '', text, flags=_re.MULTILINE)
+    # > 인용
+    text = _re.sub(r'^>\s+', '', text, flags=_re.MULTILINE)
+    return text.strip()
+
+
 def parse_ai_json(text):
     """AI 응답에서 JSON을 안전하게 추출 및 파싱"""
     if not text:
@@ -161,6 +181,15 @@ def parse_ai_json(text):
 # File Text Extraction — [M-5] utils.py로 통합, 여기서는 re-export
 # ============================================================
 from utils import extract_text_from_file  # noqa: F401
+from blog_storage import (
+    build_blog_package,
+    ensure_blog_package_shape,
+    load_blog_package,
+    save_blog_package,
+    update_blog_package_version,
+)
+from material_pipeline import build_material_bundle, build_material_bundle_from_paths
+from offline_engines import analyze_persona_offline, generate_blog_versions_offline
 
 
 def save_uploaded_file(file) -> Path:
@@ -172,35 +201,30 @@ def save_uploaded_file(file) -> Path:
 
 
 def upload_to_gemini(path: Path, client: genai.Client):
-    """Gemini File API에 파일 업로드"""
+    """Gemini File API에 파일 업로드 (PDF / 이미지 네이티브 지원)"""
+    MIME_MAP = {
+        '.pdf':  'application/pdf',
+        '.jpg':  'image/jpeg',
+        '.jpeg': 'image/jpeg',
+        '.png':  'image/png',
+        '.gif':  'image/gif',
+        '.webp': 'image/webp',
+    }
+    ext = path.suffix.lower()
+    mime_type = MIME_MAP.get(ext)
+    if not mime_type:
+        print(f"[INFO] {ext} → 텍스트 추출 방식 사용")
+        return None
     try:
-        # 파일 형식에 따라 mime_type 지정
-        ext = path.suffix.lower()
-        mime_types = {
-            '.pdf': 'application/pdf',
-            '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-            '.txt': 'text/plain'
-        }
-        mime_type = mime_types.get(ext)
-        
-        # .docx 등 일부 형식은 'text/plain'이나 'application/pdf'처럼 직접 지원되지 않을 수 있음
-        # Gemini 2.0 Flash는 PDF를 직접 지원함. Word는 텍스트 추출 후 전달이 나을 수 있음.
-        if ext not in ['.pdf', '.txt']:
-            print(f"[INFO] {ext} 형식은 텍스트 추출 방식을 사용합니다.")
-            return None
-            
-        file = client.files.upload(file=str(path), config={'mime_type': mime_type})
-        print(f"[OK] Gemini 파일 업로드 성공: {file.name}")
-        
-        # 처리 대기 (필요시)
-        # import time
-        # while file.state.name == 'PROCESSING':
-        #     time.sleep(1)
-        #     file = client.files.get(name=file.name)
-            
-        return file
+        from google.genai import types as _gtypes
+        gfile = client.files.upload(
+            file=str(path),
+            config=_gtypes.UploadFileConfig(mime_type=mime_type),
+        )
+        print(f"[OK] Gemini 파일 업로드: {path.name} → {gfile.name}")
+        return gfile
     except Exception as e:
-        print(f"[ERROR] Gemini 파일 업로드 실패: {e}")
+        print(f"[WARN] Gemini 파일 업로드 실패 ({path.name}): {e}")
         return None
 
 
@@ -313,7 +337,11 @@ def index():
 
 @app.route('/<path:filename>')
 def static_files(filename):
-    return send_from_directory('.', filename)
+    resp = send_from_directory('.', filename)
+    if filename in ('app.js', 'style.css', 'index.html'):
+        resp.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+        resp.headers['Pragma'] = 'no-cache'
+    return resp
 
 
 # ============================================================
@@ -409,282 +437,152 @@ def get_persona():
 def extract_persona():
     """파일 업로드로 페르소나 추출 (run_persona_test.py 기능과 동일)"""
     
-    # 파일 확인
     if 'file' not in request.files:
         return jsonify({"error": "파일이 업로드되지 않았습니다."}), 400
-    
+
     file = request.files['file']
     if file.filename == '':
         return jsonify({"error": "파일이 선택되지 않았습니다."}), 400
-    
-    # 폼 데이터
+
     client_name = request.form.get("client_name", "")
     organization = request.form.get("organization", "하이브미디어")
     category = request.form.get("category", "general")
-    
-    # 파일명에서 이름 자동 추출
+
     filename = Path(file.filename).stem
     if not client_name:
         name_parts = filename.split("_")
         client_name = name_parts[-1] if len(name_parts) > 1 else filename
-    
-    # 파일 저장 및 텍스트 추출
+
     temp_path = None
     try:
         temp_path = save_uploaded_file(file)
         kakao_chat = extract_text_from_file(temp_path)
-        
         if not kakao_chat.strip():
             return jsonify({"error": "파일에서 텍스트를 추출할 수 없습니다."}), 400
-        
-        print(f"파일 처리 완료: {file.filename}, {len(kakao_chat)}자")
-        
     except Exception as e:
         return jsonify({"error": f"파일 읽기 실패: {str(e)}"}), 500
     finally:
         if temp_path and temp_path.exists():
             temp_path.unlink()
-    
-    # API 키 확인
+
     api_key = os.getenv("GEMINI_API_KEY")
-    if not api_key:
-        return jsonify({"error": "GEMINI_API_KEY가 설정되지 않았습니다."}), 500
-    
-    try:
-        client = genai.Client(api_key=api_key)
-        
-        # 분석 프롬프트 (run_persona_test.py와 100% 동일한 상세 버전)
-        analysis_prompt = f"""
+    persona_analysis = None
+    analysis_mode = "offline"
+
+    if api_key:
+        try:
+            client = genai.Client(api_key=api_key)
+            analysis_prompt = f"""
 당신은 광고/마케팅 에이전시의 시니어 페르소나 분석 전문가입니다.
-아래 카카오톡 대화를 철저히 분석하여 광고주의 상세한 페르소나를 추출해주세요.
-모든 분석은 실제 대화 내용에서 발견된 패턴과 근거를 바탕으로 해야 합니다.
+아래 카카오톡 대화를 바탕으로 실제 콘텐츠 제작에 바로 쓸 수 있는 상세 페르소나 JSON을 작성하세요.
+반드시 JSON만 출력하세요.
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-【광고주 기본 정보】
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 담당자명: {client_name}
-소속 기관: {organization}
-업종 분류: {category}
+소속: {organization}
+업종: {category}
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-【분석 대상 카카오톡 대화】
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+대화:
 {kakao_chat[:10000]}
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-【분석 지침】
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-1. 모든 점수는 1-10 척도로 평가 (1=매우 낮음, 10=매우 높음)
-2. 각 항목에는 반드시 근거(evidence)를 대화에서 발췌하여 포함
-3. 콘텐츠 제작 시 실제 적용 가능한 구체적 가이드 제공
-4. JSON만 출력 (다른 텍스트 없이)
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-【출력 JSON 스키마】
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+JSON 스키마:
 {{
-    "overall_summary": {{
-        "persona_type": "한 문장으로 이 광고주를 정의 (예: 꼼꼼하고 격식을 중시하는 공공기관 담당자)",
-        "key_characteristics": ["특징1", "특징2", "특징3", "특징4", "특징5"],
-        "content_creation_difficulty": 1-10,
-        "primary_caution": "콘텐츠 작성 시 가장 주의할 점"
-    }},
-    
-    "formality_analysis": {{
-        "overall_score": 1-10,
-        "formal_language_usage": {{
-            "score": 1-10,
-            "examples": ["대화에서 발췌한 예시1", "예시2"]
-        }},
-        "honorifics_level": {{
-            "score": 1-10,
-            "preferred_endings": ["실제 사용되는 종결어미들"],
-            "avoided_expressions": ["피하는 표현들"]
-        }},
-        "business_formality": {{
-            "score": 1-10,
-            "description": "업무적 격식 수준 설명"
-        }}
-    }},
-    
-    "communication_style": {{
-        "directness": {{
-            "score": 1-10,
-            "style": "direct/diplomatic/indirect",
-            "evidence": ["근거가 되는 대화 발췌"]
-        }},
-        "response_speed_expectation": {{
-            "score": 1-10,
-            "pattern": "즉시응답요구/여유있음/유연함"
-        }},
-        "feedback_style": {{
-            "score": 1-10,
-            "type": "상세/간결/암묵적",
-            "evidence": ["근거 발췌"]
-        }},
-        "decision_making": {{
-            "score": 1-10,
-            "type": "즉결형/숙고형/합의형",
-            "evidence": ["근거 발췌"]
-        }},
-        "emotional_expression": {{
-            "score": 1-10,
-            "level": "억제적/중립/표현적",
-            "emoji_usage": 1-10,
-            "common_expressions": ["자주 쓰는 감정 표현"]
-        }}
-    }},
-    
-    "writing_dna": {{
-        "sentence_structure": {{
-            "avg_length": "short/medium/long",
-            "complexity_score": 1-10,
-            "preferred_patterns": ["선호하는 문장 패턴"]
-        }},
-        "vocabulary_level": {{
-            "score": 1-10,
-            "style": "전문용어다수/일상어중심/혼용",
-            "industry_jargon_frequency": 1-10
-        }},
-        "punctuation_habits": {{
-            "exclamation_frequency": 1-10,
-            "question_frequency": 1-10,
-            "ellipsis_usage": 1-10,
-            "special_patterns": ["특이한 문장부호 사용 패턴"]
-        }},
-        "paragraph_style": {{
-            "brevity_score": 1-10,
-            "list_preference": 1-10,
-            "structure_preference": "나열형/서술형/혼합형"
-        }}
-    }},
-    
-    "personality_metrics": {{
-        "perfectionism": {{
-            "score": 1-10,
-            "triggers": ["완벽주의가 발동하는 상황"],
-            "evidence": ["근거 발췌"]
-        }},
-        "detail_orientation": {{
-            "score": 1-10,
-            "focus_areas": ["세부사항 중시 영역"],
-            "evidence": ["근거 발췌"]
-        }},
-        "urgency_sensitivity": {{
-            "score": 1-10,
-            "patterns": ["급한 상황에서의 패턴"]
-        }},
-        "flexibility": {{
-            "score": 1-10,
-            "description": "변경사항 수용도"
-        }},
-        "risk_tolerance": {{
-            "score": 1-10,
-            "preference": "안전선호/중립/도전선호"
-        }},
-        "autonomy_preference": {{
-            "score": 1-10,
-            "description": "자율적 진행 vs 확인 요청 성향"
-        }}
-    }},
-    
-    "content_preferences": {{
-        "tone_preference": {{
-            "primary": "professional/friendly/authoritative/warm/neutral",
-            "secondary": "보조 톤",
-            "avoid": "피해야 할 톤"
-        }},
-        "length_preference": {{
-            "ideal": "concise/moderate/detailed",
-            "tolerance_for_long": 1-10
-        }},
-        "visual_preference": {{
-            "image_importance": 1-10,
-            "infographic_preference": 1-10,
-            "style_keywords": ["선호 비주얼 스타일 키워드"]
-        }},
-        "structure_preference": {{
-            "bullet_points": 1-10,
-            "numbered_lists": 1-10,
-            "headers_importance": 1-10,
-            "whitespace_preference": 1-10
-        }}
-    }},
-    
-    "sensitive_areas": {{
-        "absolute_dont": {{
-            "expressions": ["절대 사용 금지 표현/단어"],
-            "topics": ["피해야 할 주제"],
-            "styles": ["피해야 할 스타일"]
-        }},
-        "careful_handling": {{
-            "topics": ["조심스럽게 다룰 주제"],
-            "reasons": ["주의가 필요한 이유"]
-        }},
-        "past_issues": ["과거 대화에서 발견된 불만/이슈 패턴"]
-    }},
-    
-    "positive_triggers": {{
-        "favorite_expressions": ["긍정 반응을 이끄는 표현"],
-        "appreciated_approaches": ["좋아하는 접근 방식"],
-        "success_patterns": ["성공적이었던 커뮤니케이션 패턴"],
-        "value_keywords": ["중요시하는 가치/키워드"]
-    }},
-    
-    "practical_guidelines": {{
-        "opening_recommendations": ["추천 오프닝 문구 스타일"],
-        "closing_recommendations": ["추천 마무리 문구 스타일"],
-        "reporting_format": "선호하는 보고/공유 형식",
-        "revision_handling": "수정요청 시 대응 방식",
-        "timeline_sensitivity": 1-10
-    }},
-    
-    "brand_alignment": {{
-        "organization_voice_match": 1-10,
-        "industry_conventions": ["업종 특성상 고려할 관행"],
-        "target_audience_consideration": "타겟 청중 특성"
-    }}
+  "overall_summary": {{
+    "persona_type": "한 줄 정의",
+    "key_characteristics": ["특징1", "특징2", "특징3", "특징4", "특징5"],
+    "content_creation_difficulty": 1,
+    "primary_caution": "주의점"
+  }},
+  "formality_analysis": {{
+    "overall_score": 1,
+    "formal_language_usage": {{"score": 1, "examples": ["예시"]}},
+    "honorifics_level": {{"score": 1, "preferred_endings": ["~습니다"], "avoided_expressions": ["표현"]}},
+    "business_formality": {{"score": 1, "description": "설명"}}
+  }},
+  "communication_style": {{
+    "directness": {{"score": 1, "style": "direct/diplomatic/indirect", "evidence": ["근거"]}},
+    "response_speed_expectation": {{"score": 1, "pattern": "즉시응답요구/여유있음/유연함"}},
+    "feedback_style": {{"score": 1, "type": "상세/간결/균형", "evidence": ["근거"]}},
+    "decision_making": {{"score": 1, "type": "즉결형/숙고형/합의형", "evidence": ["근거"]}},
+    "emotional_expression": {{"score": 1, "level": "억제적/중립/표현적", "emoji_usage": 1, "common_expressions": ["표현"]}}
+  }},
+  "writing_dna": {{
+    "sentence_structure": {{"avg_length": "short/medium/long", "complexity_score": 1, "preferred_patterns": ["패턴"]}},
+    "vocabulary_level": {{"score": 1, "style": "전문용어다수/일상어중심/혼용", "industry_jargon_frequency": 1}},
+    "punctuation_habits": {{"exclamation_frequency": 1, "question_frequency": 1, "ellipsis_usage": 1, "special_patterns": ["패턴"]}},
+    "paragraph_style": {{"brevity_score": 1, "list_preference": 1, "structure_preference": "나열형/서술형/혼합형"}}
+  }},
+  "personality_metrics": {{
+    "perfectionism": {{"score": 1, "triggers": ["상황"], "evidence": ["근거"]}},
+    "detail_orientation": {{"score": 1, "focus_areas": ["영역"], "evidence": ["근거"]}},
+    "urgency_sensitivity": {{"score": 1, "patterns": ["패턴"]}},
+    "flexibility": {{"score": 1, "description": "설명"}},
+    "risk_tolerance": {{"score": 1, "preference": "안전선호/중립/도전선호"}},
+    "autonomy_preference": {{"score": 1, "description": "설명"}}
+  }},
+  "content_preferences": {{
+    "tone_preference": {{"primary": "professional/friendly/authoritative/warm/neutral", "secondary": "보조 톤", "avoid": "피해야 할 톤"}},
+    "length_preference": {{"ideal": "concise/moderate/detailed", "tolerance_for_long": 1}},
+    "visual_preference": {{"image_importance": 1, "infographic_preference": 1, "style_keywords": ["키워드"]}},
+    "structure_preference": {{"bullet_points": 1, "numbered_lists": 1, "headers_importance": 1, "whitespace_preference": 1}}
+  }},
+  "sensitive_areas": {{
+    "absolute_dont": {{"expressions": ["금지"], "topics": ["주제"], "styles": ["스타일"]}},
+    "careful_handling": {{"topics": ["주제"], "reasons": ["이유"]}},
+    "past_issues": ["이슈"]
+  }},
+  "positive_triggers": {{
+    "favorite_expressions": ["표현"],
+    "appreciated_approaches": ["방식"],
+    "success_patterns": ["패턴"],
+    "value_keywords": ["가치"]
+  }},
+  "practical_guidelines": {{
+    "opening_recommendations": ["오프닝"],
+    "closing_recommendations": ["마무리"],
+    "reporting_format": "형식",
+    "revision_handling": "방식",
+    "timeline_sensitivity": 1
+  }},
+  "brand_alignment": {{
+    "organization_voice_match": 1,
+    "industry_conventions": ["관행"],
+    "target_audience_consideration": "설명"
+  }}
 }}
 """
-        
-        response = client.models.generate_content(
-            model='gemini-2.0-flash',
-            contents=analysis_prompt
-        )
-        
-        response_text = response.text
-        
-        persona_analysis = parse_ai_json(response_text)
-        
-        # 저장
-        safe_org = organization.replace(' ', '_').replace('/', '_')
-        safe_name = client_name.replace(' ', '_').replace('/', '_')
-        client_id = f"{safe_org}_{safe_name}"
-        
-        # 격식도 추출 (상세 분석 구조)
-        formality_data = persona_analysis.get("formality_analysis", {})
-        formality = formality_data.get("overall_score", 5)
-        
-        if formality >= 8:
-            tone = "매우 격식있고 공식적인"
-            endings = "~습니다, ~입니다"
-        elif formality >= 6:
-            tone = "정중하되 부드러운"
-            endings = "~합니다, ~해요"
-        elif formality >= 4:
-            tone = "친근하고 편안한"
-            endings = "~해요, ~예요"
-        else:
-            tone = "매우 캐주얼하고 편한"
-            endings = "~해, ~야"
-        
-        # 상세 custom_prompt 생성
-        personality = persona_analysis.get("personality_metrics", {})
-        content_pref = persona_analysis.get("content_preferences", {})
-        sensitive = persona_analysis.get("sensitive_areas", {})
-        positive = persona_analysis.get("positive_triggers", {})
-        
-        custom_prompt = f"""
+            response = client.models.generate_content(model='gemini-2.0-flash', contents=analysis_prompt)
+            persona_analysis = parse_ai_json(response.text)
+            analysis_mode = "ai"
+        except Exception as e:
+            print(f"[WARN] AI 페르소나 분석 실패, 오프라인 모드로 전환: {e}")
+
+    if persona_analysis is None:
+        persona_analysis = analyze_persona_offline(client_name, organization, kakao_chat, category)
+
+    safe_org = organization.replace(' ', '_').replace('/', '_')
+    safe_name = client_name.replace(' ', '_').replace('/', '_')
+    client_id = f"{safe_org}_{safe_name}"
+
+    formality = persona_analysis.get("formality_analysis", {}).get("overall_score", 5)
+    if formality >= 8:
+        tone = "매우 격식있고 공식적인"
+        endings = "~습니다, ~입니다"
+    elif formality >= 6:
+        tone = "정중하되 부드러운"
+        endings = "~합니다, ~해요"
+    elif formality >= 4:
+        tone = "친근하고 편안한"
+        endings = "~해요, ~예요"
+    else:
+        tone = "매우 캐주얼하고 편한"
+        endings = "~해, ~야"
+
+    personality = persona_analysis.get("personality_metrics", {})
+    content_pref = persona_analysis.get("content_preferences", {})
+    sensitive = persona_analysis.get("sensitive_areas", {})
+    positive = persona_analysis.get("positive_triggers", {})
+
+    custom_prompt = f"""
 【{client_name} 전용 콘텐츠 제작 가이드】
 
 [기본 톤앤매너]
@@ -707,101 +605,243 @@ def extract_persona():
 - 선호 표현: {', '.join(positive.get('favorite_expressions', [])[:3])}
 - 중요 가치: {', '.join(positive.get('value_keywords', [])[:3])}
 """
-        
-        persona_data = {
-            "client_id": client_id,
-            "client_name": client_name,
-            "organization": organization,
-            "category": category,
-            "persona_analysis": persona_analysis,
-            "custom_prompt": custom_prompt,
-            "created_at": datetime.now().isoformat(),
-            "version": 1
-        }
-        
-        save_path = PERSONA_DIR / f"{client_id}.json"
-        with open(save_path, 'w', encoding='utf-8') as f:
-            json.dump(persona_data, f, ensure_ascii=False, indent=2)
-        
-        # 응답 데이터 (더 많은 정보 포함)
-        summary = persona_analysis.get("overall_summary", {})
-        personality_metrics = persona_analysis.get("personality_metrics", {})
-        writing_dna = persona_analysis.get("writing_dna", {})
-        comm_style = persona_analysis.get("communication_style", {})
-        
-        return jsonify({
-            "success": True,
-            "client_id": client_id,
-            # 기본 점수
-            "formality_score": formality,
-            "perfectionism_score": personality_metrics.get("perfectionism", {}).get("score", 5),
-            "detail_orientation_score": personality_metrics.get("detail_orientation", {}).get("score", 5),
-            "urgency_sensitivity_score": personality_metrics.get("urgency_sensitivity", {}).get("score", 5),
-            "flexibility_score": personality_metrics.get("flexibility", {}).get("score", 5),
-            # 커뮤니케이션 스타일
-            "directness_score": comm_style.get("directness", {}).get("score", 5),
-            "decision_making_type": comm_style.get("decision_making", {}).get("type", "숙고형"),
-            "emotional_expression": comm_style.get("emotional_expression", {}).get("level", "중립"),
-            # 문체 DNA
-            "sentence_length": writing_dna.get("sentence_structure", {}).get("avg_length", "medium"),
-            "vocabulary_style": writing_dna.get("vocabulary_level", {}).get("style", "혼용"),
-            # 종합
-            "persona_type": summary.get("persona_type", "분석 완료"),
-            "key_characteristics": summary.get("key_characteristics", []),
-            "content_difficulty": summary.get("content_creation_difficulty", 5),
-            "primary_caution": summary.get("primary_caution", ""),
-            # 세부 정보
-            "red_flags": sensitive.get("absolute_dont", {}).get("expressions", []),
-            "green_flags": positive.get("favorite_expressions", []),
-            "save_path": str(save_path)
-        })
-        
-    except Exception as e:
-        return jsonify({"error": f"페르소나 분석 실패: {str(e)}"}), 500
+
+    persona_data = {
+        "client_id": client_id,
+        "client_name": client_name,
+        "organization": organization,
+        "category": category,
+        "persona_analysis": persona_analysis,
+        "custom_prompt": custom_prompt,
+        "created_at": datetime.now().isoformat(),
+        "version": 1,
+        "analysis_mode": analysis_mode,
+    }
+
+    save_path = PERSONA_DIR / f"{client_id}.json"
+    with open(save_path, 'w', encoding='utf-8') as f:
+        json.dump(persona_data, f, ensure_ascii=False, indent=2)
+
+    summary = persona_analysis.get("overall_summary", {})
+    personality_metrics = persona_analysis.get("personality_metrics", {})
+    writing_dna = persona_analysis.get("writing_dna", {})
+    comm_style = persona_analysis.get("communication_style", {})
+
+    return jsonify({
+        "success": True,
+        "client_id": client_id,
+        "analysis_mode": analysis_mode,
+        "formality_score": formality,
+        "perfectionism_score": personality_metrics.get("perfectionism", {}).get("score", 5),
+        "detail_orientation_score": personality_metrics.get("detail_orientation", {}).get("score", 5),
+        "urgency_sensitivity_score": personality_metrics.get("urgency_sensitivity", {}).get("score", 5),
+        "flexibility_score": personality_metrics.get("flexibility", {}).get("score", 5),
+        "directness_score": comm_style.get("directness", {}).get("score", 5),
+        "decision_making_type": comm_style.get("decision_making", {}).get("type", "숙고형"),
+        "emotional_expression": comm_style.get("emotional_expression", {}).get("level", "중립"),
+        "sentence_length": writing_dna.get("sentence_structure", {}).get("avg_length", "medium"),
+        "vocabulary_style": writing_dna.get("vocabulary_level", {}).get("style", "혼용"),
+        "persona_type": summary.get("persona_type", "분석 완료"),
+        "key_characteristics": summary.get("key_characteristics", []),
+        "content_difficulty": summary.get("content_creation_difficulty", 5),
+        "primary_caution": summary.get("primary_caution", ""),
+        "red_flags": sensitive.get("absolute_dont", {}).get("expressions", []),
+        "green_flags": positive.get("favorite_expressions", []),
+        "save_path": str(save_path),
+    })
 
 
 # ============================================================
 # API: Blog Generator
 # ============================================================
 
+@app.route('/api/blog/dna-preview', methods=['GET'])
+@login_required
+def blog_dna_preview():
+    """DNA 분석 결과 미리보기 — 모방 스타일 가이드 + 샘플 글 반환"""
+    blog_id = request.args.get("blog_id", "")
+    if not blog_id:
+        return jsonify({"error": "blog_id 필요"}), 400
+
+    dna_analysis = None
+    if DNA_DIR.exists():
+        candidates = sorted(
+            [f for f in DNA_DIR.glob(f"DNA_{blog_id}_*.json")],
+            key=lambda f: f.stat().st_mtime, reverse=True
+        )
+        if candidates:
+            with open(candidates[0], 'r', encoding='utf-8') as f:
+                dna_analysis = json.load(f)
+
+    # 원본 글 샘플 1개 로드
+    sample_post = None
+    if BLOG_COLLECTIONS_DIR.exists():
+        all_posts = []
+        for item in BLOG_COLLECTIONS_DIR.iterdir():
+            if item.is_dir() and not item.name.startswith('.'):
+                data_file = item / "_data.json"
+                if data_file.exists():
+                    try:
+                        with open(data_file, 'r', encoding='utf-8') as f:
+                            col = json.load(f)
+                        if col.get("blog_id") == blog_id:
+                            all_posts.extend(col.get("posts", []))
+                    except Exception:
+                        pass
+        all_posts.sort(key=lambda x: x.get('addDate', ''), reverse=True)
+        seen = set()
+        for p in all_posts:
+            if p.get("url") not in seen:
+                seen.add(p.get("url"))
+                if p.get("content", "").strip():
+                    sample_post = p
+                    break
+
+    if not dna_analysis and not sample_post:
+        return jsonify({"error": "DNA 분석 결과 없음. 먼저 글쓰기 DNA 분석을 실행하세요."}), 404
+
+    # 미리보기 텍스트 구성
+    lines = []
+    if dna_analysis:
+        c1 = dna_analysis.get("c1_template_structure", {})
+        c2 = dna_analysis.get("c2_tone_mood", {})
+        c3 = dna_analysis.get("c3_speech_style", {})
+        c5 = dna_analysis.get("c5_frequent_expressions", {})
+        c6 = dna_analysis.get("c6_sentence_patterns", {})
+        c9 = dna_analysis.get("c9_opening_closing", {})
+        c10 = dna_analysis.get("c10_visual_formatting", {})
+
+        lines.append("▌ 글 구조 패턴")
+        lines.append(f"  {c1.get('overall_pattern', '-')}")
+        if c1.get('section_flow'):
+            lines.append("  흐름: " + " → ".join(c1['section_flow'])[:120])
+
+        lines.append("")
+        lines.append("▌ 톤 & 어투")
+        lines.append(f"  톤: {c2.get('primary_tone', '-')}  /  격식도: {c2.get('formality_level', '-')}/10")
+        lines.append(f"  종결어미: {', '.join(c3.get('ending_patterns', []))}")
+        lines.append(f"  독자 호칭: {c3.get('reader_address', '-')}")
+
+        lines.append("")
+        lines.append("▌ 이모지 & 특수기호")
+        emoji_list = ', '.join(c10.get('emoji_types', []))
+        lines.append(f"  이모지({c10.get('emoji_usage', '-')}/10): {emoji_list}")
+        special = c10.get('special_formatting', [])
+        if special:
+            lines.append(f"  특수포맷: {', '.join(special)}")
+
+        lines.append("")
+        lines.append("▌ 시그니처 표현")
+        for phrase in c5.get('signature_phrases', [])[:6]:
+            lines.append(f"  • {phrase}")
+
+        lines.append("")
+        lines.append("▌ 도입부 예시")
+        for ex in c9.get('opening_examples', [])[:2]:
+            lines.append(f"  {ex}")
+
+        lines.append("")
+        lines.append("▌ 마무리 예시")
+        for ex in c9.get('closing_examples', [])[:2]:
+            lines.append(f"  {ex}")
+
+    if sample_post:
+        lines.append("")
+        lines.append("━" * 36)
+        lines.append(f"▌ 실제 글 샘플 (AI가 모방하는 글)")
+        lines.append(f"  제목: {sample_post.get('title', '')}")
+        lines.append(f"  날짜: {sample_post.get('addDate', '')}")
+        lines.append("")
+        lines.append(sample_post.get('content', '')[:1800])
+
+    return jsonify({
+        "blog_id": blog_id,
+        "preview_text": "\n".join(lines),
+        "has_dna_analysis": dna_analysis is not None,
+        "sample_title": sample_post.get("title", "") if sample_post else "",
+    })
+
+
 @app.route('/api/blog/generate', methods=['POST'])
 @login_required
 def generate_blog():
     """페르소나 기반 블로그 글 생성 (통합 DNA 데이터 지원)"""
-    
     client_id = request.form.get("client_id", "")
     keywords_str = request.form.get("keywords", "")
     keywords = [k.strip() for k in keywords_str.split(",") if k.strip()]
-    blog_dna_id = request.form.get("blog_dna_id", "") # folder_name -> blog_id
+    blog_dna_id = request.form.get("blog_dna_id", "")
     target_audience = request.form.get("target_audience", "일반 시민")
     content_angle = request.form.get("content_angle", "정보전달형")
-    
-    # (생략: 보도자료 파싱 로직은 동일)
-    press_release = ""
-    gemini_file = None
-    
-    if 'file' in request.files and request.files['file'].filename:
-        file = request.files['file']
-        temp_path = None
-        try:
+    direct_text = request.form.get("press_release", "")
+
+    uploaded_files = [file for file in request.files.getlist("files") if file and file.filename]
+    if not uploaded_files and 'file' in request.files and request.files['file'].filename:
+        uploaded_files = [request.files['file']]
+
+    # Gemini가 네이티브로 읽을 수 있는 형식
+    GEMINI_NATIVE_EXTS = {'.pdf', '.jpg', '.jpeg', '.png', '.gif', '.webp'}
+
+    temp_paths = []
+    gemini_uploaded_files = []   # Gemini File API 업로드 객체
+    text_sources = []            # 로컬 텍스트 추출 결과
+
+    api_key = os.getenv("GEMINI_API_KEY")
+    _gemini_client = genai.Client(api_key=api_key) if api_key else None
+
+    try:
+        for file in uploaded_files:
             temp_path = save_uploaded_file(file)
-            press_release = extract_text_from_file(temp_path)
-            api_key = os.getenv("GEMINI_API_KEY")
-            if api_key:
-                temp_client = genai.Client(api_key=api_key)
-                gemini_file = upload_to_gemini(temp_path, temp_client)
-        except Exception as e:
-            return jsonify({"error": f"파일 처리 실패: {str(e)}"}), 500
-        finally:
-            if temp_path and temp_path.exists():
-                temp_path.unlink()
-    else:
-        press_release = request.form.get("press_release", "")
-    
-    if not client_id or not press_release.strip():
+            temp_paths.append(temp_path)
+            ext = temp_path.suffix.lower()
+
+            if ext in GEMINI_NATIVE_EXTS and _gemini_client:
+                # Gemini File API로 직접 업로드
+                gfile = upload_to_gemini(temp_path, _gemini_client)
+                if gfile:
+                    gemini_uploaded_files.append(gfile)
+                    print(f"[OK] Gemini 네이티브 처리: {file.filename}")
+                else:
+                    # 업로드 실패 시 텍스트 추출로 폴백
+                    try:
+                        text = extract_text_from_file(temp_path)
+                        text_sources.append({
+                            "name": file.filename,
+                            "kind": ext.lstrip("."),
+                            "text": text,
+                        })
+                    except Exception:
+                        pass
+            else:
+                # DOCX / HWP / TXT → 로컬 텍스트 추출
+                try:
+                    text = extract_text_from_file(temp_path)
+                    text_sources.append({
+                        "name": file.filename,
+                        "kind": ext.lstrip("."),
+                        "text": text,
+                    })
+                except Exception as ex:
+                    print(f"[WARN] 텍스트 추출 실패 ({file.filename}): {ex}")
+
+        material_bundle = build_material_bundle(sources=text_sources, direct_text=direct_text)
+
+    except Exception as e:
+        return jsonify({"error": f"파일 처리 실패: {str(e)}"}), 500
+    finally:
+        for temp_path in temp_paths:
+            try:
+                if temp_path.exists():
+                    temp_path.unlink()
+            except Exception:
+                pass
+
+    if not uploaded_files:
+        material_bundle = build_material_bundle(direct_text=direct_text)
+
+    has_content = material_bundle.get("combined_text", "").strip() or bool(gemini_uploaded_files)
+    if not client_id or not has_content:
         return jsonify({"error": "페르소나와 보도자료 내용이 필요합니다."}), 400
-    
-    # 페르소나 로드 (항목 동일)
+
     persona_data = None
     for file_path in PERSONA_DIR.glob("*.json"):
         try:
@@ -810,15 +850,28 @@ def generate_blog():
                 if data_loaded.get("client_id") == client_id:
                     persona_data = data_loaded
                     break
-        except: pass
-    
+        except Exception:
+            pass
+
     if not persona_data:
         return jsonify({"error": f"페르소나를 찾을 수 없습니다: {client_id}"}), 404
-    
-    # 블로그 DNA 통합 로드 (Merging)
+
     blog_dna_text = ""
     if blog_dna_id:
         try:
+            # ① DNA 분석 결과 (스타일 가이드) 로드
+            dna_analysis = None
+            if DNA_DIR.exists():
+                # blog_dna_id와 blog_id가 매칭되는 가장 최근 DNA 분석 결과 찾기
+                candidates = sorted(
+                    [f for f in DNA_DIR.glob(f"DNA_{blog_dna_id}_*.json")],
+                    key=lambda f: f.stat().st_mtime, reverse=True
+                )
+                if candidates:
+                    with open(candidates[0], 'r', encoding='utf-8') as f:
+                        dna_analysis = json.load(f)
+
+            # ② 원본 글 샘플 로드 (전문 1개 + 제목 목록)
             all_dna_posts = []
             if BLOG_COLLECTIONS_DIR.exists():
                 for item in BLOG_COLLECTIONS_DIR.iterdir():
@@ -830,234 +883,223 @@ def generate_blog():
                                     collection = json.load(f)
                                 if collection.get("blog_id") == blog_dna_id:
                                     all_dna_posts.extend(collection.get("posts", []))
-                            except: pass
-            
-            # 중복 제거 및 최신순 정렬
-            seen_dna_urls = set()
-            unique_dna_posts = []
+                            except Exception:
+                                pass
+
+            seen_urls = set()
+            unique_posts = []
             for post in all_dna_posts:
                 url = post.get("url")
-                if url and url not in seen_dna_urls:
-                    seen_dna_urls.add(url)
-                    unique_dna_posts.append(post)
-            unique_dna_posts.sort(key=lambda x: x.get('addDate', ''), reverse=True)
+                if url and url not in seen_urls:
+                    seen_urls.add(url)
+                    unique_posts.append(post)
+            unique_posts.sort(key=lambda x: x.get('addDate', ''), reverse=True)
 
-            if unique_dna_posts:
-                # 통합된 포스트 중 핵심 최근 10개 샘플링하여 스타일 가이드 구성
-                dna_summary = ""
-                for i, post in enumerate(unique_dna_posts[:10], 1):
-                    content = post.get("content", "")[:1200]
-                    dna_summary += f"\n--- 샘플 {i}: {post.get('title', '')} ---\n{content}\n"
-                
-                if dna_summary.strip():
-                    blog_dna_id_disp = blog_dna_id # Display name
-                    blog_dna_text = f"""
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-【블로그 DNA - {blog_dna_id_disp}의 실제 글쓰기 스타일】
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-아래는 이 블로그의 실제 글들입니다. 이 글들의 구조, 어투, 화법, 자주 쓰는 표현,
-문장 패턴, 문단 구성 등을 철저히 분석하여 동일한 스타일로 글을 작성해야 합니다.
+            # ③ DNA 스타일 가이드 + 샘플 글 조합
+            dna_parts = []
 
-{dna_summary}
+            if dna_analysis:
+                c1 = dna_analysis.get("c1_template_structure", {})
+                c2 = dna_analysis.get("c2_tone_mood", {})
+                c3 = dna_analysis.get("c3_speech_style", {})
+                c5 = dna_analysis.get("c5_frequent_expressions", {})
+                c6 = dna_analysis.get("c6_sentence_patterns", {})
+                c9 = dna_analysis.get("c9_opening_closing", {})
+                c10 = dna_analysis.get("c10_visual_formatting", {})
 
-※ 위 블로그 글의 다음 요소를 반드시 재현하세요:
-- 글의 전체 구조/템플릿 (도입-본문-마무리 패턴)
-- 종결어미와 어투 (예: ~요, ~습니다, ~거든요 등)
-- 소제목/헤딩 사용 방식
-- 자주 쓰는 표현과 접속어
-- 문장 길이와 복잡도
-- 독자를 부르는 방식
-- 감성적 표현 or 정보 전달 비율
-"""
-                print(f"[OK] 블로그 DNA 로드됨: {blog_dna_id} ({len(unique_dna_posts)}개 글)")
+                dna_parts.append("【블로그 글쓰기 DNA 스타일 가이드】")
+                dna_parts.append(f"구조 패턴: {c1.get('overall_pattern', '')}")
+                dna_parts.append(f"섹션 흐름: {' → '.join(c1.get('section_flow', []))}")
+                dna_parts.append(f"톤: {c2.get('primary_tone', '')} / 격식도: {c2.get('formality_level', '')}/10")
+                dna_parts.append(f"종결어미 패턴: {', '.join(c3.get('ending_patterns', []))}")
+                dna_parts.append(f"독자 호칭: {c3.get('reader_address', '')}")
+                dna_parts.append(f"시그니처 표현: {', '.join(c5.get('signature_phrases', [])[:5])}")
+                dna_parts.append(f"문장 길이: {c6.get('avg_length', '')} / 리듬: {c6.get('rhythm', '')}")
+                dna_parts.append(f"도입 방식: {', '.join(c9.get('opening_types', []))}")
+                dna_parts.append(f"마무리 방식: {', '.join(c9.get('closing_types', []))}")
+                dna_parts.append(f"이모지 사용(1-10): {c10.get('emoji_usage', '')} / 자주 쓰는 이모지: {', '.join(c10.get('emoji_types', []))}")
+                dna_parts.append(f"특수 포맷팅: {', '.join(c10.get('special_formatting', []))}")
+
+                # 도입/마무리 실제 예시
+                if c9.get("opening_examples"):
+                    dna_parts.append(f"\n실제 도입부 예시:\n" + "\n".join(c9["opening_examples"][:2]))
+                if c9.get("closing_examples"):
+                    dna_parts.append(f"\n실제 마무리 예시:\n" + "\n".join(c9["closing_examples"][:2]))
+
+            # 원본 글 전문 1개 (가장 최근 글)
+            if unique_posts:
+                full_sample = unique_posts[0]
+                dna_parts.append(f"\n【실제 글 전문 샘플 (이 스타일을 그대로 따라쓸 것)】")
+                dna_parts.append(f"제목: {full_sample.get('title', '')}")
+                dna_parts.append(full_sample.get('content', '')[:2000])
+
+                # 제목 목록 (참고용)
+                title_list = [f"- {p.get('title', '')}" for p in unique_posts[1:8]]
+                if title_list:
+                    dna_parts.append(f"\n【최근 글 제목 목록 (주제 참고용)】\n" + "\n".join(title_list))
+
+            blog_dna_text = "\n".join(dna_parts)
+
         except Exception as e:
             print(f"[WARN] 블로그 DNA 로드 실패: {e}")
-    
+
+    client_name = persona_data.get("client_name", client_id)
+    persona_analysis = persona_data.get("persona_analysis", {})
+    formality_score = persona_analysis.get("formality_analysis", {}).get("overall_score", 5)
+    custom_prompt = persona_data.get("custom_prompt", "")
+
     api_key = os.getenv("GEMINI_API_KEY")
-    if not api_key:
-        return jsonify({"error": "GEMINI_API_KEY가 설정되지 않았습니다."}), 500
-    
-    try:
-        client = genai.Client(api_key=api_key)
-        
-        client_name = persona_data.get("client_name", client_id)
-        custom_prompt = persona_data.get("custom_prompt", "")
-        persona_analysis = persona_data.get("persona_analysis", {})
-        
-        formality = persona_analysis.get("formality_level", {})
-        if isinstance(formality, dict):
-            formality_score = formality.get("score", 5)
-        else:
-            formality_score = formality if isinstance(formality, (int, float)) else 5
-        
-        if formality_score == 5 and "formality_analysis" in persona_analysis:
-            formality_score = persona_analysis.get("formality_analysis", {}).get("overall_score", 5)
-        
-        green_flags = persona_analysis.get("green_flags", [])
-        red_flags = persona_analysis.get("red_flags", [])
-        
-        keywords_text = ", ".join(keywords) if keywords else ""
-        
-        # 블로그 DNA 관련 작성 지침 추가
-        dna_instruction = ""
-        if blog_dna_text:
-            dna_instruction = """6. 【최우선】 블로그 DNA 글쓰기 스타일(문단 구조, 어휘, 소제목 방식, 마무리 패턴)을 글쓰기의 1순위 기준으로 따르세요.
-7. 페르소나(격식도·감성 톤)는 블로그 DNA 스타일 위에 톤 조절용으로만 사용하세요. 카카오톡 말버릇을 블로그에 그대로 쓰지 마세요."""
+    generation_mode = "offline"
+    versions = []
 
-        blog_prompt = f"""
-당신은 대한민국 상위 1% 블로그 콘텐츠 전문 작가입니다.
-핵심 원칙: 광고주의 블로그 글쓰기 스타일(DNA)을 1순위 기준으로 따르고, 페르소나 분석은 격식도·감성 톤 조절용 참고로만 활용합니다. 카카오톡 말투를 블로그에 그대로 옮기지 마세요.
-선택된 타겟({target_audience})의 심리를 꿰뚫고 선택된 앵글({content_angle})로 보도자료를 블로그 글로 완성합니다.
-【주의】 출력 블로그 본문에 **, ##, >, - 같은 마크다운 기호를 절대 사용하지 마세요.
+    if api_key:
+        try:
+            client = genai.Client(api_key=api_key)
 
-지금부터 당신이 작성할 글의 '100점짜리 전략 지도'입니다:
+            # Gemini 네이티브 파일 처리 대기 (PROCESSING → ACTIVE)
+            active_gfiles = []
+            for gf in gemini_uploaded_files:
+                for _ in range(30):
+                    if gf.state.name == 'ACTIVE':
+                        active_gfiles.append(gf)
+                        break
+                    _time.sleep(1)
+                    gf = client.files.get(name=gf.name)
+                else:
+                    print(f"[WARN] Gemini 파일 처리 타임아웃: {gf.name}")
 
-【0. 보도자료 사전 분석 (글 작성 전 필수 실행)】
-아래 보도자료를 읽고, 본격적인 글쓰기에 앞서 다음 4가지를 내부적으로 분석하세요:
-1. 핵심 메시지: 이 보도자료가 독자에게 전달해야 할 가장 중요한 메시지 2~3가지
-2. 타겟 독자: {target_audience}의 관점에서 가장 관심을 끌 포인트는 무엇인가
-3. 감정 유발 포인트: 독자가 "오, 이건 나한테 해당되는 얘기네"라고 느낄 수 있는 상황이나 표현
-4. 행동 유도: 독자가 글을 읽고 취하길 바라는 행동(방문, 신청, 공유 등)
-이 분석 결과를 3버전 작성의 뼈대로 활용하세요. (분석 내용 자체는 출력 JSON에 포함하지 않아도 됩니다.)
+            # 파일 첨부 안내 문구
+            native_note = ""
+            if active_gfiles:
+                native_note = f"첨부된 파일 {len(active_gfiles)}개를 직접 읽고 핵심 내용을 파악하세요."
 
-【1. 타겟 초밀착 전략: {target_audience}】
-- 핵심 가치: 이 타겟이 가장 두려워하거나 갈망하는 것을 문장 사이에 녹이세요.
-- 언어 습관: {target_audience}가 일상에서 쓰는 단어, 비유, 상황(TPO)을 가져오세요.
-- 공감 포인트: "맞아, 내 얘기네"라는 소리가 절로 나오게 하는 도입부 공감 훅을 배치하세요.
+            prompt = f"""당신은 실전형 블로그 콘텐츠 에디터입니다.
+아래 페르소나 가이드와 자료를 바탕으로 3가지 버전의 블로그 글을 만드세요.
+반드시 JSON만 출력하세요.
 
-【2. 앵글 구조 설계: {content_angle}】
-- 정보전달형: [발견 → 혜택 → 상세내용 → 결론] (신뢰도 200%의 깔끔함)
-- 스토리텔링형: [평범한 일상 → 문제 인지 → 보도자료 정보 발견 → 변화된 미래] (드라마틱한 서사)
-- Q&A형: [타겟이 진짜 궁금해할 질문 3가지 → 전문가적/페르소나적 답변 → 추가 꿀팁]
-- 체험기형: [현장 도착 느낌 → 생생한 오감 묘사 → 직접 겪어본 장단점 → 추천 대상]
-- 체크리스트형: [꼭 알아야 할 요약 → 항목별 설명 → 주의사항 → 마지막 한 줄 평]
-
-【3. 베테랑의 디테일 (The 100pt Finish)】
-- '나(작성자)'와 '너(독자)': 일방적으로 정보를 던지지 말고, 독자의 상황을 가정하며 대화하듯(You-Focus) 작성하세요.
-- 리듬감: 문장의 길이를 조절하여(단문과 중문의 조합) 가독성을 극대화하세요.
-- 여운: 글의 마지막에 독자가 바로 행동하거나(공유, 저장, 방문) 기분 좋은 여운을 느낄 수 있는 한 문장을 남기세요.
-
-【페르소나 톤 참고 (글쓰기 스타일이 아닌 톤 조절용)】
-격식도: {formality_score}/10
+[페르소나]
+- 담당자: {client_name}
+- 격식도: {formality_score}/10
 {custom_prompt}
 
-【성격 참고 — 카카오톡 분석 데이터, 블로그에 직접 인용 금지】
-- 광고주가 선호하는 소통 방식: {json.dumps(green_flags, ensure_ascii=False)}
-- 광고주가 꺼리는 표현 유형: {json.dumps(red_flags, ensure_ascii=False)}
-- 위 데이터는 광고주의 성격을 이해하는 참고용입니다. 블로그 본문에 그대로 사용하지 마세요.
+[블로그 DNA — 반드시 이 스타일로 작성]
+{blog_dna_text or '선택 안 함 (일반 블로그 스타일로 작성)'}
 
-【익명성 규칙】
-본문과 제목 어디에도 작성자 개인의 실명을 절대 노출하지 마세요. 소속 기관명은 사용 가능합니다.
-{blog_dna_text}
+[DNA 스타일 준수 규칙]
+- 위 DNA 가이드의 이모지, 특수기호(✅ 〰️ ➡️ 등), 종결어미, 도입/마무리 패턴을 그대로 사용
+- 실제 글 전문 샘플이 있다면 그 스타일을 최대한 모방
+- 줄바꿈 패턴, 문장 길이, 단락 구성도 샘플과 유사하게
 
-【보도자료 원문】
-{press_release[:5000]}
+[첨부 파일 안내]
+{native_note or '없음'}
 
-【타겟 키워드】
-{keywords_text}
+[추가 텍스트 자료]
+{material_bundle.get('briefing', '')[:8000] or '없음'}
 
-【출력 지침】
-1. 보도자료의 모든 핵심 팩트를 담되, 100% {target_audience} 맞춤형 언어로 재창조할 것.
-2. {dna_instruction}
-3. 3가지 버전(포멀, 밸런스, 캐주얼)을 생성하되, 각 버전은 위 '전략 지도'를 기반으로 서로 다른 매력을 보여줄 것.
-4. 〔각 버전 자기 검토 — 출력 전 필수〕: 각 버전을 완성한 직후 아래 항목을 점검하고 미달 시 즉시 수정하세요.
-   - 페르소나 말투 일치 여부 (격식도 {formality_score}/10 기준, 문장 종결어미)
-   - 그린플래그 표현 1개 이상 포함 여부
-   - 레드플래그 표현 전무 여부
-   - 제목 및 본문에 작성자 실명 미포함 여부 (기관명은 허용)
-   - 마크다운 기호(**, ##, >, -) 미사용 여부
-5. 〔언어 및 기호 사용 규칙 — 필수〕:
-   - 포멀 버전: 과도한 쉼표(,) 사용 지양, 문장을 간결하게 끊으세요. ':' 기호 자제.
-   - 밸런스 버전: ':' 기호도 가급적 자제하세요.
-   - 캐주얼 버전 (이모지 제한): 이모지는 1문단에 최대 1개, 전체 글에서 최대 5개로 엄격히 제한하세요.
-   - 〔공통 절대 금지〕: ** 기호를 단 한 개도 사용하지 마세요. ## 기호도 금지. > 인용 기호도 금지. - 목록 기호도 금지. 오직 줄바꿈과 일반 텍스트만으로 가독성을 확보하세요. 강조가 필요하면 「꺽쇠 괄호」를 사용하세요.
-6. 각 버전 본문 분량: 1,800~2,200자 (풍부한 디테일과 사례 포함)
+[타겟 독자]
+{target_audience}
 
-〔절대 금지〕: 제목과 본문 어디에도 작성자의 실명을 노출하지 마세요. 소속 기관명은 사용 가능합니다.
-〔마크다운 완전 금지 재확인〕: 출력 JSON의 title 및 content 필드에 **, ##, >, - (목록) 같은 마크다운 기호를 단 하나도 포함하면 안 됩니다. 위반 시 출력 전체가 무효 처리됩니다.
+[콘텐츠 앵글]
+{content_angle}
 
-【출력 JSON 형식】
-반드시 아래 JSON 형식으로만 출력하세요:
+[키워드]
+{", ".join(keywords) if keywords else "없음"}
+
+[글 길이 요구사항 — 반드시 준수]
+- 각 버전 본문은 최소 1,500자 이상, 권장 2,000~3,000자
+- 서론(흥미 유발) → 본론(핵심 내용 3~5개 단락) → 결론(행동 유도) 구조 필수
+- 각 단락은 3~6문장 이상으로 충분히 풀어서 작성
+- 정보를 압축하지 말고 독자가 이해하기 쉽게 상세히 설명
+
+[절대 금지 규칙 — 반드시 준수]
+- 제목과 본문에 작성자 실명 노출 금지
+- ** ** (별표 볼드) 절대 사용 금지
+- ## # (샵 헤딩) 절대 사용 금지
+- __ __ (언더스코어 볼드/이탤릭) 절대 사용 금지
+- ``` (백틱 코드블록) 절대 사용 금지
+- <> 꺽쇠괄호 절대 사용 금지
+- --- === (구분선) 절대 사용 금지
+- 마크다운 기호 전체 사용 금지 — 순수 텍스트만 출력
+- 각 버전은 구조와 어조가 분명히 달라야 함
+- 핵심 일정/대상/혜택/문의 정보를 가능한 한 놓치지 말 것
+
+[출력 JSON]
 {{
-    "versions": [
-        {{
-            "version_type": "formal",
-            "version_label": "포멀",
-            "title": "포멀 버전 제목",
-            "content": "본문 내용",
-            "tags": ["태그1", "태그2", "태그3", "태그4", "태그5"],
-            "meta_description": "메타 설명"
-        }},
-        {{
-            "version_type": "balanced",
-            "version_label": "밸런스",
-            "title": "밸런스 버전 제목",
-            "content": "본문 내용",
-            "tags": ["태그1", "태그2", "태그3", "태그4", "태그5"],
-            "meta_description": "메타 설명"
-        }},
-        {{
-            "version_type": "casual",
-            "version_label": "캐주얼",
-            "title": "캐주얼 버전 제목",
-            "content": "본문 내용",
-            "tags": ["태그1", "태그2", "태그3", "태그4", "태그5"],
-            "meta_description": "메타 설명"
-        }}
-    ]
-}}
-"""
-        
-        # 프롬프트 구성품
-        prompt_parts = [blog_prompt]
-        if gemini_file:
-            # 멀티모달 파일 객체 추가 (파일 내용을 직접 프롬프트에 주입)
-            prompt_parts.insert(0, gemini_file)
-            print("[INFO] 멀티모달 파일 분석 모드 활성화")
-        
-        response = client.models.generate_content(
-            model='gemini-2.0-flash',
-            contents=prompt_parts
+  "versions": [
+    {{"version_type":"formal","version_label":"포멀","title":"제목","content":"본문","tags":["태그"],"meta_description":"설명"}},
+    {{"version_type":"balanced","version_label":"밸런스","title":"제목","content":"본문","tags":["태그"],"meta_description":"설명"}},
+    {{"version_type":"casual","version_label":"캐주얼","title":"제목","content":"본문","tags":["태그"],"meta_description":"설명"}}
+  ]
+}}"""
+
+            # 멀티모달 contents: 텍스트 프롬프트 + 네이티브 파일 객체들
+            from google.genai import types as _gtypes
+            contents = [_gtypes.Part.from_text(text=prompt)]
+            for gf in active_gfiles:
+                contents.append(_gtypes.Part.from_uri(
+                    file_uri=gf.uri,
+                    mime_type=gf.mime_type,
+                ))
+
+            from google.genai import types as _cfg_types
+            response = client.models.generate_content(
+                model='gemini-2.5-pro',
+                contents=contents,
+                config=_cfg_types.GenerateContentConfig(
+                    max_output_tokens=8192,
+                    temperature=0.8,
+                ),
+            )
+
+            # Gemini 업로드 파일 사용 후 삭제 (48시간 자동 만료지만 즉시 정리)
+            for gf in active_gfiles:
+                try:
+                    client.files.delete(name=gf.name)
+                except Exception:
+                    pass
+            blog_result = parse_ai_json(response.text)
+            versions = blog_result.get("versions", [])
+            for v in versions:
+                if "content" in v:
+                    v["content"] = _strip_markdown(v["content"])
+                if "title" in v:
+                    v["title"] = _strip_markdown(v["title"])
+            if versions:
+                generation_mode = "ai"
+        except Exception as e:
+            print(f"[WARN] AI 블로그 생성 실패, 오프라인 모드로 전환: {e}")
+
+    if not versions:
+        versions = generate_blog_versions_offline(
+            persona_data=persona_data,
+            material_bundle=material_bundle,
+            keywords=keywords,
+            target_audience=target_audience,
+            content_angle=content_angle,
         )
-        
-        response_text = response.text
-        
-        blog_result = parse_ai_json(response_text)
-        versions = blog_result.get("versions", [])
-        
-        if not versions:
-            return jsonify({"error": "AI가 3가지 버전을 생성하지 못했습니다."}), 500
-        
-        output_id = f"BLOG_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-        
-        # 각 버전별 MD 파일 저장
-        for ver in versions:
-            vtype = ver.get("version_type", "unknown")
-            md_path = OUTPUT_DIR / f"{output_id}_{vtype}.md"
-            with open(md_path, 'w', encoding='utf-8') as f:
-                f.write(f"# [{ver.get('version_label', vtype)}] {ver.get('title', '')}\n\n")
-                f.write(f"{ver.get('content', '')}\n\n")
-                f.write(f"태그: {', '.join(ver.get('tags', []))}\n")
-        
-        # 전체 JSON 저장
-        json_path = OUTPUT_DIR / f"{output_id}.json"
-        with open(json_path, 'w', encoding='utf-8') as f:
-            json.dump({
-                "output_id": output_id,
-                "client_id": client_id,
-                "versions": versions,
-                "created_at": datetime.now().isoformat()
-            }, f, ensure_ascii=False, indent=2)
-        
-        return jsonify({
-            "success": True,
-            "versions": versions,
-            "output_id": output_id,
-            "output_dir": str(OUTPUT_DIR)
-        })
-        
-    except Exception as e:
-        return jsonify({"error": f"블로그 생성 실패: {str(e)}"}), 500
+
+    output_id = f"BLOG_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    package = build_blog_package(
+        output_id=output_id,
+        client_id=client_id,
+        client_name=client_name,
+        versions=versions,
+        source_bundle=material_bundle,
+        extra={"generation_mode": generation_mode},
+    )
+    save_blog_package(package, OUTPUT_DIR)
+
+    return jsonify({
+        "success": True,
+        "versions": package.get("versions", []),
+        "output_id": output_id,
+        "output_dir": str(OUTPUT_DIR),
+        "generation_mode": generation_mode,
+        "source_bundle": {
+            "sources": material_bundle.get("sources", []),
+            "warnings": material_bundle.get("warnings", []),
+        },
+    })
 
 
 # ============================================================
@@ -1149,42 +1191,48 @@ def save_blog():
     version_type = data.get("version_type", "unknown")
     version_label = data.get("version_label", "")
     tags = data.get("tags", [])
+    output_id = data.get("output_id", "")
     output_dir = data.get("output_dir", "")
     
     if not title or not content:
         return jsonify({"error": "제목과 본문을 입력해주세요."}), 400
     
     try:
-        # 저장 디렉토리 결정
         if output_dir and Path(output_dir).exists():
             save_dir = Path(output_dir)
         else:
-            save_dir = OUTPUT_DIR / "blogs" / datetime.now().strftime("%Y%m%d")
-            save_dir.mkdir(parents=True, exist_ok=True)
-        
-        # 파일명 생성
-        safe_title = re.sub(r'[^\w가-힣\s]', '', title)[:30].strip()
-        timestamp = datetime.now().strftime("%H%M%S")
-        filename = f"{safe_title}_{version_type}_{timestamp}_edited.json"
-        
-        save_data = {
-            "title": title,
-            "content": content,
-            "version_type": version_type,
-            "version_label": version_label,
-            "tags": tags,
-            "edited_at": datetime.now().isoformat(),
-            "is_edited": True
-        }
-        
-        save_path = save_dir / filename
-        with open(save_path, 'w', encoding='utf-8') as f:
-            json.dump(save_data, f, ensure_ascii=False, indent=2)
-        
+            save_dir = OUTPUT_DIR
+
+        if output_id:
+            package, save_path = update_blog_package_version(
+                output_dir=save_dir,
+                output_id=output_id,
+                version_type=version_type,
+                updated_fields={
+                    "title": title,
+                    "content": content,
+                    "tags": tags,
+                    "meta_description": data.get("meta_description", ""),
+                },
+            )
+        else:
+            filename = f"edited_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+            save_path = save_dir / filename
+            with open(save_path, 'w', encoding='utf-8') as f:
+                json.dump({
+                    "title": title,
+                    "content": content,
+                    "version_type": version_type,
+                    "version_label": version_label,
+                    "tags": tags,
+                    "edited_at": datetime.now().isoformat(),
+                    "is_edited": True,
+                }, f, ensure_ascii=False, indent=2)
+
         return jsonify({
             "success": True,
             "saved_path": str(save_path),
-            "filename": filename
+            "filename": Path(save_path).name
         })
     except Exception as e:
         return jsonify({"error": f"저장 실패: {str(e)}"}), 500
@@ -1357,15 +1405,24 @@ def match_test():
 # API: Blog Collection (blog_pull 통합)
 # ============================================================
 
-from run_crawler import get_blog_id, get_post_list, get_post_content, save_results
-import run_crawler as _run_crawler
-_run_crawler.OUTPUT_DIR = str(BLOG_COLLECTIONS_DIR)
+try:
+    from run_crawler import get_blog_id, get_post_list, get_post_content, save_results
+    import run_crawler as _run_crawler
+    _run_crawler.OUTPUT_DIR = str(BLOG_COLLECTIONS_DIR)
+    BLOG_PULL_AVAILABLE = True
+except Exception as e:
+    BLOG_PULL_AVAILABLE = False
+    get_blog_id = get_post_list = get_post_content = save_results = None
+    print(f"[WARN] blog_pull 크롤러를 불러오지 못했습니다: {e}")
 import time as _time
 
 @app.route('/api/blog/collect', methods=['POST'])
 @login_required
 def collect_blog():
     """네이버 블로그 글 수집 (blog_pull 크롤러 통합)"""
+    if not BLOG_PULL_AVAILABLE:
+        return jsonify({"error": "blog_pull 크롤러가 설치되지 않아 블로그 수집 기능을 사용할 수 없습니다."}), 503
+
     data = request.json
     
     blog_input = data.get("blog_id", "").strip()
@@ -1627,19 +1684,18 @@ def analyze_blog_status():
 반드시 유효한 JSON으로만 응답하세요. 다른 텍스트는 포함하지 마세요."""
 
         response = client.models.generate_content(
-            model="gemini-2.0-flash",
+            model="gemini-2.5-pro",
             contents=analysis_prompt
         )
         
         result_text = response.text.strip()
         result = parse_ai_json(result_text)
         result["blog_id"] = blog_id
-        result["post_count"] = len(posts)
-        result["folder"] = folder_name
+        result["post_count"] = len(unique_posts)
         result["created_at"] = datetime.now().isoformat()
         
         # DNA 분석 결과 자동 저장
-        dna_id = f"DNA_{folder_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        dna_id = f"DNA_{blog_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
         result["dna_id"] = dna_id
         dna_path = DNA_DIR / f"{dna_id}.json"
         with open(dna_path, 'w', encoding='utf-8') as f:
@@ -1767,7 +1823,7 @@ def business_analysis():
         result_text = response.text.strip()
         result = parse_ai_json(result_text)
         result["client_id"] = client_id
-        result["blog_folder"] = folder_name
+        result["blog_id"] = blog_id
         result["created_at"] = datetime.now().isoformat()
         
         # 업무성격 분석 결과 자동 저장
@@ -1832,8 +1888,7 @@ def mypage_blogs():
     items = []
     for fp in OUTPUT_DIR.glob("BLOG_*.json"):
         try:
-            with open(fp, 'r', encoding='utf-8') as f:
-                data = json.load(f)
+            data = load_blog_package(fp)
             versions = data.get("versions", [])
             title = versions[0].get("title", "") if versions else ""
             items.append({
@@ -1857,8 +1912,7 @@ def mypage_blog_detail(blog_id):
     fp = OUTPUT_DIR / f"{blog_id}.json"
     if not fp.exists():
         return jsonify({"error": "블로그를 찾을 수 없습니다."}), 404
-    with open(fp, 'r', encoding='utf-8') as f:
-        data = json.load(f)
+    data = load_blog_package(fp)
     return jsonify(data)
 
 
@@ -1955,6 +2009,9 @@ def mypage_delete(data_type, item_id):
     
     # 블로그의 경우 MD 파일도 삭제
     if data_type == "blogs":
+        primary_md = target_dir / f"{item_id}.md"
+        if primary_md.exists():
+            primary_md.unlink()
         for md in target_dir.glob(f"{item_id}_*.md"):
             md.unlink()
     
@@ -2076,6 +2133,7 @@ def _build_doc_content(data_type, data, item_id):
     idx = 1  # 커서 위치 (1-indexed)
 
     if data_type == 'blogs':
+        data = ensure_blog_package_shape(data)
         title = data.get('title', item_id)
         doc_title = f"[블로그] {title}"
 

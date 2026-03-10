@@ -133,41 +133,60 @@ async function updateWritingGuide() {
 // ============================================================
 
 async function checkAuthStatus() {
-    const loginGate = document.getElementById('login-gate');
-    const appContent = document.getElementById('app-content');
-    const userSection = document.getElementById('user-section');
+    const loginGate    = document.getElementById('login-gate');
+    const appContent   = document.getElementById('app-content');
+    const userSection  = document.getElementById('user-section');
+    const loginSection = document.getElementById('topbar-login-section');
+    const sidebarLoggedIn  = document.getElementById('sidebar-logged-in');
+    const sidebarLoggedOut = document.getElementById('sidebar-logged-out');
+
+    function showApp()   { if (appContent) appContent.classList.remove('hidden'); if (loginGate) loginGate.classList.add('hidden'); }
+    function showGate()  { if (loginGate) loginGate.classList.remove('hidden');  if (appContent) appContent.classList.add('hidden'); }
 
     try {
         const response = await fetch('/api/auth/status');
         const data = await response.json();
 
-        if (!data.sso_enabled) {
-            if (loginGate) loginGate.classList.add('hidden');
-            if (appContent) appContent.classList.remove('hidden');
-        } else if (data.logged_in) {
-            if (loginGate) loginGate.classList.add('hidden');
-            if (appContent) appContent.classList.remove('hidden');
-            if (userSection) userSection.classList.remove('hidden');
+        if (data.logged_in) {
+            // 로그인 완료
+            showApp();
+            if (userSection)  userSection.style.display  = 'flex';
+            if (loginSection) loginSection.style.display = 'none';
 
-            const userAvatar = document.getElementById('user-avatar');
-            const userName = document.getElementById('user-name');
+            const avatar = document.getElementById('user-avatar');
+            const name   = document.getElementById('user-name');
+            if (avatar && data.user?.picture) avatar.src = data.user.picture;
+            if (name)   name.textContent = data.user?.name || data.user?.email || '';
 
-            if (userAvatar && data.user.picture) {
-                userAvatar.src = data.user.picture;
-            }
-            if (userName) {
-                userName.textContent = data.user.name || data.user.email;
-            }
+            if (sidebarLoggedIn)  sidebarLoggedIn.classList.remove('hidden');
+            if (sidebarLoggedOut) sidebarLoggedOut.classList.add('hidden');
+            const sidebarAvatar   = document.getElementById('sidebar-avatar');
+            const sidebarUsername = document.getElementById('sidebar-username');
+            if (sidebarAvatar && data.user?.picture) sidebarAvatar.src = data.user.picture;
+            if (sidebarUsername) sidebarUsername.textContent = data.user?.name || data.user?.email || '';
+
+        } else if (data.sso_enabled) {
+            // SSO 활성화 + 미로그인 → 전체 화면 로그인 게이트
+            showGate();
+            if (userSection)  userSection.style.display  = 'none';
+            if (loginSection) loginSection.style.display = 'block';
+            if (sidebarLoggedIn)  sidebarLoggedIn.classList.add('hidden');
+            if (sidebarLoggedOut) sidebarLoggedOut.classList.remove('hidden');
+
         } else {
-            if (loginGate) loginGate.classList.remove('hidden');
-            if (appContent) appContent.classList.add('hidden');
+            // SSO 미설정 — 로그인 없이 전체 사용, 버튼 숨김
+            showApp();
+            if (userSection)  userSection.style.display  = 'none';
+            if (loginSection) loginSection.style.display = 'none';
+            if (sidebarLoggedIn)  sidebarLoggedIn.classList.add('hidden');
+            if (sidebarLoggedOut) sidebarLoggedOut.classList.add('hidden');
         }
 
-        console.log('Auth status:', data);
     } catch (error) {
         console.error('Auth check failed:', error);
-        if (loginGate) loginGate.classList.remove('hidden');
-        if (appContent) appContent.classList.add('hidden');
+        showGate();
+        if (userSection)  userSection.style.display  = 'none';
+        if (loginSection) loginSection.style.display = 'block';
     }
 }
 
@@ -317,11 +336,11 @@ if (pressFileUploadArea) {
         e.preventDefault();
         pressFileUploadArea.classList.remove('dragover');
         const files = e.dataTransfer.files;
-        if (files.length > 0) handlePressFileSelect(files[0]);
+        if (files.length > 0) handlePressFileSelect(files);
     });
 
     pressFileInput.addEventListener('change', (e) => {
-        if (e.target.files.length > 0) handlePressFileSelect(e.target.files[0]);
+        if (e.target.files.length > 0) handlePressFileSelect(e.target.files);
     });
 
     pressFileRemove.addEventListener('click', (e) => {
@@ -330,18 +349,20 @@ if (pressFileUploadArea) {
     });
 }
 
-function handlePressFileSelect(file) {
-    const validExtensions = ['.txt', '.pdf', '.hwp'];
-    const ext = '.' + file.name.split('.').pop().toLowerCase();
+function handlePressFileSelect(fileList) {
+    const validExtensions = ['.txt', '.pdf', '.hwp', '.docx', '.jpg', '.jpeg', '.png'];
+    const files = Array.from(fileList);
 
-    if (!validExtensions.includes(ext)) {
-        alert('지원되지 않는 파일 형식입니다. TXT, PDF 또는 HWP 파일을 선택해주세요.');
+    if (files.some(file => !validExtensions.includes('.' + file.name.split('.').pop().toLowerCase()))) {
+        alert('지원되지 않는 파일 형식입니다. TXT, PDF, HWP, DOCX, JPG, PNG 파일을 선택해주세요.');
         return;
     }
 
     pressFileUploadArea.querySelector('.file-upload-content').classList.add('hidden');
     pressFileSelected.classList.remove('hidden');
-    pressFileName.textContent = file.name;
+    pressFileName.textContent = files.length === 1
+        ? files[0].name
+        : `${files.length}개 파일 선택: ${files.map(file => file.name).join(', ')}`;
     pressFileUploadArea.classList.add('has-file');
 }
 
@@ -373,92 +394,60 @@ async function loadPersonas() {
             if (el) el.innerHTML = defaultOpt + optionsHTML;
         });
 
-        // 2. Persona List (Visual Selection)
+        // 2. Persona List (Table)
         const containers = [
             document.getElementById('persona-cards-grid'),
             document.getElementById('writer-persona-cards')
         ];
 
-        const listHeaderHTML = `
-            <div class="persona-list-header">
-                <div style="flex:0; width:34px;"></div>
-                <div class="persona-col-name">이름</div>
-                <div class="persona-col-org">소속</div>
-                <div class="persona-col-tags">페르소나 분석</div>
-            </div>
-        `;
+        containers.forEach(table => {
+            if (!table) return;
+            const tbody = table.querySelector('tbody');
+            tbody.innerHTML = '';
 
-        containers.forEach(container => {
-            if (!container) return;
+            if (personas.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:24px;">저장된 페르소나가 없습니다.</td></tr>';
+                return;
+            }
 
-            const itemsHTML = personas.map(p => {
-                // 격식도 레이블
+            personas.forEach(p => {
                 const fScore = p.formality || 5;
                 const fLabel = fScore >= 8 ? '고격식' : fScore >= 5 ? '중격식' : '캐주얼';
-
-                // 커뮤니케이션 스타일 칩
                 const directMap = { direct: '직접적', balanced: '균형적', indirect: '간접적' };
                 const directLabel = directMap[p.directness] || p.directness || '균형적';
-
-                // 감성 톤 칩
                 const emoMap = { high: '감성적', neutral: '중립적', low: '이성적' };
                 const emoLabel = emoMap[p.emotional_tone] || p.emotional_tone || '중립적';
 
-                // 대표 표현 (있을 때만)
-                const cpChip = p.catchphrase
-                    ? `<span class="p-tag tag-expr" title="${p.catchphrase}">"${p.catchphrase.slice(0,10)}${p.catchphrase.length>10?'…':''}"</span>`
-                    : '';
+                const tr = document.createElement('tr');
+                tr.dataset.clientId = p.client_id;
+                tr.style.cursor = 'pointer';
+                tr.innerHTML = `
+                    <td class="lt-title" style="width:auto;max-width:none;font-weight:400;">${p.client_name}</td>
+                    <td class="lt-meta">${p.organization || '-'}</td>
+                    <td class="lt-meta" style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${p.persona_type || '-'}</td>
+                    <td class="lt-meta">${fLabel} ${fScore}/10</td>
+                    <td class="lt-meta">${directLabel}</td>
+                    <td class="lt-meta">${emoLabel}</td>`;
+                tbody.appendChild(tr);
 
-                // 페르소나 유형 한 줄 설명 (있을 때만)
-                const typeDesc = p.persona_type
-                    ? `<div class="persona-type-desc">${p.persona_type}</div>`
-                    : '';
+                tr.addEventListener('click', () => {
+                    const clientId = tr.dataset.clientId;
 
-                return `
-                <div class="persona-card fade-in" data-client-id="${p.client_id}">
-                    <div class="persona-avatar">${p.client_name.charAt(0)}</div>
-                    <div class="persona-col-name name">${p.client_name}</div>
-                    <div class="persona-col-org org">${p.organization}</div>
-                    <div class="persona-col-tags">
-                        ${typeDesc}
-                        <div class="persona-tags">
-                            <span class="p-tag tag-formality">${fLabel} ${fScore}/10</span>
-                            <span class="p-tag tag-type">${directLabel}</span>
-                            <span class="p-tag tag-category">${emoLabel}</span>
-                            ${cpChip}
-                        </div>
-                    </div>
-                </div>`;
-            }).join('');
-
-            container.innerHTML = listHeaderHTML + itemsHTML;
-
-            // Card Click Event
-            container.querySelectorAll('.persona-card').forEach(card => {
-                card.addEventListener('click', () => {
-                    const clientId = card.dataset.clientId;
-
-                    // Update UI: Highlight selected cards everywhere
-                    document.querySelectorAll(`.persona-card`).forEach(c => {
-                        if (c.dataset.clientId === clientId) c.classList.add('selected');
-                        else c.classList.remove('selected');
+                    // 모든 테이블의 같은 persona 행 선택 처리
+                    document.querySelectorAll('.persona-list-table tbody tr').forEach(r => {
+                        if (r.dataset.clientId === clientId) r.classList.add('persona-row-selected');
+                        else r.classList.remove('persona-row-selected');
                     });
 
-                    // Sync with hidden input (Generator)
                     const hiddenInput = document.getElementById('persona-select');
                     if (hiddenInput) {
                         hiddenInput.value = clientId;
-                        // Trigger synthetic change event if needed
                         hiddenInput.dispatchEvent(new Event('change'));
                     }
-
-                    // Sync with legacy dropdowns
                     ['legacy-persona-select', 'match-persona-select', 'biz-persona-select'].forEach(id => {
                         const el = document.getElementById(id);
                         if (el) el.value = clientId;
                     });
-
-                    console.log(`Persona selected: ${clientId}`);
                 });
             });
         });
@@ -718,13 +707,15 @@ document.getElementById('blog-status-form')?.addEventListener('submit', async (e
     const form = e.target;
     const submitBtn = form.querySelector('button[type="submit"]');
     const resultBox = document.getElementById('blog-status-result');
-    const detailsContent = document.getElementById('dna-details-content');
+    const errorBox = document.getElementById('blog-status-error');
 
     const blog_id = document.getElementById('status-collection-select').value;
     if (!blog_id) {
-        showError(resultBox, '분석할 블로그를 선택해주세요.');
+        errorBox.textContent = '분석할 블로그를 선택해주세요.';
+        errorBox.classList.remove('hidden');
         return;
     }
+    errorBox.classList.add('hidden');
 
     setLoading(submitBtn, true);
 
@@ -804,14 +795,18 @@ document.getElementById('blog-status-form')?.addEventListener('submit', async (e
         ];
 
         resultBox.classList.remove('hidden');
-        detailsContent.innerHTML = `
-            <div class="dna-details-grid">
-                ${categories.map((cat, i) => renderCategory(cat)).join('')}
-            </div>
-        `;
+        const detailsContent = document.getElementById('dna-details-content');
+        if (detailsContent) {
+            detailsContent.innerHTML = `
+                <div class="dna-details-grid">
+                    ${categories.map((cat, i) => renderCategory(cat)).join('')}
+                </div>
+            `;
+        }
 
     } catch (error) {
-        showError(resultBox, error.message);
+        errorBox.textContent = `분석 실패: ${error.message}`;
+        errorBox.classList.remove('hidden');
     } finally {
         setLoading(submitBtn, false);
     }
@@ -961,7 +956,7 @@ document.getElementById('blog-form')?.addEventListener('submit', async (e) => {
     }
 
     if (hasFile) {
-        formData.append('file', pressFileInput.files[0]);
+        Array.from(pressFileInput.files).forEach(file => formData.append('files', file));
     } else {
         formData.append('press_release', pressReleaseText);
     }
@@ -1042,10 +1037,18 @@ document.getElementById('blog-form')?.addEventListener('submit', async (e) => {
             </div>
         `;
 
+        const sourceSummary = result.source_bundle?.sources?.length
+            ? `<div style="margin-top: 16px; color: var(--text-secondary);">
+                    <p><strong>입력 자료:</strong> ${result.source_bundle.sources.map(source => `${source.name} (${source.char_count}자)`).join(', ')}</p>
+                    ${(result.source_bundle.warnings || []).length ? `<p><strong>추출 참고:</strong> ${result.source_bundle.warnings.join(' / ')}</p>` : ''}
+               </div>`
+            : '';
+
         const html = `
             <div style="margin-bottom: 20px;">
                 <h3>블로그 3가지 버전 생성 완료</h3>
                 <p style="color: var(--text-muted);">동일한 내용을 3가지 톤으로 작성했습니다. 탭을 클릭하여 비교해보세요.</p>
+                <p style="color: var(--text-muted);">생성 방식: ${result.generation_mode === 'ai' ? 'AI 생성' : '오프라인 초안 엔진'}</p>
             </div>
             <div class="version-tabs">${tabsHTML}</div>
             <div class="version-panels">${contentsHTML}</div>
@@ -1053,11 +1056,13 @@ document.getElementById('blog-form')?.addEventListener('submit', async (e) => {
             <div style="margin-top: 16px; color: var(--text-secondary);">
                 <p><strong>저장 위치:</strong> <code>${result.output_dir}</code></p>
             </div>
+            ${sourceSummary}
         `;
 
         // Store versions data for save/export
         window._blogVersions = versions;
         window._blogOutputDir = result.output_dir;
+        window._blogOutputId = result.output_id;
 
         // Update the versions area and mobile preview
         const versionsArea = document.getElementById('blog-versions-area');
@@ -1140,6 +1145,7 @@ async function saveBlogVersion(idx) {
             version_type: versionData.version_type || 'unknown',
             version_label: versionData.version_label || `Version ${idx + 1}`,
             tags: versionData.tags || [],
+            output_id: window._blogOutputId || '',
             output_dir: window._blogOutputDir || ''
         });
 
@@ -1562,6 +1568,45 @@ document.getElementById('refresh-biz-collections')?.addEventListener('click', ()
 document.getElementById('refresh-blog-dna')?.addEventListener('click', () => loadCollections());
 
 // ============================================================
+// DNA 스타일 미리보기
+// ============================================================
+
+document.getElementById('blog-dna-select')?.addEventListener('change', async (e) => {
+    const blogId = e.target.value;
+    const panel = document.getElementById('dna-preview-panel');
+    const body = document.getElementById('dna-preview-body');
+    const content = document.getElementById('dna-preview-content');
+    const arrow = document.getElementById('dna-preview-arrow');
+    if (!panel || !body || !content) return;
+
+    if (!blogId) {
+        panel.style.display = 'none';
+        return;
+    }
+
+    panel.style.display = 'block';
+    body.style.display = 'block';
+    if (arrow) arrow.textContent = '▲ 접기';
+    content.textContent = '불러오는 중...';
+
+    try {
+        const result = await apiRequest(`/blog/dna-preview?blog_id=${encodeURIComponent(blogId)}`);
+        content.textContent = result.preview_text || '미리보기 없음';
+    } catch (err) {
+        content.textContent = err.message || 'DNA 미리보기 로드 실패. 먼저 글쓰기 DNA 분석을 실행하세요.';
+    }
+});
+
+document.getElementById('dna-preview-toggle')?.addEventListener('click', () => {
+    const body = document.getElementById('dna-preview-body');
+    const arrow = document.getElementById('dna-preview-arrow');
+    if (!body) return;
+    const isOpen = body.style.display !== 'none';
+    body.style.display = isOpen ? 'none' : 'block';
+    if (arrow) arrow.textContent = isOpen ? '▼ 펼치기' : '▲ 접기';
+});
+
+// ============================================================
 // My Page: Data Management
 // ============================================================
 
@@ -1578,30 +1623,25 @@ async function loadMyPersonas() {
     try {
         const res = await fetch(`${API_BASE}/mypage/personas`);
         const data = await res.json();
-        const grid = document.getElementById('my-personas-grid');
+        const table = document.getElementById('my-personas-grid');
         const empty = document.getElementById('my-personas-empty');
-        grid.innerHTML = '';
+        const tbody = table.querySelector('tbody');
+        tbody.innerHTML = '';
         if (!data.items || data.items.length === 0) {
-            empty.style.display = 'block'; return;
+            empty.style.display = 'block'; table.style.display = 'none'; return;
         }
-        empty.style.display = 'none';
+        empty.style.display = 'none'; table.style.display = 'table';
         data.items.forEach(item => {
-            const card = document.createElement('div');
-            card.className = 'article-card';
-            card.innerHTML = `
-                <div class="article-card-top">
-                    <span class="article-badge persona">페르소나</span>
-                    <span class="article-date">${formatDate(item.created_at)}</span>
-                </div>
-                <div class="article-title">${item.client_name || item.id}</div>
-                <div class="article-meta">
-                    <span>${item.organization || '-'}</span>
-                </div>
-                <div class="article-actions">
-                    <button class="btn-view" onclick="viewDetail('personas','${item.id}','페르소나 상세')">상세보기</button>
-                    <button class="btn-delete" onclick="deleteItem('personas','${item.id}',this)">삭제</button>
-                </div>`;
-            grid.appendChild(card);
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td class="lt-title">${item.client_name || item.id}</td>
+                <td class="lt-meta">${item.organization || '-'}</td>
+                <td class="lt-date">${formatDate(item.created_at)}</td>
+                <td class="lt-actions">
+                    <button class="lt-btn" onclick="viewDetail('personas','${item.id}','페르소나 상세')">상세</button>
+                    <button class="lt-btn lt-btn-del" onclick="deleteItem('personas','${item.id}',this)">삭제</button>
+                </td>`;
+            tbody.appendChild(tr);
         });
     } catch (e) { console.error('페르소나 목록 로드 실패:', e); }
 }
@@ -1611,32 +1651,27 @@ async function loadMyBlogs() {
     try {
         const res = await fetch(`${API_BASE}/mypage/blogs`);
         const data = await res.json();
-        const grid = document.getElementById('my-blogs-grid');
+        const table = document.getElementById('my-blogs-grid');
         const empty = document.getElementById('my-blogs-empty');
-        grid.innerHTML = '';
+        const tbody = table.querySelector('tbody');
+        tbody.innerHTML = '';
         if (!data.items || data.items.length === 0) {
-            empty.style.display = 'block'; return;
+            empty.style.display = 'block'; table.style.display = 'none'; return;
         }
-        empty.style.display = 'none';
+        empty.style.display = 'none'; table.style.display = 'table';
         data.items.forEach(item => {
-            const card = document.createElement('div');
-            card.className = 'article-card';
-            card.innerHTML = `
-                <div class="article-card-top">
-                    <span class="article-badge blog">블로그</span>
-                    <span class="article-date">${formatDate(item.created_at)}</span>
-                </div>
-                <div class="article-title">${item.title || '(제목없음)'}</div>
-                <div class="article-meta">
-                    <span>${item.client_id || '-'}</span>
-                    <span>버전 ${item.version_count || 0}개</span>
-                </div>
-                <div class="article-actions">
-                    <button class="btn-view" onclick="viewDetail('blogs','${item.id}','블로그 상세')">상세보기</button>
-                    <button class="btn-view" onclick="exportToGoogleDocs('blogs','${item.id}')" style="background:rgba(52,168,83,0.15);color:#34a853;">Docs</button>
-                    <button class="btn-delete" onclick="deleteItem('blogs','${item.id}',this)">삭제</button>
-                </div>`;
-            grid.appendChild(card);
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td class="lt-title">${item.title || '(제목없음)'}</td>
+                <td class="lt-meta">${item.client_id || '-'}</td>
+                <td class="lt-meta">${item.version_count || 0}개</td>
+                <td class="lt-date">${formatDate(item.created_at)}</td>
+                <td class="lt-actions">
+                    <button class="lt-btn" onclick="viewDetail('blogs','${item.id}','블로그 상세')">상세</button>
+                    <button class="lt-btn lt-btn-docs" onclick="exportToGoogleDocs('blogs','${item.id}')">Docs</button>
+                    <button class="lt-btn lt-btn-del" onclick="deleteItem('blogs','${item.id}',this)">삭제</button>
+                </td>`;
+            tbody.appendChild(tr);
         });
     } catch (e) { console.error('블로그 목록 로드 실패:', e); }
 }
@@ -1646,31 +1681,25 @@ async function loadMyDna() {
     try {
         const res = await fetch(`${API_BASE}/mypage/dna`);
         const data = await res.json();
-        const grid = document.getElementById('my-dna-grid');
+        const table = document.getElementById('my-dna-grid');
         const empty = document.getElementById('my-dna-empty');
-        grid.innerHTML = '';
+        const tbody = table.querySelector('tbody');
+        tbody.innerHTML = '';
         if (!data.items || data.items.length === 0) {
-            empty.style.display = 'block'; return;
+            empty.style.display = 'block'; table.style.display = 'none'; return;
         }
-        empty.style.display = 'none';
+        empty.style.display = 'none'; table.style.display = 'table';
         data.items.forEach(item => {
-            const card = document.createElement('div');
-            card.className = 'article-card';
-            card.innerHTML = `
-                <div class="article-card-top">
-                    <span class="article-badge dna">DNA</span>
-                    <span class="article-date">${formatDate(item.created_at)}</span>
-                </div>
-                <div class="article-title">${item.blog_id || '-'}</div>
-                <div class="article-meta">
-                    <span>${item.folder || '-'}</span>
-                    <span>${item.post_count || 0}개 글</span>
-                </div>
-                <div class="article-actions">
-                    <button class="btn-view" onclick="viewDetail('dna','${item.id}','DNA 분석 상세')">상세보기</button>
-                    <button class="btn-delete" onclick="deleteItem('dna','${item.id}',this)">삭제</button>
-                </div>`;
-            grid.appendChild(card);
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td class="lt-title">${item.blog_id || '-'}</td>
+                <td class="lt-meta">${item.post_count || 0}개</td>
+                <td class="lt-date">${formatDate(item.created_at)}</td>
+                <td class="lt-actions">
+                    <button class="lt-btn" onclick="viewDetail('dna','${item.id}','DNA 분석 상세')">상세</button>
+                    <button class="lt-btn lt-btn-del" onclick="deleteItem('dna','${item.id}',this)">삭제</button>
+                </td>`;
+            tbody.appendChild(tr);
         });
     } catch (e) { console.error('DNA 목록 로드 실패:', e); }
 }
@@ -1680,31 +1709,25 @@ async function loadMyBusiness() {
     try {
         const res = await fetch(`${API_BASE}/mypage/business`);
         const data = await res.json();
-        const grid = document.getElementById('my-business-grid');
+        const table = document.getElementById('my-business-grid');
         const empty = document.getElementById('my-business-empty');
-        grid.innerHTML = '';
+        const tbody = table.querySelector('tbody');
+        tbody.innerHTML = '';
         if (!data.items || data.items.length === 0) {
-            empty.style.display = 'block'; return;
+            empty.style.display = 'block'; table.style.display = 'none'; return;
         }
-        empty.style.display = 'none';
+        empty.style.display = 'none'; table.style.display = 'table';
         data.items.forEach(item => {
-            const card = document.createElement('div');
-            card.className = 'article-card';
-            card.innerHTML = `
-                <div class="article-card-top">
-                    <span class="article-badge biz">업무성격</span>
-                    <span class="article-date">${formatDate(item.created_at)}</span>
-                </div>
-                <div class="article-title">${item.type || '분석 결과'}</div>
-                <div class="article-meta">
-                    <span>${item.client_id || '-'}</span>
-                    <span>${item.blog_folder || '-'}</span>
-                </div>
-                <div class="article-actions">
-                    <button class="btn-view" onclick="viewDetail('business','${item.id}','업무적 성격 상세')">상세보기</button>
-                    <button class="btn-delete" onclick="deleteItem('business','${item.id}',this)">삭제</button>
-                </div>`;
-            grid.appendChild(card);
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td class="lt-title">${item.client_id || '-'}</td>
+                <td class="lt-meta">${item.blog_id || item.blog_folder || '-'}</td>
+                <td class="lt-date">${formatDate(item.created_at)}</td>
+                <td class="lt-actions">
+                    <button class="lt-btn" onclick="viewDetail('business','${item.id}','업무적 성격 상세')">상세</button>
+                    <button class="lt-btn lt-btn-del" onclick="deleteItem('business','${item.id}',this)">삭제</button>
+                </td>`;
+            tbody.appendChild(tr);
         });
     } catch (e) { console.error('업무적 성격 목록 로드 실패:', e); }
 }
@@ -1900,33 +1923,28 @@ async function loadRecentBlogs() {
     try {
         const res = await fetch(`${API_BASE}/mypage/blogs`);
         const data = await res.json();
-        const grid = document.getElementById('recent-blogs-grid');
+        const table = document.getElementById('recent-blogs-grid');
         const empty = document.getElementById('recent-blogs-empty');
-        if (!grid) return;
-        grid.innerHTML = '';
+        if (!table) return;
+        const tbody = table.querySelector('tbody');
+        tbody.innerHTML = '';
         if (!data.items || data.items.length === 0) {
-            empty.style.display = 'block'; return;
+            empty.style.display = 'block'; table.style.display = 'none'; return;
         }
-        empty.style.display = 'none';
+        empty.style.display = 'none'; table.style.display = 'table';
         data.items.slice(0, 10).forEach(item => {
-            const card = document.createElement('div');
-            card.className = 'article-card';
-            card.innerHTML = `
-                <div class="article-card-top">
-                    <span class="article-badge blog">블로그</span>
-                    <span class="article-date">${formatDate(item.created_at)}</span>
-                </div>
-                <div class="article-title">${item.title || '(제목없음)'}</div>
-                <div class="article-meta">
-                    <span>${item.client_id || '-'}</span>
-                    <span>버전 ${item.version_count || 0}개</span>
-                </div>
-                <div class="article-actions">
-                    <button class="btn-view" onclick="viewDetail('blogs','${item.id}','블로그 상세')">상세보기</button>
-                    <button class="btn-view" onclick="exportToGoogleDocs('blogs','${item.id}')" style="background:rgba(52,168,83,0.15);color:#34a853;">Docs</button>
-                    <button class="btn-delete" onclick="deleteItem('blogs','${item.id}',this); setTimeout(loadRecentBlogs,300);">삭제</button>
-                </div>`;
-            grid.appendChild(card);
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td class="lt-title">${item.title || '(제목없음)'}</td>
+                <td class="lt-meta">${item.client_id || '-'}</td>
+                <td class="lt-meta">${item.version_count || 0}개</td>
+                <td class="lt-date">${formatDate(item.created_at)}</td>
+                <td class="lt-actions">
+                    <button class="lt-btn" onclick="viewDetail('blogs','${item.id}','블로그 상세')">상세</button>
+                    <button class="lt-btn lt-btn-docs" onclick="exportToGoogleDocs('blogs','${item.id}')">Docs</button>
+                    <button class="lt-btn lt-btn-del" onclick="deleteItem('blogs','${item.id}',this); setTimeout(loadRecentBlogs,300);">삭제</button>
+                </td>`;
+            tbody.appendChild(tr);
         });
     } catch (e) { console.error('최근 블로그 로드 실패:', e); }
 }

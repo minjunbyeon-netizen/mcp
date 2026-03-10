@@ -16,7 +16,7 @@
 
 <body>
     <!-- Login Gate (로그인 전 전체 화면) -->
-    <div id="login-gate" class="login-gate">
+    <div id="login-gate" class="login-gate hidden">
         <div class="login-gate-card">
             <div class="login-gate-logo">Persona Tools</div>
             <p class="login-gate-desc">AI 페르소나 분석 & 콘텐츠 생성 도구</p>
@@ -33,7 +33,7 @@
     </div>
 
     <!-- App Content (로그인 후에만 표시) -->
-    <div id="app-content" class="app-layout hidden">
+    <div id="app-content" class="app-layout">
         <!-- Top Bar -->
         <header class="top-bar">
             <div class="top-bar-left">
@@ -41,10 +41,15 @@
                 <span class="top-bar-badge">관리자</span>
             </div>
             <div class="top-bar-right" id="auth-section">
-                <div id="user-section" class="hidden">
+                <!-- 로그인 상태 -->
+                <div id="user-section" style="display:none; align-items:center; gap:10px;">
                     <img id="user-avatar" src="" alt="Profile" class="user-avatar">
                     <span id="user-name" class="user-name"></span>
                     <a href="/logout" class="logout-btn">로그아웃</a>
+                </div>
+                <!-- 비로그인 상태 -->
+                <div id="topbar-login-section" style="display:none;">
+                    <a href="/login" class="topbar-login-btn">Google로 로그인</a>
                 </div>
             </div>
         </header>
@@ -71,6 +76,18 @@
                     <button class="nav-item" data-panel="my-blogs">블로그 글 관리</button>
                     <button class="nav-item" data-panel="my-dna">글쓰기 DNA 관리</button>
                     <button class="nav-item" data-panel="my-business">업무적 성격 관리</button>
+                </div>
+
+                <!-- 사이드바 하단 유저 영역 -->
+                <div class="sidebar-user-area" id="sidebar-user-area">
+                    <div id="sidebar-logged-in" class="hidden">
+                        <img id="sidebar-avatar" src="" alt="" class="sidebar-avatar">
+                        <span id="sidebar-username" class="sidebar-username"></span>
+                        <a href="/logout" class="sidebar-logout-btn">로그아웃</a>
+                    </div>
+                    <div id="sidebar-logged-out">
+                        <a href="/login" class="sidebar-login-btn">Google로 로그인</a>
+                    </div>
                 </div>
             </aside>
 
@@ -126,7 +143,10 @@
                             </button>
                         </form>
 
-                        <div id="persona-cards-grid" class="persona-cards-grid"></div>
+                        <table class="list-table persona-list-table" id="persona-cards-grid" style="margin-top:24px;">
+                            <thead><tr><th>이름</th><th>소속</th><th>페르소나 유형</th><th>격식도</th><th>커뮤니케이션</th><th>감성톤</th></tr></thead>
+                            <tbody></tbody>
+                        </table>
                         <div id="persona-result" class="result-box hidden"></div>
                     </div>
                 </div>
@@ -210,6 +230,8 @@
                             </button>
                         </form>
 
+                        <div id="blog-status-error" class="hidden" style="color:#FF3B30;padding:12px 0;font-size:0.9rem;"></div>
+
                         <div id="blog-status-result" class="result-box hidden">
                             <div class="dna-visual-container">
                                 <canvas id="dna-radar-chart"></canvas>
@@ -269,7 +291,10 @@
                             <div class="form-row">
                                 <div class="form-group" style="grid-column: 1 / -1;">
                                     <label>페르소나 선택 (시각적 선택)</label>
-                                    <div id="writer-persona-cards" class="persona-cards-grid"></div>
+                                    <table class="list-table persona-list-table" id="writer-persona-cards">
+                                        <thead><tr><th>이름</th><th>소속</th><th>페르소나 유형</th><th>격식도</th><th>커뮤니케이션</th><th>감성톤</th></tr></thead>
+                                        <tbody></tbody>
+                                    </table>
                                     <input type="hidden" id="persona-select" required>
                                 </div>
                                 <div class="form-group" style="display: none;">
@@ -290,16 +315,26 @@
                                             title="목록 새로고침">↻</button>
                                     </div>
                                 </div>
+                                <!-- DNA 스타일 미리보기 -->
+                                <div id="dna-preview-panel" style="display:none; margin-top:8px; border:1px solid #e5e5e5; border-radius:8px; overflow:hidden;">
+                                    <div style="background:#f5f5f7; padding:10px 14px; display:flex; justify-content:space-between; align-items:center; cursor:pointer;" id="dna-preview-toggle">
+                                        <span style="font-size:0.8rem; font-weight:700; color:#1d1d1f;">모방 스타일 미리보기</span>
+                                        <span id="dna-preview-arrow" style="font-size:0.75rem; color:#6e6e73;">▼ 펼치기</span>
+                                    </div>
+                                    <div id="dna-preview-body" style="display:none; padding:14px; background:#fff;">
+                                        <div id="dna-preview-content" style="font-size:0.8rem; line-height:1.7; color:#1d1d1f; white-space:pre-wrap; font-family:inherit;"></div>
+                                    </div>
+                                </div>
                             </div>
 
                             <div class="form-group">
-                                <label>보도자료 파일 업로드 (TXT, PDF, HWP)</label>
+                                <label>보도자료/홍보물 업로드 (여러 파일 가능)</label>
                                 <div class="file-upload-area" id="press-file-upload-area">
-                                    <input type="file" id="press-file" accept=".txt,.pdf,.hwp" hidden>
+                                    <input type="file" id="press-file" accept=".txt,.pdf,.hwp,.docx,.jpg,.jpeg,.png" multiple hidden>
                                     <div class="file-upload-content">
                                         <div class="file-upload-icon">+</div>
-                                        <p class="file-upload-text">파일을 드래그하거나 클릭하여 선택</p>
-                                        <p class="file-upload-hint">지원 형식: .txt, .pdf, .hwp</p>
+                                        <p class="file-upload-text">PDF, DOCX, HWP, 이미지 홍보물을 드래그하거나 클릭하여 선택</p>
+                                        <p class="file-upload-hint">지원 형식: .txt, .pdf, .hwp, .docx, .jpg, .png</p>
                                     </div>
                                     <div class="file-selected hidden" id="press-file-selected">
                                         <span class="file-name" id="press-file-name"></span>
@@ -383,8 +418,11 @@
                         <!-- 최근 작성한 글 -->
                         <div class="recent-history" style="margin-top:32px;">
                             <h3 class="recent-history-title">최근 작성한 글</h3>
-                            <div class="article-grid" id="recent-blogs-grid"></div>
-                            <div class="empty-state" id="recent-blogs-empty">아직 작성된 글이 없습니다.</div>
+                            <div class="empty-state" id="recent-blogs-empty" style="display:none;">아직 작성된 글이 없습니다.</div>
+                            <table class="list-table" id="recent-blogs-grid">
+                                <thead><tr><th>제목</th><th>페르소나</th><th>버전</th><th>날짜</th><th></th></tr></thead>
+                                <tbody></tbody>
+                            </table>
                         </div>
                     </div>
                 </div>
@@ -423,11 +461,13 @@
                 <div id="my-personas" class="content-panel">
                     <div class="content-header">
                         <h2 class="content-title">페르소나 관리</h2>
-                        <p class="content-desc">저장된 페르소나를 조회하고 관리합니다.</p>
                     </div>
                     <div class="content-body">
-                        <div class="article-grid" id="my-personas-grid"></div>
-                        <div class="empty-state" id="my-personas-empty">저장된 페르소나가 없습니다.</div>
+                        <div class="empty-state" id="my-personas-empty" style="display:none;">저장된 페르소나가 없습니다.</div>
+                        <table class="list-table" id="my-personas-grid">
+                            <thead><tr><th>이름</th><th>소속/조직</th><th>날짜</th><th></th></tr></thead>
+                            <tbody></tbody>
+                        </table>
                     </div>
                 </div>
 
@@ -435,11 +475,13 @@
                 <div id="my-blogs" class="content-panel">
                     <div class="content-header">
                         <h2 class="content-title">블로그 글 관리</h2>
-                        <p class="content-desc">생성된 블로그 글을 조회하고 관리합니다.</p>
                     </div>
                     <div class="content-body">
-                        <div class="article-grid" id="my-blogs-grid"></div>
-                        <div class="empty-state" id="my-blogs-empty">생성된 블로그 글이 없습니다.</div>
+                        <div class="empty-state" id="my-blogs-empty" style="display:none;">생성된 블로그 글이 없습니다.</div>
+                        <table class="list-table" id="my-blogs-grid">
+                            <thead><tr><th>제목</th><th>페르소나</th><th>버전</th><th>날짜</th><th></th></tr></thead>
+                            <tbody></tbody>
+                        </table>
                     </div>
                 </div>
 
@@ -447,11 +489,13 @@
                 <div id="my-dna" class="content-panel">
                     <div class="content-header">
                         <h2 class="content-title">글쓰기 DNA 관리</h2>
-                        <p class="content-desc">블로그 글쓰기 DNA 분석 결과를 관리합니다.</p>
                     </div>
                     <div class="content-body">
-                        <div class="article-grid" id="my-dna-grid"></div>
-                        <div class="empty-state" id="my-dna-empty">DNA 분석 결과가 없습니다.</div>
+                        <div class="empty-state" id="my-dna-empty" style="display:none;">DNA 분석 결과가 없습니다.</div>
+                        <table class="list-table" id="my-dna-grid">
+                            <thead><tr><th>블로그 ID</th><th>분석 글 수</th><th>날짜</th><th></th></tr></thead>
+                            <tbody></tbody>
+                        </table>
                     </div>
                 </div>
 
@@ -459,11 +503,13 @@
                 <div id="my-business" class="content-panel">
                     <div class="content-header">
                         <h2 class="content-title">업무적 성격 관리</h2>
-                        <p class="content-desc">업무적 성격 분석 결과를 관리합니다.</p>
                     </div>
                     <div class="content-body">
-                        <div class="article-grid" id="my-business-grid"></div>
-                        <div class="empty-state" id="my-business-empty">업무적 성격 분석 결과가 없습니다.</div>
+                        <div class="empty-state" id="my-business-empty" style="display:none;">업무적 성격 분석 결과가 없습니다.</div>
+                        <table class="list-table" id="my-business-grid">
+                            <thead><tr><th>페르소나</th><th>블로그</th><th>날짜</th><th></th></tr></thead>
+                            <tbody></tbody>
+                        </table>
                     </div>
                 </div>
 

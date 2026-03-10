@@ -115,11 +115,74 @@ body {
     min-width: 240px;
     background: var(--bg-secondary);
     border-right: 1px solid var(--border-color);
-    padding: 12px 0;
+    padding: 12px 0 0;
     overflow-y: auto;
     position: sticky;
     top: 52px;
     height: calc(100vh - 52px);
+    display: flex;
+    flex-direction: column;
+}
+
+.sidebar-user-area {
+    margin-top: auto;
+    padding: 16px 12px;
+    border-top: 1px solid rgba(255,255,255,0.08);
+}
+
+.sidebar-avatar {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    object-fit: cover;
+    vertical-align: middle;
+    margin-right: 8px;
+}
+
+.sidebar-username {
+    font-size: 0.78rem;
+    color: rgba(255,255,255,0.7);
+    vertical-align: middle;
+    max-width: 110px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    display: inline-block;
+}
+
+.sidebar-logout-btn {
+    display: block;
+    margin-top: 8px;
+    padding: 6px 0;
+    text-align: center;
+    font-size: 0.78rem;
+    color: rgba(255,255,255,0.5);
+    text-decoration: none;
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 980px;
+    transition: all 0.15s ease;
+}
+
+.sidebar-logout-btn:hover {
+    color: #fff;
+    border-color: rgba(255,255,255,0.4);
+}
+
+.sidebar-login-btn {
+    display: block;
+    padding: 8px 0;
+    text-align: center;
+    font-size: 0.82rem;
+    font-weight: 700;
+    color: #000;
+    background: #fff;
+    text-decoration: none;
+    border-radius: 980px;
+    transition: opacity 0.15s ease;
+}
+
+.sidebar-login-btn:hover {
+    opacity: 0.85;
 }
 
 .sidebar-section {
@@ -285,6 +348,21 @@ body {
     background: var(--accent-danger);
     color: white;
     border-color: var(--accent-danger);
+}
+
+.topbar-login-btn {
+    padding: 6px 16px;
+    background: #fff;
+    color: #000;
+    border-radius: 980px;
+    text-decoration: none;
+    font-size: 0.82rem;
+    font-weight: 700;
+    transition: opacity 0.15s ease;
+}
+
+.topbar-login-btn:hover {
+    opacity: 0.8;
 }
 
 /* Login Gate (Full Screen) */
@@ -1225,178 +1303,19 @@ select {
 /* ============================================================
    Persona Card System — Apple-style
    ============================================================ */
-.persona-cards-grid {
-    display: flex;
-    flex-direction: column;
-    gap: 0;
+/* ── Persona list table 선택 row 스타일 ── */
+.persona-list-table {
     margin-top: 20px;
-    margin-bottom: 24px;
-    background: var(--bg-secondary);
-    border: 1px solid rgba(255,255,255,0.07);
-    border-radius: 12px;
-    max-height: 320px;
-    overflow-y: auto;
-    overflow-x: hidden;
+    margin-bottom: 8px;
 }
 
-.persona-list-header {
-    display: flex;
-    align-items: center;
-    padding: 10px 20px;
-    background: rgba(255,255,255,0.03);
-    border-bottom: 1px solid rgba(255,255,255,0.06);
-    font-size: 0.7rem;
-    font-weight: 500;
-    color: rgba(255,255,255,0.3);
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    position: sticky;
-    top: 0;
-    z-index: 10;
-    backdrop-filter: blur(8px);
+.persona-list-table tbody tr.persona-row-selected {
+    background: rgba(0, 113, 227, 0.08);
+    box-shadow: inset 3px 0 0 0 #0071E3;
 }
 
-.persona-list-header>div,
-.persona-card>div:not(.persona-avatar) {
-    flex: 1;
-}
-
-.persona-col-name {
-    flex: 1.4 !important;
-}
-
-.persona-col-org {
-    flex: 1.6 !important;
-}
-
-.persona-col-tags {
-    flex: 2.2 !important;
-}
-
-.persona-card {
-    background: transparent;
-    border: none;
-    border-bottom: 1px solid rgba(255,255,255,0.05);
-    border-radius: 0;
-    padding: 13px 20px;
-    cursor: pointer;
-    transition: background 0.12s ease;
-    display: flex;
-    flex-direction: row;
-    align-items: center;
-    gap: 16px;
-    position: relative;
-}
-
-.persona-card:last-child {
-    border-bottom: none;
-}
-
-.persona-card:hover {
-    background: rgba(255,255,255,0.04);
-}
-
-.persona-card.selected {
-    background: rgba(13,153,255,0.07);
-    box-shadow: inset 3px 0 0 0 var(--accent-primary);
-}
-
-.persona-card-header {
-    display: contents;
-}
-
-.persona-avatar {
-    width: 34px;
-    height: 34px;
-    border-radius: 50%;
-    background: linear-gradient(135deg, #0d99ff 0%, #9747ff 100%);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 0.82rem;
-    font-weight: 700;
-    color: #fff;
-    border: none;
-    flex-shrink: 0;
-    letter-spacing: -0.02em;
-}
-
-.persona-info {
-    display: contents;
-}
-
-.persona-info .name,
-.persona-card .name {
-    font-size: 0.875rem;
-    font-weight: 600;
-    color: #fff;
-    letter-spacing: -0.015em;
-}
-
-.persona-info .org,
-.persona-card .org {
-    font-size: 0.78rem;
-    color: rgba(255,255,255,0.38);
-    font-weight: 400;
-}
-
-.persona-tags {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 5px;
-    align-items: center;
-}
-
-.p-tag {
-    display: inline-flex;
-    align-items: center;
-    padding: 3px 9px;
-    border-radius: 20px;
-    font-size: 0.68rem;
-    font-weight: 500;
-    letter-spacing: 0.01em;
-    border: none;
-    line-height: 1.4;
-}
-
-.p-tag.tag-formality {
-    background: rgba(13,153,255,0.15);
-    color: #60bbff;
-}
-
-.p-tag.tag-type {
-    background: rgba(151,71,255,0.15);
-    color: #b47fff;
-}
-
-.p-tag.tag-category {
-    background: rgba(20,174,92,0.15);
-    color: #3dd87e;
-}
-
-.p-tag.tag-expr {
-    background: rgba(255,205,41,0.1);
-    color: rgba(255,205,41,0.8);
-    font-style: italic;
-}
-
-/* fallback for unclassed tags */
-.p-tag:not([class*="tag-"]) {
-    background: rgba(255,255,255,0.08);
-    color: rgba(255,255,255,0.5);
-}
-
-/* 페르소나 유형 한 줄 설명 */
-.persona-type-desc {
-    font-size: 0.72rem;
-    color: rgba(255,255,255,0.38);
-    font-weight: 400;
-    margin-bottom: 5px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    max-width: 100%;
-    letter-spacing: -0.01em;
+.persona-list-table tbody tr.persona-row-selected td {
+    color: var(--text-primary);
 }
 
 /* ============================================================
@@ -1638,89 +1557,106 @@ select {
 /* ============================================================
    Article Card Grid (마이페이지 카드형 레이아웃)
    ============================================================ */
-.article-grid {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 16px;
-    margin-top: 4px;
+/* ── List Table (뉴스 기사 / 엑셀형 목록) ── */
+.list-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.875rem;
+    table-layout: fixed;
 }
 
-.article-card {
-    background: var(--bg-card);
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-lg);
-    padding: 20px;
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-    transition: var(--transition);
-    cursor: default;
+.list-table thead tr {
+    border-bottom: 2px solid var(--border-color);
 }
 
-.article-card:hover {
-    border-color: var(--accent-primary);
-    transform: translateY(-2px);
-    box-shadow: 0 6px 20px rgba(0,0,0,0.2);
-}
-
-.article-card-top {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-}
-
-.article-badge {
-    font-size: 0.7rem;
-    font-weight: 700;
-    padding: 3px 10px;
-    border-radius: 20px;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-}
-.article-badge.blog    { background: rgba(13,153,255,0.15); color: var(--accent-primary); }
-.article-badge.persona { background: rgba(151,71,255,0.15); color: var(--accent-purple); }
-.article-badge.dna     { background: rgba(20,174,92,0.15);  color: var(--accent-success); }
-.article-badge.biz     { background: rgba(255,205,41,0.12); color: var(--accent-warning); }
-
-.article-date {
+.list-table thead th {
+    padding: 10px 14px;
+    text-align: left;
     font-size: 0.75rem;
-    color: var(--text-muted);
-}
-
-.article-title {
-    font-size: 1rem;
     font-weight: 700;
-    color: var(--text-primary);
-    line-height: 1.45;
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-}
-
-.article-meta {
-    font-size: 0.78rem;
     color: var(--text-muted);
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    white-space: nowrap;
 }
 
-.article-meta span::before {
-    content: '· ';
-}
-.article-meta span:first-child::before {
-    content: '';
+.list-table tbody tr {
+    border-bottom: 1px solid var(--border-color);
+    transition: background 0.1s ease;
 }
 
-.article-actions {
-    display: flex;
-    gap: 6px;
-    margin-top: auto;
-    padding-top: 4px;
-    border-top: 1px solid var(--border-color);
+.list-table tbody tr:hover {
+    background: rgba(255,255,255,0.03);
 }
 
-@media (max-width: 900px) {
-    .article-grid { grid-template-columns: 1fr; }
+.list-table td {
+    padding: 11px 14px;
+    vertical-align: middle;
+    color: var(--text-primary);
+}
+
+.list-table .lt-title {
+    font-weight: 400;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 0;
+    width: 45%;
+}
+
+.list-table .lt-meta {
+    color: var(--text-muted);
+    font-size: 0.82rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.list-table .lt-date {
+    color: var(--text-muted);
+    font-size: 0.8rem;
+    white-space: nowrap;
+    width: 96px;
+}
+
+.list-table .lt-actions {
+    text-align: right;
+    white-space: nowrap;
+    width: 130px;
+}
+
+.lt-btn {
+    display: inline-block;
+    padding: 3px 10px;
+    font-size: 0.75rem;
+    font-weight: 400;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.1s ease;
+    margin-left: 4px;
+}
+
+.lt-btn:hover {
+    background: var(--bg-card);
+    color: var(--text-primary);
+}
+
+.lt-btn-docs {
+    border-color: rgba(52,168,83,0.4);
+    color: #34a853;
+}
+.lt-btn-docs:hover {
+    background: rgba(52,168,83,0.1);
+}
+
+.lt-btn-del {
+    border-color: rgba(255,59,48,0.3);
+    color: #FF3B30;
+}
+.lt-btn-del:hover {
+    background: rgba(255,59,48,0.08);
 }

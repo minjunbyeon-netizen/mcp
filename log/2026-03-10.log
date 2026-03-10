@@ -1,0 +1,12 @@
+[09:18:06] START: run_crawler.py 생성
+[09:19:07] DONE: run_crawler.py 생성 완료, Flask 자동 재로드 확인
+[09:21:53] DONE: run_crawler.py API 경로 수정 완료 (m.blog.naver.com API 사용)
+[09:48:38] START: Gemini Native 파일처리 업그레이드
+[09:51:01] DONE: Gemini Native 파일처리 + 탑바 로그인 버튼 완료
+[11:26:59] DONE: login-gate 초기 상태 수정 (hidden 기본값으로 앱 바로 표시)
+[13:44:56] START: 블로그 생성 Gemini 파일 검증 버그 수정
+[13:45:59] DONE: generate_blog 검증 수정 - Gemini 네이티브 파일 업로드 시 combined_text 비어도 통과
+[13:50:02] DONE: 블로그 생성 모델 gemini-2.5-pro 업그레이드, 최소 1500자 길이 요구사항 추가
+[14:25:44] START: DNA 스타일 분석 → 블로그 생성 연동 개선
+[14:26:39] DONE: DNA 스타일 가이드 블로그 생성 연동, gemini-2.5-pro 분석 업그레이드
+[15:25:12] DONE: DNA 스타일 미리보기 패널 추가 (blog-dna-select 변경 시 자동 로드)
