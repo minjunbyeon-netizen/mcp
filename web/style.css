@@ -517,6 +517,49 @@ body {
     gap: 20px;
 }
 
+.blog-write-form {
+    max-width: 860px;
+}
+
+/* Form Section (스텝 구분) */
+.form-section {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 20px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+}
+
+.form-section-label {
+    font-size: 0.78rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    color: var(--text-muted);
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+/* OR 구분선 */
+.or-divider {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+.or-divider::before,
+.or-divider::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border-color);
+}
+
 .form-row {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -1525,6 +1568,7 @@ select {
 }
 
 .btn-save-blog,
+.btn-naver-copy,
 .btn-export-docs {
     padding: 10px 20px;
     border: 1px solid var(--border-color);
@@ -1532,7 +1576,7 @@ select {
     color: var(--text-primary);
     border-radius: var(--radius-sm);
     font-size: 0.88rem;
-    font-weight: 500;
+    font-weight: 400;
     cursor: pointer;
     transition: var(--transition);
 }
@@ -1541,6 +1585,14 @@ select {
     background: rgba(46, 125, 50, 0.15);
     border-color: var(--accent-success);
     color: var(--accent-success);
+}
+
+.btn-naver-copy {
+    border-color: #03c75a;
+    color: #03c75a;
+}
+.btn-naver-copy:hover {
+    background: rgba(3, 199, 90, 0.1);
 }
 
 .btn-export-docs:hover {
@@ -1659,4 +1711,117 @@ select {
 }
 .lt-btn-del:hover {
     background: rgba(255,59,48,0.08);
+}
+
+/* ============================================================
+   Style Template Grid
+   ============================================================ */
+.style-template-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 10px;
+}
+
+.style-template-card {
+    padding: 14px 16px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: var(--transition);
+    background: var(--bg-secondary);
+}
+
+.style-template-card:hover {
+    border-color: #000;
+    background: var(--bg-tertiary);
+}
+
+.style-template-card.selected {
+    border-color: #000;
+    background: #000;
+    color: #fff;
+}
+
+.style-template-name {
+    font-weight: 700;
+    font-size: 0.9rem;
+    margin-bottom: 4px;
+}
+
+.style-template-desc {
+    font-size: 0.8rem;
+    line-height: 1.4;
+    color: var(--text-muted);
+}
+
+.style-template-card.selected .style-template-desc {
+    color: rgba(255,255,255,0.7);
+}
+
+/* ============================================================
+   DNA 스타일 미리보기 패널
+   ============================================================ */
+.dna-preview-panel {
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+}
+
+.dna-preview-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 16px;
+    background: var(--bg-tertiary);
+    cursor: pointer;
+    user-select: none;
+    transition: background 0.15s ease;
+}
+
+.dna-preview-header:hover {
+    background: rgba(255,255,255,0.06);
+}
+
+.dna-preview-header span:first-child {
+    font-size: 0.82rem;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.dna-preview-arrow {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+}
+
+.dna-preview-body {
+    background: var(--bg-secondary);
+    border-top: 1px solid var(--border-color);
+    max-height: 420px;
+    overflow-y: auto;
+    padding: 16px;
+}
+
+.dna-preview-content {
+    font-size: 0.8rem;
+    line-height: 1.75;
+    color: var(--text-secondary);
+    white-space: pre-wrap;
+    font-family: inherit;
+}
+
+/* 미리보기 내 섹션 헤더 강조 */
+.dna-preview-content {
+    counter-reset: none;
+}
+
+/* 구분선 */
+.dna-preview-body::-webkit-scrollbar {
+    width: 4px;
+}
+.dna-preview-body::-webkit-scrollbar-track {
+    background: transparent;
+}
+.dna-preview-body::-webkit-scrollbar-thumb {
+    background: var(--border-color);
+    border-radius: 2px;
 }

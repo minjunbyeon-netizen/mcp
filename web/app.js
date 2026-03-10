@@ -23,110 +23,13 @@ navItems.forEach(item => {
         });
 
         // 마이페이지 패널 진입시 데이터 로드
-        if (panelId === 'my-personas') loadMyPersonas();
         if (panelId === 'my-blogs') loadMyBlogs();
         if (panelId === 'my-dna') loadMyDna();
-        if (panelId === 'my-business') loadMyBusiness();
         // 블로그 작성 패널 진입시 최근 작성 글 로드
         if (panelId === 's2-blog-write') loadRecentBlogs();
     });
 });
 
-// Writing Guide Toggle Event
-document.addEventListener('click', async (e) => {
-    if (e.target.closest('#btn-toggle-guide')) {
-        const guidePanel = document.getElementById('writing-guide-panel');
-        if (guidePanel.classList.contains('active')) {
-            guidePanel.classList.remove('active');
-        } else {
-            await updateWritingGuide();
-            guidePanel.classList.add('active');
-        }
-    }
-
-    if (e.target.closest('#btn-close-guide')) {
-        document.getElementById('writing-guide-panel').classList.remove('active');
-    }
-});
-
-async function updateWritingGuide() {
-    const clientId = document.getElementById('persona-select').value;
-    if (!clientId) return;
-
-    const guideContent = document.getElementById('guide-content');
-
-    // Only fetch if persona changed or not loaded
-    if (!currentPersonaData || currentPersonaData.client_id !== clientId) {
-        guideContent.innerHTML = '<div class="guide-loading">페르소나 분석 데이터를 불러오는 중...</div>';
-        try {
-            currentPersonaData = await apiRequest(`/persona/get?client_id=${clientId}`);
-        } catch (error) {
-            guideContent.innerHTML = `<div class="error-text">페르소나 로드 실패: ${error.message}</div>`;
-            return;
-        }
-    }
-
-    const pa = currentPersonaData.persona_analysis || {};
-    const commStyle = pa.communication_style || {};
-    const positiveTriggers = pa.positive_triggers || {};
-    const sensitiveAreas = pa.sensitive_areas || {};
-    const practical = pa.practical_guidelines || {};
-
-    let html = `
-        <div class="guide-section fade-in">
-            <div class="guide-section-title">✨ 전체적인 어조</div>
-            <div class="guide-item">
-                <div style="font-weight:700; color:var(--accent-primary); margin-bottom:4px;">${pa.overall_summary?.persona_type || '전문적 소통'}</div>
-                <p style="font-size: 0.9rem; line-height: 1.5; color: var(--text-secondary); margin:0;">
-                    ${pa.overall_summary?.primary_caution || '간결하고 명확한 정보 전달에 집중하세요.'}
-                </p>
-            </div>
-        </div>
-    `;
-
-    const expressions = positiveTriggers.favorite_expressions || [];
-    if (expressions.length > 0) {
-        html += `
-            <div class="guide-section fade-in">
-                <div class="guide-section-title">🗣️ 선호하는 표현 (DNA)</div>
-                <div style="display: flex; flex-wrap: wrap; gap: 8px;">
-                    ${expressions.map(exp => `<span class="guide-tag">${exp}</span>`).join('')}
-                </div>
-            </div>
-        `;
-    }
-
-    const doItems = [
-        ...(practical.opening_recommendations || []).map(r => `시작 권장: "${r}"`),
-        ...(practical.closing_recommendations || []).map(r => `맺음 권장: "${r}"`),
-        ...(positiveTriggers.appreciated_approaches || [])
-    ];
-
-    if (doItems.length > 0) {
-        html += `
-            <div class="guide-section fade-in">
-                <div class="guide-section-title">✅ 필수 권장 사항 (Do's)</div>
-                ${doItems.map(item => `<div class="guide-item do">${item}</div>`).join('')}
-            </div>
-        `;
-    }
-
-    const dontItems = [
-        ...(sensitiveAreas.absolute_dont?.expressions || []),
-        ...(sensitiveAreas.absolute_dont?.styles || [])
-    ];
-
-    if (dontItems.length > 0) {
-        html += `
-            <div class="guide-section fade-in">
-                <div class="guide-section-title">❌ 지양 사항 (Don'ts)</div>
-                ${dontItems.map(item => `<div class="guide-item dont">${item}</div>`).join('')}
-            </div>
-        `;
-    }
-
-    guideContent.innerHTML = html;
-}
 
 // ============================================================
 // Authentication Status Check
@@ -189,9 +92,6 @@ async function checkAuthStatus() {
         if (loginSection) loginSection.style.display = 'block';
     }
 }
-
-// Global state
-let currentPersonaData = null;
 
 // ============================================================
 // Utility Functions
@@ -375,90 +275,6 @@ function clearPressFile() {
 }
 
 // ============================================================
-// Load Personas for Dropdowns
-// ============================================================
-
-async function loadPersonas() {
-    try {
-        const data = await apiRequest('/persona/list');
-        const personas = data.personas || [];
-
-        // 1. Dropdown options (legacy support)
-        const optionsHTML = personas.map(p =>
-            `<option value="${p.client_id}">${p.client_name} (${p.organization})</option>`
-        ).join('');
-
-        const defaultOpt = '<option value="">페르소나를 선택하세요</option>';
-        ['legacy-persona-select', 'match-persona-select', 'biz-persona-select'].forEach(id => {
-            const el = document.getElementById(id);
-            if (el) el.innerHTML = defaultOpt + optionsHTML;
-        });
-
-        // 2. Persona List (Table)
-        const containers = [
-            document.getElementById('persona-cards-grid'),
-            document.getElementById('writer-persona-cards')
-        ];
-
-        containers.forEach(table => {
-            if (!table) return;
-            const tbody = table.querySelector('tbody');
-            tbody.innerHTML = '';
-
-            if (personas.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:24px;">저장된 페르소나가 없습니다.</td></tr>';
-                return;
-            }
-
-            personas.forEach(p => {
-                const fScore = p.formality || 5;
-                const fLabel = fScore >= 8 ? '고격식' : fScore >= 5 ? '중격식' : '캐주얼';
-                const directMap = { direct: '직접적', balanced: '균형적', indirect: '간접적' };
-                const directLabel = directMap[p.directness] || p.directness || '균형적';
-                const emoMap = { high: '감성적', neutral: '중립적', low: '이성적' };
-                const emoLabel = emoMap[p.emotional_tone] || p.emotional_tone || '중립적';
-
-                const tr = document.createElement('tr');
-                tr.dataset.clientId = p.client_id;
-                tr.style.cursor = 'pointer';
-                tr.innerHTML = `
-                    <td class="lt-title" style="width:auto;max-width:none;font-weight:400;">${p.client_name}</td>
-                    <td class="lt-meta">${p.organization || '-'}</td>
-                    <td class="lt-meta" style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${p.persona_type || '-'}</td>
-                    <td class="lt-meta">${fLabel} ${fScore}/10</td>
-                    <td class="lt-meta">${directLabel}</td>
-                    <td class="lt-meta">${emoLabel}</td>`;
-                tbody.appendChild(tr);
-
-                tr.addEventListener('click', () => {
-                    const clientId = tr.dataset.clientId;
-
-                    // 모든 테이블의 같은 persona 행 선택 처리
-                    document.querySelectorAll('.persona-list-table tbody tr').forEach(r => {
-                        if (r.dataset.clientId === clientId) r.classList.add('persona-row-selected');
-                        else r.classList.remove('persona-row-selected');
-                    });
-
-                    const hiddenInput = document.getElementById('persona-select');
-                    if (hiddenInput) {
-                        hiddenInput.value = clientId;
-                        hiddenInput.dispatchEvent(new Event('change'));
-                    }
-                    ['legacy-persona-select', 'match-persona-select', 'biz-persona-select'].forEach(id => {
-                        const el = document.getElementById(id);
-                        if (el) el.value = clientId;
-                    });
-                });
-            });
-        });
-
-        console.log(`${personas.length}개 페르소나 카드 동기화 완료`);
-    } catch (error) {
-        console.error('페르소나 로드 실패:', error);
-    }
-}
-
-// ============================================================
 // Load Blog Collections for Dropdowns
 // ============================================================
 
@@ -512,125 +328,6 @@ async function loadCollections() {
     }
 }
 
-// ============================================================
-// 1-1: Persona Extractor Form
-// ============================================================
-
-document.getElementById('persona-form')?.addEventListener('submit', async (e) => {
-    e.preventDefault();
-
-    const form = e.target;
-    const submitBtn = form.querySelector('button[type="submit"]');
-    const resultBox = document.getElementById('persona-result');
-
-    if (!personaFileInput.files.length) {
-        showError(resultBox, '파일을 선택해주세요.');
-        return;
-    }
-
-    const formData = new FormData();
-    formData.append('file', personaFileInput.files[0]);
-    formData.append('client_name', document.getElementById('client-name').value);
-    formData.append('organization', document.getElementById('organization').value);
-    formData.append('category', document.getElementById('category').value);
-
-    setLoading(submitBtn, true);
-
-    try {
-        const result = await apiRequest('/persona/extract', 'POST', formData, true);
-
-        const html = `
-            <h3>페르소나 심층 분석 완료</h3>
-            
-            <h4 style="margin-top: 16px; margin-bottom: 12px;">성격 지표</h4>
-            <div class="score-details">
-                <div class="score-item">
-                    <div class="score-item-label">격식도</div>
-                    <div class="score-item-bar"><div class="score-item-fill" style="width: ${result.formality_score * 10}%"></div></div>
-                    <div class="score-item-value">${result.formality_score}/10</div>
-                </div>
-                <div class="score-item">
-                    <div class="score-item-label">완벽주의</div>
-                    <div class="score-item-bar"><div class="score-item-fill" style="width: ${result.perfectionism_score * 10}%"></div></div>
-                    <div class="score-item-value">${result.perfectionism_score}/10</div>
-                </div>
-                <div class="score-item">
-                    <div class="score-item-label">디테일 중시</div>
-                    <div class="score-item-bar"><div class="score-item-fill" style="width: ${result.detail_orientation_score * 10}%"></div></div>
-                    <div class="score-item-value">${result.detail_orientation_score}/10</div>
-                </div>
-                <div class="score-item">
-                    <div class="score-item-label">긴급성 민감도</div>
-                    <div class="score-item-bar"><div class="score-item-fill" style="width: ${result.urgency_sensitivity_score * 10}%"></div></div>
-                    <div class="score-item-value">${result.urgency_sensitivity_score}/10</div>
-                </div>
-                <div class="score-item">
-                    <div class="score-item-label">유연성</div>
-                    <div class="score-item-bar"><div class="score-item-fill" style="width: ${result.flexibility_score * 10}%"></div></div>
-                    <div class="score-item-value">${result.flexibility_score}/10</div>
-                </div>
-                <div class="score-item">
-                    <div class="score-item-label">직접성</div>
-                    <div class="score-item-bar"><div class="score-item-fill" style="width: ${result.directness_score * 10}%"></div></div>
-                    <div class="score-item-value">${result.directness_score}/10</div>
-                </div>
-            </div>
-            
-            <h4 style="margin-top: 24px; margin-bottom: 12px;">커뮤니케이션 스타일</h4>
-            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px;">
-                <div style="background: var(--bg-tertiary); padding: 12px; border-radius: 8px;">
-                    <div style="color: var(--text-muted); font-size: 0.85rem;">의사결정 유형</div>
-                    <div style="font-weight: 500; margin-top: 4px;">${result.decision_making_type || '숙고형'}</div>
-                </div>
-                <div style="background: var(--bg-tertiary); padding: 12px; border-radius: 8px;">
-                    <div style="color: var(--text-muted); font-size: 0.85rem;">감정 표현</div>
-                    <div style="font-weight: 500; margin-top: 4px;">${result.emotional_expression || '중립'}</div>
-                </div>
-                <div style="background: var(--bg-tertiary); padding: 12px; border-radius: 8px;">
-                    <div style="color: var(--text-muted); font-size: 0.85rem;">문장 길이</div>
-                    <div style="font-weight: 500; margin-top: 4px;">${result.sentence_length || 'medium'}</div>
-                </div>
-                <div style="background: var(--bg-tertiary); padding: 12px; border-radius: 8px;">
-                    <div style="color: var(--text-muted); font-size: 0.85rem;">어휘 스타일</div>
-                    <div style="font-weight: 500; margin-top: 4px;">${result.vocabulary_style || '혼용'}</div>
-                </div>
-            </div>
-            
-            <h4 style="margin-top: 24px;">페르소나 유형</h4>
-            <p style="color: var(--accent-primary); font-size: 1.1rem;">${result.persona_type}</p>
-            
-            <div style="margin-top: 16px; padding: 12px; background: var(--bg-tertiary); border-radius: 8px;">
-                <div style="color: var(--text-muted); font-size: 0.85rem;">콘텐츠 제작 난이도: ${result.content_difficulty || 5}/10</div>
-                <div style="margin-top: 8px; color: var(--accent-warning);">${result.primary_caution || ''}</div>
-            </div>
-            
-            <h4 style="margin-top: 20px;">핵심 특성</h4>
-            <ul>${(result.key_characteristics || []).map(c => `<li>${c}</li>`).join('')}</ul>
-            
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 20px;">
-                <div style="background: rgba(198, 40, 40, 0.06); border: 1px solid var(--accent-danger); padding: 16px; border-radius: 8px;">
-                    <h5 style="color: var(--accent-danger); margin-bottom: 8px;">금지 표현</h5>
-                    <ul style="font-size: 0.9rem;">${(result.red_flags || []).map(r => `<li>${r}</li>`).join('')}</ul>
-                </div>
-                <div style="background: rgba(46, 125, 50, 0.06); border: 1px solid var(--accent-success); padding: 16px; border-radius: 8px;">
-                    <h5 style="color: var(--accent-success); margin-bottom: 8px;">권장 표현</h5>
-                    <ul style="font-size: 0.9rem;">${(result.green_flags || []).map(g => `<li>${g}</li>`).join('')}</ul>
-                </div>
-            </div>
-            
-            <h4 style="margin-top: 20px;">저장 위치</h4>
-            <code>${result.save_path}</code>
-        `;
-
-        showResult(resultBox, html);
-        loadPersonas();
-
-    } catch (error) {
-        showError(resultBox, error.message);
-    } finally {
-        setLoading(submitBtn, false);
-    }
-});
 
 // ============================================================
 // 1-2: Blog Collection Form
@@ -812,111 +509,39 @@ document.getElementById('blog-status-form')?.addEventListener('submit', async (e
     }
 });
 
+
 // ============================================================
-// 1-4: Business Personality Analysis Form
+// Style Templates
 // ============================================================
 
-document.getElementById('business-form')?.addEventListener('submit', async (e) => {
-    e.preventDefault();
-
-    const form = e.target;
-    const submitBtn = form.querySelector('button[type="submit"]');
-    const resultBox = document.getElementById('business-result');
-
-    const clientId = document.getElementById('biz-persona-select').value;
-    const blogId = document.getElementById('biz-collection-select').value;
-
-    if (!clientId || !blogId) {
-        showError(resultBox, '페르소나와 블로그 컬렉션을 모두 선택해주세요.');
-        return;
-    }
-
-    setLoading(submitBtn, true);
+async function loadStyleTemplates() {
+    const grid = document.getElementById('style-template-grid');
+    if (!grid) return;
 
     try {
-        const result = await apiRequest('/persona/business-analysis', 'POST', {
-            client_id: clientId,
-            blog_id: blogId
-        });
+        const result = await apiRequest('/style-templates');
+        const templates = result.templates || [];
+        const currentVal = document.getElementById('style-template-id')?.value || 'informational';
 
-        const bp = result.business_personality || {};
-        const cs = result.communication_style || {};
-        const cp = result.content_preferences || {};
-        const wa = result.work_approach || {};
-
-        const html = `
-            <h3>업무적 성격 분석 리포트</h3>
-            
-            <div style="background: rgba(0,0,0,0.03); border: 1px solid var(--border-color); padding: 20px; border-radius: 12px; margin: 16px 0;">
-                <div style="font-size: 1.3rem; font-weight: 700; color: var(--accent-primary);">${bp.type || ''}</div>
-                <p style="margin-top: 8px; line-height: 1.6;">${bp.description || ''}</p>
+        grid.innerHTML = templates.map(t => `
+            <div class="style-template-card ${t.id === currentVal ? 'selected' : ''}"
+                 data-template-id="${t.id}"
+                 onclick="selectStyleTemplate('${t.id}', this)">
+                <div class="style-template-name">${t.name}</div>
+                <div class="style-template-desc">${t.description}</div>
             </div>
-
-            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 20px;">
-                <div style="background: var(--bg-tertiary); padding: 14px; border-radius: 8px;">
-                    <div style="color: var(--text-muted); font-size: 0.85rem;">커뮤니케이션 방식</div>
-                    <div style="font-weight: 500; margin-top: 4px;">${cs.preferred || ''}</div>
-                </div>
-                <div style="background: var(--bg-tertiary); padding: 14px; border-radius: 8px;">
-                    <div style="color: var(--text-muted); font-size: 0.85rem;">응답 속도</div>
-                    <div style="font-weight: 500; margin-top: 4px;">${cs.response_speed || ''}</div>
-                </div>
-                <div style="background: var(--bg-tertiary); padding: 14px; border-radius: 8px;">
-                    <div style="color: var(--text-muted); font-size: 0.85rem;">디테일 수준</div>
-                    <div style="font-weight: 500; margin-top: 4px;">${cs.detail_level || ''}</div>
-                </div>
-            </div>
-
-            <h4>콘텐츠 선호도</h4>
-            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin: 8px 0 20px;">
-                <div style="background: var(--bg-tertiary); padding: 14px; border-radius: 8px;">
-                    <div style="color: var(--text-muted); font-size: 0.85rem;">선호 톤</div>
-                    <div style="font-weight: 500; margin-top: 4px;">${cp.tone || ''}</div>
-                </div>
-                <div style="background: var(--bg-tertiary); padding: 14px; border-radius: 8px;">
-                    <div style="color: var(--text-muted); font-size: 0.85rem;">콘텐츠 스타일</div>
-                    <div style="font-weight: 500; margin-top: 4px;">${cp.style || ''}</div>
-                </div>
-            </div>
-
-            <h4>업무 접근 방식</h4>
-            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 8px 0 20px;">
-                <div style="background: var(--bg-tertiary); padding: 14px; border-radius: 8px;">
-                    <div style="color: var(--text-muted); font-size: 0.85rem;">의사결정</div>
-                    <div style="font-weight: 500; margin-top: 4px;">${wa.decision_style || ''}</div>
-                </div>
-                <div style="background: var(--bg-tertiary); padding: 14px; border-radius: 8px;">
-                    <div style="color: var(--text-muted); font-size: 0.85rem;">피드백 패턴</div>
-                    <div style="font-weight: 500; margin-top: 4px;">${wa.feedback_pattern || ''}</div>
-                </div>
-                <div style="background: var(--bg-tertiary); padding: 14px; border-radius: 8px;">
-                    <div style="color: var(--text-muted); font-size: 0.85rem;">우선 관심사</div>
-                    <div style="font-weight: 500; margin-top: 4px;">${wa.priority_focus || ''}</div>
-                </div>
-            </div>
-
-            <h4>에이전시 대응 전략</h4>
-            <ol style="font-size: 0.9rem;">${(result.agency_recommendations || []).map(r => `<li style="margin-bottom: 6px;">${r}</li>`).join('')}</ol>
-
-            <div style="background: rgba(198, 40, 40, 0.06); border: 1px solid var(--accent-danger); padding: 16px; border-radius: 8px; margin-top: 16px;">
-                <h5 style="color: var(--accent-danger); margin-bottom: 8px;">주의 사항</h5>
-                <ul style="font-size: 0.9rem;">${(result.risk_factors || []).map(r => `<li>${r}</li>`).join('')}</ul>
-            </div>
-
-            <div style="background: var(--bg-tertiary); padding: 16px; border-radius: 8px; margin-top: 16px;">
-                <h5 style="margin-bottom: 8px;">핵심 요약</h5>
-                <p style="line-height: 1.6;">${result.summary || ''}</p>
-            </div>
-        `;
-
-        showResult(resultBox, html);
-
-    } catch (error) {
-        showError(resultBox, error.message);
-    } finally {
-        setLoading(submitBtn, false);
+        `).join('');
+    } catch (err) {
+        console.error('스타일 템플릿 로드 실패:', err);
     }
-});
+}
+
+function selectStyleTemplate(id, el) {
+    document.querySelectorAll('.style-template-card').forEach(c => c.classList.remove('selected'));
+    el.classList.add('selected');
+    const hidden = document.getElementById('style-template-id');
+    if (hidden) hidden.value = id;
+}
 
 // ============================================================
 // 2-1: Blog Generator Form (File Upload)
@@ -929,11 +554,7 @@ document.getElementById('blog-form')?.addEventListener('submit', async (e) => {
     const submitBtn = form.querySelector('button[type="submit"]');
     const resultBox = document.getElementById('blog-result');
 
-    const personaId = document.getElementById('persona-select').value;
-    if (!personaId) {
-        showError(resultBox, '페르소나를 선택해주세요.');
-        return;
-    }
+    const styleTemplateId = document.getElementById('style-template-id')?.value || 'informational';
 
     const pressReleaseText = document.getElementById('press-release').value;
     const hasFile = pressFileInput.files.length > 0;
@@ -944,7 +565,7 @@ document.getElementById('blog-form')?.addEventListener('submit', async (e) => {
     }
 
     const formData = new FormData();
-    formData.append('client_id', personaId);
+    formData.append('style_template_id', styleTemplateId);
     formData.append('keywords', document.getElementById('keywords').value);
     formData.append('target_audience', document.getElementById('target-audience').value);
     formData.append('content_angle', document.getElementById('content-angle').value);
@@ -1009,6 +630,9 @@ document.getElementById('blog-form')?.addEventListener('submit', async (e) => {
                             <button type="button" class="btn btn-save-blog" onclick="saveBlogVersion(${i})">
                                 <span class="btn-text">💾 저장</span>
                                 <span class="btn-loading">저장 중...</span>
+                            </button>
+                            <button type="button" class="btn btn-naver-copy" onclick="copyAsNaverHTML(${i})" title="네이버 스마트에디터에 붙여넣으면 글꼴/색상/정렬이 적용됩니다">
+                                <span class="btn-text">N 네이버 붙여넣기용 복사</span>
                             </button>
                             <button type="button" class="btn btn-export-docs" onclick="exportBlogDocs(${i})">
                                 <span class="btn-text">📄 DOCX 내보내기</span>
@@ -1123,6 +747,86 @@ function syncMobilePreview(resultBox, idx) {
     const titleEl = versionEl.querySelector('[data-field="title"]');
     const contentEl = versionEl.querySelector('[data-field="content"]');
     mobilePreview.innerHTML = `<h1>${titleEl?.innerHTML || ''}</h1>${contentEl?.innerHTML || ''}`;
+}
+
+// ============================================================
+// 네이버 블로그 HTML 붙여넣기용 복사
+// ============================================================
+
+async function copyAsNaverHTML(idx) {
+    const versionEl = document.querySelector(`.version-content[data-version-idx="${idx}"]`);
+    if (!versionEl) return;
+
+    const btn = versionEl.querySelector('.btn-naver-copy');
+    const titleEl = versionEl.querySelector('[data-field="title"]');
+    const contentEl = versionEl.querySelector('[data-field="content"]');
+
+    const titleText = titleEl?.innerText?.trim() || '';
+    const contentText = contentEl?.innerText?.trim() || '';
+
+    const styles = window._dnaStyles || {};
+    const fontFamily = styles.font_family || "'맑은 고딕', MalgunGothic, sans-serif";
+    const centerRatio = styles.center_align_ratio || 0;
+    const accentColor = styles.accent_color || '#333333';
+    const highlightColor = styles.highlight_color || '';
+    const bodySz = styles.font_size_body || '11pt';
+    const headSz = styles.font_size_heading || '14pt';
+
+    // 단락 분리
+    const lines = contentText.split('\n');
+
+    // 각 단락을 Naver 호환 HTML로 변환
+    function lineToHtml(line, lineIdx) {
+        if (!line.trim()) return '<p><br></p>';
+
+        const isShortLine = line.trim().length <= 30;
+        // 중앙정렬: 짧은 줄은 DNA center ratio에 따라, 긴 줄은 낮은 확률로
+        const useCenter = isShortLine
+            ? centerRatio > 0.2
+            : (lineIdx % 10 < Math.round(centerRatio * 5));
+
+        const align = useCenter ? 'center' : 'left';
+
+        let spanStyle = `font-family:${fontFamily};font-size:${bodySz};`;
+        let pStyle = `text-align:${align};margin:0;padding:2px 0;`;
+
+        // 짧은 줄 = 소제목처럼 강조
+        if (isShortLine && accentColor) {
+            spanStyle += `font-size:${headSz};color:${accentColor};font-weight:bold;`;
+        }
+        // 하이라이트 색상 (DNA에서 추출한 배경색) → 첫 번째 문장에만 적용
+        if (lineIdx === 0 && highlightColor) {
+            spanStyle += `background-color:${highlightColor};`;
+        }
+
+        const escaped = line.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        return `<p style="${pStyle}"><span style="${spanStyle}">${escaped}</span></p>`;
+    }
+
+    const titleHtml = `<p style="text-align:center;margin:0 0 16px;"><span style="font-family:${fontFamily};font-size:18pt;font-weight:bold;color:${accentColor || '#111111'};">${titleText.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</span></p>`;
+    const bodyHtml = lines.map((line, i) => lineToHtml(line, i)).join('\n');
+    const fullHtml = `<div>${titleHtml}${bodyHtml}</div>`;
+
+    try {
+        await navigator.clipboard.write([
+            new ClipboardItem({
+                'text/html': new Blob([fullHtml], { type: 'text/html' }),
+                'text/plain': new Blob([titleText + '\n\n' + contentText], { type: 'text/plain' }),
+            })
+        ]);
+        const btnText = btn.querySelector('.btn-text');
+        const orig = btnText.textContent;
+        btnText.textContent = '복사 완료! 네이버에 붙여넣기 하세요';
+        btn.style.background = '#1a1a1a';
+        btn.style.color = '#fff';
+        setTimeout(() => {
+            btnText.textContent = orig;
+            btn.style.background = '';
+            btn.style.color = '';
+        }, 3000);
+    } catch (err) {
+        alert('클립보드 복사 실패: ' + err.message + '\n\n브라우저 권한을 확인하거나 HTTPS 환경에서 시도해주세요.');
+    }
 }
 
 async function saveBlogVersion(idx) {
@@ -1493,76 +1197,11 @@ function insertImageToBlog(_, imgIdx) {
     }
 }
 
-// ============================================================
-// 2-2: Match Rate Tester Form
-// ============================================================
-
-document.getElementById('match-form')?.addEventListener('submit', async (e) => {
-    e.preventDefault();
-
-    const form = e.target;
-    const submitBtn = form.querySelector('button[type="submit"]');
-    const resultBox = document.getElementById('match-result');
-
-    const data = {
-        client_id: document.getElementById('match-persona-select').value,
-        content: document.getElementById('test-content').value
-    };
-
-    if (!data.client_id) {
-        showError(resultBox, '페르소나를 선택해주세요.');
-        return;
-    }
-
-    setLoading(submitBtn, true);
-
-    try {
-        const result = await apiRequest('/match-test', 'POST', data);
-
-        const html = `
-            <h3>일치율 분석 결과</h3>
-            <div class="score-display">
-                <div class="score-circle" style="--score: ${result.overall_score}">
-                    <span class="score-value">${result.overall_score}%</span>
-                </div>
-                <div class="score-label">전체 일치율</div>
-            </div>
-            <div class="score-details">
-                <div class="score-item">
-                    <div class="score-item-label">톤 & 격식</div>
-                    <div class="score-item-bar"><div class="score-item-fill" style="width: ${result.tone_match}%"></div></div>
-                    <div class="score-item-value">${result.tone_match}%</div>
-                </div>
-                <div class="score-item">
-                    <div class="score-item-label">문장 스타일</div>
-                    <div class="score-item-bar"><div class="score-item-fill" style="width: ${result.style_match}%"></div></div>
-                    <div class="score-item-value">${result.style_match}%</div>
-                </div>
-                <div class="score-item">
-                    <div class="score-item-label">어휘 선택</div>
-                    <div class="score-item-bar"><div class="score-item-fill" style="width: ${result.vocabulary_match}%"></div></div>
-                    <div class="score-item-value">${result.vocabulary_match}%</div>
-                </div>
-            </div>
-            <h4 style="margin-top: 24px;">개선 제안</h4>
-            <ul>${result.suggestions.map(s => `<li>${s}</li>`).join('')}</ul>
-        `;
-
-        showResult(resultBox, html);
-
-    } catch (error) {
-        showError(resultBox, error.message);
-    } finally {
-        setLoading(submitBtn, false);
-    }
-});
 
 // ============================================================
 // Refresh Buttons
 // ============================================================
 
-document.getElementById('refresh-personas')?.addEventListener('click', () => loadPersonas());
-document.getElementById('refresh-biz-personas')?.addEventListener('click', () => loadPersonas());
 document.getElementById('refresh-collections-status')?.addEventListener('click', () => loadCollections());
 document.getElementById('refresh-biz-collections')?.addEventListener('click', () => loadCollections());
 document.getElementById('refresh-blog-dna')?.addEventListener('click', () => loadCollections());
@@ -1592,6 +1231,8 @@ document.getElementById('blog-dna-select')?.addEventListener('change', async (e)
     try {
         const result = await apiRequest(`/blog/dna-preview?blog_id=${encodeURIComponent(blogId)}`);
         content.textContent = result.preview_text || '미리보기 없음';
+        // 네이버 HTML 변환에 쓸 스타일 데이터 저장
+        window._dnaStyles = result.dna_styles || null;
     } catch (err) {
         content.textContent = err.message || 'DNA 미리보기 로드 실패. 먼저 글쓰기 DNA 분석을 실행하세요.';
     }
@@ -1618,34 +1259,6 @@ function formatDate(isoStr) {
     } catch { return isoStr; }
 }
 
-// --- 페르소나 관리 ---
-async function loadMyPersonas() {
-    try {
-        const res = await fetch(`${API_BASE}/mypage/personas`);
-        const data = await res.json();
-        const table = document.getElementById('my-personas-grid');
-        const empty = document.getElementById('my-personas-empty');
-        const tbody = table.querySelector('tbody');
-        tbody.innerHTML = '';
-        if (!data.items || data.items.length === 0) {
-            empty.style.display = 'block'; table.style.display = 'none'; return;
-        }
-        empty.style.display = 'none'; table.style.display = 'table';
-        data.items.forEach(item => {
-            const tr = document.createElement('tr');
-            tr.innerHTML = `
-                <td class="lt-title">${item.client_name || item.id}</td>
-                <td class="lt-meta">${item.organization || '-'}</td>
-                <td class="lt-date">${formatDate(item.created_at)}</td>
-                <td class="lt-actions">
-                    <button class="lt-btn" onclick="viewDetail('personas','${item.id}','페르소나 상세')">상세</button>
-                    <button class="lt-btn lt-btn-del" onclick="deleteItem('personas','${item.id}',this)">삭제</button>
-                </td>`;
-            tbody.appendChild(tr);
-        });
-    } catch (e) { console.error('페르소나 목록 로드 실패:', e); }
-}
-
 // --- 블로그 글 관리 ---
 async function loadMyBlogs() {
     try {
@@ -1663,7 +1276,7 @@ async function loadMyBlogs() {
             const tr = document.createElement('tr');
             tr.innerHTML = `
                 <td class="lt-title">${item.title || '(제목없음)'}</td>
-                <td class="lt-meta">${item.client_id || '-'}</td>
+                <td class="lt-meta">${item.style_template_id || item.client_id || '-'}</td>
                 <td class="lt-meta">${item.version_count || 0}개</td>
                 <td class="lt-date">${formatDate(item.created_at)}</td>
                 <td class="lt-actions">
@@ -1702,34 +1315,6 @@ async function loadMyDna() {
             tbody.appendChild(tr);
         });
     } catch (e) { console.error('DNA 목록 로드 실패:', e); }
-}
-
-// --- 업무적 성격 관리 ---
-async function loadMyBusiness() {
-    try {
-        const res = await fetch(`${API_BASE}/mypage/business`);
-        const data = await res.json();
-        const table = document.getElementById('my-business-grid');
-        const empty = document.getElementById('my-business-empty');
-        const tbody = table.querySelector('tbody');
-        tbody.innerHTML = '';
-        if (!data.items || data.items.length === 0) {
-            empty.style.display = 'block'; table.style.display = 'none'; return;
-        }
-        empty.style.display = 'none'; table.style.display = 'table';
-        data.items.forEach(item => {
-            const tr = document.createElement('tr');
-            tr.innerHTML = `
-                <td class="lt-title">${item.client_id || '-'}</td>
-                <td class="lt-meta">${item.blog_id || item.blog_folder || '-'}</td>
-                <td class="lt-date">${formatDate(item.created_at)}</td>
-                <td class="lt-actions">
-                    <button class="lt-btn" onclick="viewDetail('business','${item.id}','업무적 성격 상세')">상세</button>
-                    <button class="lt-btn lt-btn-del" onclick="deleteItem('business','${item.id}',this)">삭제</button>
-                </td>`;
-            tbody.appendChild(tr);
-        });
-    } catch (e) { console.error('업무적 성격 목록 로드 실패:', e); }
 }
 
 // --- 상세 보기 모달 ---
@@ -1867,10 +1452,8 @@ async function deleteItem(type, id, btnEl) {
         const data = await res.json();
         if (data.success) {
             // 해당 탭 리로드
-            if (type === 'personas') loadMyPersonas();
-            else if (type === 'blogs') loadMyBlogs();
+            if (type === 'blogs') loadMyBlogs();
             else if (type === 'dna') loadMyDna();
-            else if (type === 'business') loadMyBusiness();
         } else {
             alert(data.error || '삭제 실패');
         }
@@ -1936,7 +1519,7 @@ async function loadRecentBlogs() {
             const tr = document.createElement('tr');
             tr.innerHTML = `
                 <td class="lt-title">${item.title || '(제목없음)'}</td>
-                <td class="lt-meta">${item.client_id || '-'}</td>
+                <td class="lt-meta">${item.style_template_id || item.client_id || '-'}</td>
                 <td class="lt-meta">${item.version_count || 0}개</td>
                 <td class="lt-date">${formatDate(item.created_at)}</td>
                 <td class="lt-actions">
@@ -1956,6 +1539,6 @@ async function loadRecentBlogs() {
 
 document.addEventListener('DOMContentLoaded', () => {
     checkAuthStatus();
-    loadPersonas();
+    loadStyleTemplates();
     loadCollections();
 });

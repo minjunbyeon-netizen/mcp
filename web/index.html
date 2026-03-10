@@ -4,8 +4,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>auto-blog | 페르소나 대시보드</title>
-    <meta name="description" content="카카오톡 대화 → 페르소나 추출 → 블로그 자동 생성">
+    <title>auto-blog | 블로그 자동 생성</title>
+    <meta name="description" content="스타일 템플릿 + 블로그 DNA → 블로그 자동 생성">
     <link rel="icon" type="image/svg+xml" href="/favicon.svg">
     <link rel="stylesheet" href="style.css">
     <link
@@ -18,8 +18,8 @@
     <!-- Login Gate (로그인 전 전체 화면) -->
     <div id="login-gate" class="login-gate hidden">
         <div class="login-gate-card">
-            <div class="login-gate-logo">Persona Tools</div>
-            <p class="login-gate-desc">AI 페르소나 분석 & 콘텐츠 생성 도구</p>
+            <div class="login-gate-logo">auto-blog</div>
+            <p class="login-gate-desc">AI 블로그 자동 생성 도구</p>
             <p class="login-gate-subdesc">서비스를 이용하려면 로그인이 필요합니다.</p>
             <a href="/login" class="google-login-btn login-gate-btn">
                 <svg width="20" height="20" viewBox="0 0 24 24">
@@ -59,23 +59,15 @@
             <!-- Sidebar -->
             <aside class="sidebar">
                 <div class="sidebar-section">
-                    <div class="sidebar-section-title">분석 관리</div>
-                    <button class="nav-item active" data-panel="s1-persona">페르소나 수집</button>
+                    <div class="sidebar-section-title">블로그 관리</div>
+                    <button class="nav-item active" data-panel="s2-blog-write">블로그 글 작성</button>
                     <button class="nav-item" data-panel="s1-blog-collect">블로그 수집</button>
                     <button class="nav-item" data-panel="s1-blog-status">글쓰기 DNA 분석</button>
-                    <button class="nav-item" data-panel="s1-business">업무적 성격 파악</button>
-                </div>
-                <div class="sidebar-section">
-                    <div class="sidebar-section-title">작성 관리</div>
-                    <button class="nav-item" data-panel="s2-blog-write">블로그 글 작성</button>
-                    <button class="nav-item" data-panel="s2-match-test">일치율 테스트</button>
                 </div>
                 <div class="sidebar-section">
                     <div class="sidebar-section-title">마이페이지</div>
-                    <button class="nav-item" data-panel="my-personas">페르소나 관리</button>
                     <button class="nav-item" data-panel="my-blogs">블로그 글 관리</button>
                     <button class="nav-item" data-panel="my-dna">글쓰기 DNA 관리</button>
-                    <button class="nav-item" data-panel="my-business">업무적 성격 관리</button>
                 </div>
 
                 <!-- 사이드바 하단 유저 영역 -->
@@ -93,64 +85,6 @@
 
             <!-- Main Content -->
             <main class="main-content">
-                <!-- 1-1 페르소나 수집 -->
-                <div id="s1-persona" class="content-panel active">
-                    <div class="content-header">
-                        <h2 class="content-title">페르소나 수집</h2>
-                    </div>
-                    <div class="content-body">
-                        <form id="persona-form" class="form">
-                            <div class="form-group">
-                                <label>파일 업로드 (TXT, PDF)</label>
-                                <div class="file-upload-area" id="file-upload-area">
-                                    <input type="file" id="persona-file" accept=".txt,.pdf" hidden>
-                                    <div class="file-upload-content">
-                                        <div class="file-upload-icon">+</div>
-                                        <p class="file-upload-text">파일을 드래그하거나 클릭하여 선택</p>
-                                        <p class="file-upload-hint">지원 형식: .txt, .pdf</p>
-                                    </div>
-                                    <div class="file-selected hidden" id="file-selected">
-                                        <span class="file-name" id="file-name"></span>
-                                        <button type="button" class="file-remove" id="file-remove">X</button>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div class="form-row">
-                                <div class="form-group">
-                                    <label for="client-name">담당자 이름</label>
-                                    <input type="text" id="client-name" placeholder="파일명에서 자동 추출됩니다">
-                                </div>
-                                <div class="form-group">
-                                    <label for="organization">소속 기관</label>
-                                    <input type="text" id="organization" placeholder="하이브미디어" value="하이브미디어">
-                                </div>
-                            </div>
-
-                            <div class="form-group">
-                                <label for="category">업종</label>
-                                <select id="category">
-                                    <option value="general">일반</option>
-                                    <option value="government">공공기관</option>
-                                    <option value="fitness">피트니스</option>
-                                    <option value="cosmetics">화장품</option>
-                                </select>
-                            </div>
-
-                            <button type="submit" class="btn btn-primary">
-                                <span class="btn-text">분석 시작</span>
-                                <span class="btn-loading">분석 중...</span>
-                            </button>
-                        </form>
-
-                        <table class="list-table persona-list-table" id="persona-cards-grid" style="margin-top:24px;">
-                            <thead><tr><th>이름</th><th>소속</th><th>페르소나 유형</th><th>격식도</th><th>커뮤니케이션</th><th>감성톤</th></tr></thead>
-                            <tbody></tbody>
-                        </table>
-                        <div id="persona-result" class="result-box hidden"></div>
-                    </div>
-                </div>
-
                 <!-- 1-2 블로그 글 수집 -->
                 <div id="s1-blog-collect" class="content-panel">
                     <div class="content-header">
@@ -241,155 +175,106 @@
                     </div>
                 </div>
 
-                <!-- 1-4 업무적 성격 파악 -->
-                <div id="s1-business" class="content-panel">
-                    <div class="content-header">
-                        <h2 class="content-title">업무적 성격 파악</h2>
-                    </div>
-                    <div class="content-body">
-                        <form id="business-form" class="form">
-                            <div class="form-row">
-                                <div class="form-group">
-                                    <label for="biz-persona-select">페르소나 선택</label>
-                                    <div class="select-with-btn">
-                                        <select id="biz-persona-select" required>
-                                            <option value="">페르소나를 선택하세요</option>
-                                        </select>
-                                        <button type="button" id="refresh-biz-personas" class="btn-icon"
-                                            title="새로고침">↻</button>
-                                    </div>
-                                </div>
-                                <div class="form-group">
-                                    <label for="biz-collection-select">블로그 컬렉션 선택</label>
-                                    <div class="select-with-btn">
-                                        <select id="biz-collection-select" required>
-                                            <option value="">컬렉션을 선택하세요</option>
-                                        </select>
-                                        <button type="button" id="refresh-biz-collections" class="btn-icon"
-                                            title="새로고침">↻</button>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <button type="submit" class="btn btn-primary">
-                                <span class="btn-text">교차 분석 시작</span>
-                                <span class="btn-loading">분석 중...</span>
-                            </button>
-                        </form>
-
-                        <div id="business-result" class="result-box hidden"></div>
-                    </div>
-                </div>
-
                 <!-- 2-1 블로그 글 작성 -->
-                <div id="s2-blog-write" class="content-panel">
+                <div id="s2-blog-write" class="content-panel active">
                     <div class="content-header">
                         <h2 class="content-title">블로그 글 작성기</h2>
                     </div>
                     <div class="content-body">
-                        <form id="blog-form" class="form">
-                            <div class="form-row">
-                                <div class="form-group" style="grid-column: 1 / -1;">
-                                    <label>페르소나 선택 (시각적 선택)</label>
-                                    <table class="list-table persona-list-table" id="writer-persona-cards">
-                                        <thead><tr><th>이름</th><th>소속</th><th>페르소나 유형</th><th>격식도</th><th>커뮤니케이션</th><th>감성톤</th></tr></thead>
-                                        <tbody></tbody>
-                                    </table>
-                                    <input type="hidden" id="persona-select" required>
-                                </div>
-                                <div class="form-group" style="display: none;">
-                                    <label for="legacy-persona-select">페르소나 선택 (드롭다운)</label>
-                                    <div class="select-with-btn">
-                                        <select id="legacy-persona-select">
-                                            <option value="">페르소나를 선택하세요</option>
-                                        </select>
-                                    </div>
-                                </div>
-                                <div class="form-group">
-                                    <label for="blog-dna-select">블로그 DNA 선택 (선택사항)</label>
-                                    <div class="select-with-btn">
-                                        <select id="blog-dna-select">
-                                            <option value="">DNA 미적용</option>
-                                        </select>
-                                        <button type="button" id="refresh-blog-dna" class="btn-icon"
-                                            title="목록 새로고침">↻</button>
-                                    </div>
+                        <form id="blog-form" class="form blog-write-form">
+
+                            <!-- STEP 1: 스타일 템플릿 선택 -->
+                            <div class="form-section">
+                                <div class="form-section-label">1. 글쓰기 스타일 선택</div>
+                                <div id="style-template-grid" class="style-template-grid"></div>
+                                <input type="hidden" id="style-template-id" value="informational">
+                            </div>
+
+                            <!-- STEP 2: 블로그 DNA -->
+                            <div class="form-section">
+                                <div class="form-section-label">2. 블로그 DNA <span style="font-weight:400; color:var(--text-muted);">(선택사항)</span></div>
+                                <div class="select-with-btn">
+                                    <select id="blog-dna-select">
+                                        <option value="">DNA 미적용</option>
+                                    </select>
+                                    <button type="button" id="refresh-blog-dna" class="btn-icon" title="목록 새로고침">↻</button>
                                 </div>
                                 <!-- DNA 스타일 미리보기 -->
-                                <div id="dna-preview-panel" style="display:none; margin-top:8px; border:1px solid #e5e5e5; border-radius:8px; overflow:hidden;">
-                                    <div style="background:#f5f5f7; padding:10px 14px; display:flex; justify-content:space-between; align-items:center; cursor:pointer;" id="dna-preview-toggle">
-                                        <span style="font-size:0.8rem; font-weight:700; color:#1d1d1f;">모방 스타일 미리보기</span>
-                                        <span id="dna-preview-arrow" style="font-size:0.75rem; color:#6e6e73;">▼ 펼치기</span>
+                                <div id="dna-preview-panel" class="dna-preview-panel" style="display:none;">
+                                    <div class="dna-preview-header" id="dna-preview-toggle">
+                                        <span>모방 스타일 미리보기</span>
+                                        <span id="dna-preview-arrow" class="dna-preview-arrow">▼ 펼치기</span>
                                     </div>
-                                    <div id="dna-preview-body" style="display:none; padding:14px; background:#fff;">
-                                        <div id="dna-preview-content" style="font-size:0.8rem; line-height:1.7; color:#1d1d1f; white-space:pre-wrap; font-family:inherit;"></div>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div class="form-group">
-                                <label>보도자료/홍보물 업로드 (여러 파일 가능)</label>
-                                <div class="file-upload-area" id="press-file-upload-area">
-                                    <input type="file" id="press-file" accept=".txt,.pdf,.hwp,.docx,.jpg,.jpeg,.png" multiple hidden>
-                                    <div class="file-upload-content">
-                                        <div class="file-upload-icon">+</div>
-                                        <p class="file-upload-text">PDF, DOCX, HWP, 이미지 홍보물을 드래그하거나 클릭하여 선택</p>
-                                        <p class="file-upload-hint">지원 형식: .txt, .pdf, .hwp, .docx, .jpg, .png</p>
-                                    </div>
-                                    <div class="file-selected hidden" id="press-file-selected">
-                                        <span class="file-name" id="press-file-name"></span>
-                                        <button type="button" class="file-remove" id="press-file-remove">X</button>
+                                    <div id="dna-preview-body" class="dna-preview-body" style="display:none;">
+                                        <div id="dna-preview-content" class="dna-preview-content"></div>
                                     </div>
                                 </div>
                             </div>
 
-                            <div class="form-row">
+                            <!-- STEP 3: 자료 입력 -->
+                            <div class="form-section">
+                                <div class="form-section-label">3. 자료 입력</div>
                                 <div class="form-group">
-                                    <label for="target-audience">타겟 독자</label>
-                                    <select id="target-audience">
-                                        <option value="일반 시민">일반 시민 (전체)</option>
-                                        <option value="육아맘/학부모">육아맘/학부모</option>
-                                        <option value="시니어/어르신">시니어/어르신</option>
-                                        <option value="관광객/방문객">관광객/방문객</option>
-                                        <option value="청년/취준생">청년/취준생</option>
-                                        <option value="소상공인/자영업자">소상공인/자영업자</option>
-                                    </select>
+                                    <label>파일 업로드</label>
+                                    <div class="file-upload-area" id="press-file-upload-area">
+                                        <input type="file" id="press-file" accept=".txt,.pdf,.hwp,.docx,.jpg,.jpeg,.png" multiple hidden>
+                                        <div class="file-upload-content">
+                                            <div class="file-upload-icon">+</div>
+                                            <p class="file-upload-text">PDF, DOCX, HWP, 이미지 홍보물을 드래그하거나 클릭하여 선택</p>
+                                            <p class="file-upload-hint">지원 형식: .txt .pdf .hwp .docx .jpg .png</p>
+                                        </div>
+                                        <div class="file-selected hidden" id="press-file-selected">
+                                            <span class="file-name" id="press-file-name"></span>
+                                            <button type="button" class="file-remove" id="press-file-remove">X</button>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="or-divider">또는</div>
+                                <div class="form-group">
+                                    <label for="press-release">직접 입력</label>
+                                    <textarea id="press-release" rows="6" placeholder="보도자료 내용을 붙여넣기 하세요..."></textarea>
+                                </div>
+                            </div>
+
+                            <!-- STEP 4: 옵션 -->
+                            <div class="form-section">
+                                <div class="form-section-label">4. 생성 옵션</div>
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label for="target-audience">타겟 독자</label>
+                                        <select id="target-audience">
+                                            <option value="일반 시민">일반 시민 (전체)</option>
+                                            <option value="육아맘/학부모">육아맘/학부모</option>
+                                            <option value="시니어/어르신">시니어/어르신</option>
+                                            <option value="관광객/방문객">관광객/방문객</option>
+                                            <option value="청년/취준생">청년/취준생</option>
+                                            <option value="소상공인/자영업자">소상공인/자영업자</option>
+                                        </select>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="content-angle">콘텐츠 앵글</label>
+                                        <select id="content-angle">
+                                            <option value="정보전달형">정보전달형 (뉴스/공지사항)</option>
+                                            <option value="스토리텔링형">스토리텔링형 (친근한 이야기)</option>
+                                            <option value="Q&A형">Q&A형 (궁금증 해결)</option>
+                                            <option value="체험기형">체험기형 (가상 체험/후기)</option>
+                                            <option value="체크리스트형">체크리스트형 (정리/가이드)</option>
+                                        </select>
+                                    </div>
                                 </div>
                                 <div class="form-group">
-                                    <label for="content-angle">콘텐츠 앵글</label>
-                                    <select id="content-angle">
-                                        <option value="정보전달형">정보전달형 (뉴스/공지사항)</option>
-                                        <option value="스토리텔링형">스토리텔링형 (친근한 이야기)</option>
-                                        <option value="Q&A형">Q&A형 (궁금증 해결)</option>
-                                        <option value="체험기형">체험기형 (가상 체험/후기)</option>
-                                        <option value="체크리스트형">체크리스트형 (정리/가이드)</option>
-                                    </select>
+                                    <label for="keywords">타겟 키워드 <span style="font-weight:400; color:var(--text-muted);">(콤마로 구분)</span></label>
+                                    <input type="text" id="keywords" placeholder="예: 예술, 공연, 축제">
                                 </div>
                             </div>
 
-                            <div class="form-group">
-                                <label for="keywords">타겟 키워드 (콤마로 구분)</label>
-                                <input type="text" id="keywords" placeholder="예: 예술, 공연, 축제">
-                            </div>
-
-                            <div class="form-group">
-                                <label for="press-release">또는 직접 입력</label>
-                                <textarea id="press-release" rows="8" placeholder="보도자료 내용을 붙여넣기 하세요..."></textarea>
-                            </div>
-
-                            <button type="submit" class="btn btn-primary">
+                            <button type="submit" class="btn btn-primary" style="width:100%; padding:14px;">
                                 <span class="btn-text">블로그 생성</span>
                                 <span class="btn-loading">생성 중...</span>
                             </button>
                         </form>
 
                         <div id="blog-result" class="result-box hidden">
-                            <div class="result-header-actions"
-                                style="display: flex; justify-content: flex-end; margin-bottom: 20px;">
-                                <button type="button" id="btn-toggle-guide" class="btn btn-outline btn-sm">
-                                    <span class="btn-text">📋 톤앤매너 가이드 보기</span>
-                                </button>
-                            </div>
                             <div class="blog-writer-layout">
                                 <div id="blog-versions-area" class="blog-versions-area"></div>
                                 <div class="mobile-preview-container">
@@ -397,19 +282,6 @@
                                         <div class="iphone-screen">
                                             <div id="mobile-preview-content" class="mobile-content"></div>
                                         </div>
-                                    </div>
-                                </div>
-
-                                <!-- Writing Guide Side Panel -->
-                                <div id="writing-guide-panel" class="guide-panel">
-                                    <div class="guide-panel-header">
-                                        <h4>톤앤매너 가이드</h4>
-                                        <button type="button" id="btn-close-guide"
-                                            class="close-guide-btn">&times;</button>
-                                    </div>
-                                    <div class="guide-panel-body" id="guide-content">
-                                        <!-- Dynamic content -->
-                                        <div class="guide-loading">페르소나 분석 데이터를 불러오는 중...</div>
                                     </div>
                                 </div>
                             </div>
@@ -420,54 +292,10 @@
                             <h3 class="recent-history-title">최근 작성한 글</h3>
                             <div class="empty-state" id="recent-blogs-empty" style="display:none;">아직 작성된 글이 없습니다.</div>
                             <table class="list-table" id="recent-blogs-grid">
-                                <thead><tr><th>제목</th><th>페르소나</th><th>버전</th><th>날짜</th><th></th></tr></thead>
+                                <thead><tr><th>제목</th><th>스타일</th><th>버전</th><th>날짜</th><th></th></tr></thead>
                                 <tbody></tbody>
                             </table>
                         </div>
-                    </div>
-                </div>
-
-                <!-- 2-2 일치율 테스트 -->
-                <div id="s2-match-test" class="content-panel">
-                    <div class="content-header">
-                        <h2 class="content-title">일치율 테스트기</h2>
-                    </div>
-                    <div class="content-body">
-                        <form id="match-form" class="form">
-                            <div class="form-group">
-                                <label for="match-persona-select">페르소나 선택</label>
-                                <select id="match-persona-select" required>
-                                    <option value="">페르소나를 선택하세요</option>
-                                </select>
-                            </div>
-
-                            <div class="form-group">
-                                <label for="test-content">테스트할 콘텐츠</label>
-                                <textarea id="test-content" rows="12" placeholder="분석할 텍스트를 입력하세요..."
-                                    required></textarea>
-                            </div>
-
-                            <button type="submit" class="btn btn-primary">
-                                <span class="btn-text">일치율 분석</span>
-                                <span class="btn-loading">분석 중...</span>
-                            </button>
-                        </form>
-
-                        <div id="match-result" class="result-box hidden"></div>
-                    </div>
-                </div>
-
-                <!-- 마이페이지: 페르소나 관리 -->
-                <div id="my-personas" class="content-panel">
-                    <div class="content-header">
-                        <h2 class="content-title">페르소나 관리</h2>
-                    </div>
-                    <div class="content-body">
-                        <div class="empty-state" id="my-personas-empty" style="display:none;">저장된 페르소나가 없습니다.</div>
-                        <table class="list-table" id="my-personas-grid">
-                            <thead><tr><th>이름</th><th>소속/조직</th><th>날짜</th><th></th></tr></thead>
-                            <tbody></tbody>
-                        </table>
                     </div>
                 </div>
 
@@ -479,7 +307,7 @@
                     <div class="content-body">
                         <div class="empty-state" id="my-blogs-empty" style="display:none;">생성된 블로그 글이 없습니다.</div>
                         <table class="list-table" id="my-blogs-grid">
-                            <thead><tr><th>제목</th><th>페르소나</th><th>버전</th><th>날짜</th><th></th></tr></thead>
+                            <thead><tr><th>제목</th><th>스타일</th><th>버전</th><th>날짜</th><th></th></tr></thead>
                             <tbody></tbody>
                         </table>
                     </div>
@@ -494,20 +322,6 @@
                         <div class="empty-state" id="my-dna-empty" style="display:none;">DNA 분석 결과가 없습니다.</div>
                         <table class="list-table" id="my-dna-grid">
                             <thead><tr><th>블로그 ID</th><th>분석 글 수</th><th>날짜</th><th></th></tr></thead>
-                            <tbody></tbody>
-                        </table>
-                    </div>
-                </div>
-
-                <!-- 마이페이지: 업무적 성격 관리 -->
-                <div id="my-business" class="content-panel">
-                    <div class="content-header">
-                        <h2 class="content-title">업무적 성격 관리</h2>
-                    </div>
-                    <div class="content-body">
-                        <div class="empty-state" id="my-business-empty" style="display:none;">업무적 성격 분석 결과가 없습니다.</div>
-                        <table class="list-table" id="my-business-grid">
-                            <thead><tr><th>페르소나</th><th>블로그</th><th>날짜</th><th></th></tr></thead>
                             <tbody></tbody>
                         </table>
                     </div>
