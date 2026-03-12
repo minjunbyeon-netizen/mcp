@@ -19,6 +19,7 @@ document.addEventListener('DOMContentLoaded', () => {
     initCollectPanel();
     initWritePanel();
     initStylePanel();
+    initDBPanel();
     initModal();
 });
 
@@ -427,6 +428,7 @@ async function generateBlog() {
     }
 
     setFormLoading(form, true);
+    showLoadingModal();
     document.getElementById('write-preview-empty').classList.add('hidden');
     document.getElementById('write-preview-result').classList.add('hidden');
 
@@ -450,6 +452,7 @@ async function generateBlog() {
         alert(err.message);
         document.getElementById('write-preview-empty').classList.remove('hidden');
     } finally {
+        hideLoadingModal();
         setFormLoading(form, false);
     }
 }
@@ -633,7 +636,202 @@ async function saveStyleTags(dnaId) {
 
 
 // ═══════════════════════════════════════════════════════════
-// 6. 모달
+// 6. PANEL 4 — DB 관리
+// ═══════════════════════════════════════════════════════════
+function initDBPanel() {
+    document.querySelector('.nav-item[data-panel="db"]').addEventListener('click', loadDBPanel);
+}
+
+async function loadDBPanel() {
+    const listEl = document.getElementById('db-list');
+    listEl.innerHTML = `<div class="loading-hint">불러오는 중...</div>`;
+
+    try {
+        const [colRes, dnaRes, blogRes] = await Promise.all([
+            fetch(`${API}/api/blog/collections`),
+            fetch(`${API}/api/mypage/dna`),
+            fetch(`${API}/api/mypage/blogs`)
+        ]);
+        const colData  = await colRes.json();
+        const dnaData  = await dnaRes.json();
+        const blogData = await blogRes.json();
+
+        // blog_id 기준으로 그룹화
+        const groups = {};
+
+        // 수집 데이터
+        const collections = colData.collections || colData.items || [];
+        collections.forEach(c => {
+            const id = c.blog_id;
+            if (!groups[id]) groups[id] = { blog_id: id, collections: [], dnas: [], blogs: [] };
+            groups[id].collections.push(c);
+        });
+
+        // DNA 데이터
+        (dnaData.items || []).forEach(d => {
+            const id = d.blog_id;
+            if (!groups[id]) groups[id] = { blog_id: id, collections: [], dnas: [], blogs: [] };
+            groups[id].dnas.push(d);
+        });
+
+        // 생성된 블로그 글
+        (blogData.items || []).forEach(b => {
+            const id = b.blog_dna_id || b.blog_id || '';
+            // blog_dna_id는 DNA_blogid_... 형태이므로 blog_id 추출
+            const match = id.match(/DNA_([^_]+)_/);
+            const blogId = match ? match[1] : id;
+            if (blogId && groups[blogId]) {
+                groups[blogId].blogs.push(b);
+            }
+        });
+
+        const groupArr = Object.values(groups).sort((a, b) =>
+            (b.collections[0]?.last_collected_at || '').localeCompare(a.collections[0]?.last_collected_at || '')
+        );
+
+        if (!groupArr.length) {
+            listEl.innerHTML = `<div class="empty-hint">수집된 블로그가 없습니다</div>`;
+            return;
+        }
+
+        listEl.innerHTML = groupArr.map(g => renderDBCard(g)).join('');
+
+        // 토글 이벤트
+        listEl.querySelectorAll('.db-card-header').forEach(el => {
+            el.addEventListener('click', () => {
+                const card = el.closest('.db-card');
+                card.classList.toggle('open');
+            });
+        });
+
+    } catch (err) {
+        listEl.innerHTML = `<div class="error-hint">로드 실패: ${err.message}</div>`;
+    }
+}
+
+function renderDBCard(g) {
+    const col = g.collections[0] || {};
+    const dnaCount = g.dnas.length;
+    const blogCount = g.blogs.length;
+    const postCount = col.post_count || 0;
+    const lastDate = (col.last_collected_at || '').slice(0, 10);
+
+    const dnaRows = g.dnas.map(d => `
+        <div class="db-sub-row">
+            <span class="db-sub-icon">DNA</span>
+            <span class="db-sub-label">${d.id || ''}</span>
+            <span class="db-sub-meta">${d.post_count || 0}개 분석 · ${(d.created_at || '').slice(0, 10)}</span>
+            <button class="btn-link" onclick="loadStyleDetail('${d.id}');goToPanel('style')">편집</button>
+        </div>`).join('');
+
+    const blogRows = g.blogs.slice(0, 5).map(b => `
+        <div class="db-sub-row">
+            <span class="db-sub-icon">글</span>
+            <span class="db-sub-label">${b.title || '제목 없음'}</span>
+            <span class="db-sub-meta">${(b.created_at || '').slice(0, 10)}</span>
+        </div>`).join('');
+
+    return `
+        <div class="db-card">
+            <div class="db-card-header">
+                <div class="db-card-main">
+                    <span class="db-blog-id">${g.blog_id}</span>
+                    <div class="db-card-badges">
+                        <span class="db-badge">수집 ${postCount}개</span>
+                        <span class="db-badge">DNA ${dnaCount}개</span>
+                        <span class="db-badge">생성 ${blogCount}개</span>
+                    </div>
+                </div>
+                <div class="db-card-right">
+                    <span class="db-card-date">${lastDate}</span>
+                    <span class="db-card-toggle">▼</span>
+                </div>
+            </div>
+            <div class="db-card-body">
+                ${dnaCount ? `<div class="db-sub-section"><div class="db-sub-title">DNA 분석</div>${dnaRows}</div>` : ''}
+                ${blogCount ? `<div class="db-sub-section"><div class="db-sub-title">생성된 글 (최근 5개)</div>${blogRows}</div>` : ''}
+                ${!dnaCount && !blogCount ? `<div class="db-empty-body">수집만 완료. DNA 분석 후 글 작성이 가능합니다.</div>` : ''}
+                <div class="db-card-actions">
+                    <button class="btn btn-secondary btn-sm" onclick="goToPanel('collect');document.getElementById('collect-url').value='${g.blog_id}'">재수집</button>
+                    <button class="btn btn-primary btn-sm" onclick="analyzeDNA('${g.blog_id}')">DNA 분석</button>
+                </div>
+            </div>
+        </div>`;
+}
+
+
+// ═══════════════════════════════════════════════════════════
+// 7. 블로그 생성 로딩 모달
+// ═══════════════════════════════════════════════════════════
+const LOADING_EMOJIS = ['✍️','📝','💭','✨','📖','🎨','💡','🖊️','🌟','📋'];
+const LOADING_STEPS  = [
+    '자료를 분석하고 있어요',
+    '블로그 스타일을 파악하고 있어요',
+    'AI가 글을 구성하고 있어요',
+    '문장을 다듬고 있어요',
+    '마지막으로 검토하고 있어요',
+    '거의 다 됐어요!',
+];
+
+let _loadingEmojiTimer = null;
+let _loadingStepTimer  = null;
+let _loadingBarTimer   = null;
+let _loadingEmojiIdx   = 0;
+let _loadingStepIdx    = 0;
+let _loadingProgress   = 0;
+
+function showLoadingModal() {
+    const modal = document.getElementById('loading-modal');
+    modal.classList.remove('hidden');
+    _loadingEmojiIdx = 0;
+    _loadingStepIdx  = 0;
+    _loadingProgress = 0;
+
+    document.getElementById('loading-emoji').textContent   = LOADING_EMOJIS[0];
+    document.getElementById('loading-step').textContent    = LOADING_STEPS[0];
+    document.getElementById('loading-bar').style.width     = '0%';
+
+    // 이모지 순환 (700ms)
+    _loadingEmojiTimer = setInterval(() => {
+        _loadingEmojiIdx = (_loadingEmojiIdx + 1) % LOADING_EMOJIS.length;
+        const el = document.getElementById('loading-emoji');
+        el.classList.add('emoji-pop');
+        el.textContent = LOADING_EMOJIS[_loadingEmojiIdx];
+        setTimeout(() => el.classList.remove('emoji-pop'), 300);
+    }, 700);
+
+    // 단계 메시지 순환 (4s)
+    _loadingStepTimer = setInterval(() => {
+        _loadingStepIdx = Math.min(_loadingStepIdx + 1, LOADING_STEPS.length - 1);
+        document.getElementById('loading-step').textContent = LOADING_STEPS[_loadingStepIdx];
+    }, 4000);
+
+    // 진행 바 (전체 ~30s 예상, 95%까지만 자동)
+    _loadingBarTimer = setInterval(() => {
+        if (_loadingProgress < 92) {
+            _loadingProgress += _loadingProgress < 50 ? 2.5 : 0.8;
+            document.getElementById('loading-bar').style.width = _loadingProgress + '%';
+        }
+    }, 600);
+}
+
+function hideLoadingModal() {
+    clearInterval(_loadingEmojiTimer);
+    clearInterval(_loadingStepTimer);
+    clearInterval(_loadingBarTimer);
+
+    const bar = document.getElementById('loading-bar');
+    if (bar) bar.style.width = '100%';
+
+    setTimeout(() => {
+        document.getElementById('loading-modal').classList.add('hidden');
+        if (bar) bar.style.width = '0%';
+    }, 400);
+}
+
+
+// ═══════════════════════════════════════════════════════════
+// 9. 상세보기 모달
 // ═══════════════════════════════════════════════════════════
 function initModal() {
     document.getElementById('detail-modal-close').addEventListener('click', closeModal);
