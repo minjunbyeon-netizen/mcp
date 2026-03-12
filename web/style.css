@@ -745,6 +745,43 @@ textarea { resize: vertical; line-height: 1.6; }
 .db-empty-body { font-size: 13px; color: var(--text-muted); padding: 8px 0 12px; }
 .db-card-actions { display: flex; gap: 8px; margin-top: 12px; }
 
+.db-row-actions { display: flex; gap: 10px; margin-left: auto; flex-shrink: 0; }
+.btn-link-danger { color: var(--danger) !important; }
+
+/* DNA 상세보기 */
+.dna-detail-section {
+    margin-bottom: 20px;
+    padding-bottom: 20px;
+    border-bottom: 1px solid var(--border);
+}
+.dna-detail-section:last-child { border-bottom: none; }
+.dna-detail-title {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    margin-bottom: 8px;
+}
+.dna-detail-row {
+    display: flex;
+    gap: 12px;
+    padding: 5px 0;
+    font-size: 13px;
+    border-bottom: 1px solid var(--bg-secondary);
+}
+.dna-detail-row:last-child { border-bottom: none; }
+.dna-detail-key {
+    min-width: 140px;
+    color: var(--text-muted);
+    flex-shrink: 0;
+}
+.dna-detail-val {
+    color: var(--text-secondary);
+    line-height: 1.5;
+    word-break: break-word;
+}
+
 
 /* ── 블로그 생성 로딩 모달 ─────────────────────────────── */
 .loading-modal {

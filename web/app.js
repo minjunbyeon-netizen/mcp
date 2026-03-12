@@ -721,7 +721,11 @@ function renderDBCard(g) {
             <span class="db-sub-icon">DNA</span>
             <span class="db-sub-label">${d.id || ''}</span>
             <span class="db-sub-meta">${d.post_count || 0}개 분석 · ${(d.created_at || '').slice(0, 10)}</span>
-            <button class="btn-link" onclick="loadStyleDetail('${d.id}');goToPanel('style')">편집</button>
+            <div class="db-row-actions">
+                <button class="btn-link" onclick="dbViewDNA('${d.id}')">상세</button>
+                <button class="btn-link" onclick="loadStyleDetail('${d.id}');goToPanel('style')">편집</button>
+                <button class="btn-link btn-link-danger" onclick="dbDelete('dna','${d.id}',this)">삭제</button>
+            </div>
         </div>`).join('');
 
     const blogRows = g.blogs.slice(0, 5).map(b => `
@@ -729,6 +733,10 @@ function renderDBCard(g) {
             <span class="db-sub-icon">글</span>
             <span class="db-sub-label">${b.title || '제목 없음'}</span>
             <span class="db-sub-meta">${(b.created_at || '').slice(0, 10)}</span>
+            <div class="db-row-actions">
+                <button class="btn-link" onclick="dbViewBlog('${b.id}')">상세</button>
+                <button class="btn-link btn-link-danger" onclick="dbDelete('blogs','${b.id}',this)">삭제</button>
+            </div>
         </div>`).join('');
 
     return `
@@ -757,6 +765,82 @@ function renderDBCard(g) {
                 </div>
             </div>
         </div>`;
+}
+
+
+async function dbViewDNA(dnaId) {
+    openModal('DNA 분석 상세', '<div class="loading-hint">불러오는 중...</div>');
+    try {
+        const res = await fetch(`${API}/api/mypage/dna/${dnaId}`);
+        const dna = await res.json();
+        // DNA 키는 분석 시기에 따라 c1_tone 또는 c1_template_structure 등 다를 수 있음
+        const cats = Object.keys(dna).filter(k => /^c\d+_/.test(k)).sort();
+        const labels = cats.map(k => k.replace(/^c\d+_/, '').replace(/_/g, ' '));
+
+        let html = `<div style="margin-bottom:16px">
+            <strong>${dna.blog_id || ''}</strong>
+            <span style="color:var(--text-muted);font-size:13px;margin-left:8px">${dna.post_count || 0}개 분석 · ${(dna.created_at || '').slice(0,10)}</span>
+        </div>`;
+
+        cats.forEach((key, i) => {
+            const d = dna[key];
+            if (!d) return;
+            const title = d.title || labels[i];
+            const entries = Object.entries(d)
+                .filter(([k]) => !['title','examples','opening_examples','closing_examples'].includes(k))
+                .map(([k, v]) => {
+                    const val = Array.isArray(v) ? v.slice(0,4).join(', ') : String(v);
+                    return val ? `<div class="dna-detail-row"><span class="dna-detail-key">${k}</span><span class="dna-detail-val">${val}</span></div>` : '';
+                }).join('');
+            if (!entries) return;
+            html += `<div class="dna-detail-section">
+                <div class="dna-detail-title">${title}</div>
+                ${entries}
+            </div>`;
+        });
+
+        document.getElementById('detail-modal-body').innerHTML = html;
+    } catch (err) {
+        document.getElementById('detail-modal-body').innerHTML = `<div class="error-hint">${err.message}</div>`;
+    }
+}
+
+async function dbViewBlog(blogId) {
+    openModal('블로그 글 상세', '<div class="loading-hint">불러오는 중...</div>');
+    try {
+        const res = await fetch(`${API}/api/mypage/blogs/${blogId}`);
+        const data = await res.json();
+        const versions = data.versions || [];
+        let html = `<div style="margin-bottom:16px">
+            <strong>${data.title || '제목 없음'}</strong>
+            <span style="color:var(--text-muted);font-size:13px;margin-left:8px">${(data.created_at || '').slice(0,16).replace('T',' ')}</span>
+        </div>`;
+        if (versions.length) {
+            html += versions.map((v, i) => `
+                <div style="margin-bottom:24px">
+                    <div style="font-size:12px;font-weight:700;color:var(--text-muted);text-transform:uppercase;margin-bottom:8px">버전 ${i+1}</div>
+                    <div style="font-size:14px;line-height:1.8;color:var(--text-secondary);white-space:pre-wrap">${(v.content || '').replace(/</g,'&lt;')}</div>
+                </div>`).join('');
+        } else if (data.content) {
+            html += `<div style="font-size:14px;line-height:1.8;color:var(--text-secondary);white-space:pre-wrap">${data.content.replace(/</g,'&lt;')}</div>`;
+        }
+        document.getElementById('detail-modal-body').innerHTML = html;
+    } catch (err) {
+        document.getElementById('detail-modal-body').innerHTML = `<div class="error-hint">${err.message}</div>`;
+    }
+}
+
+async function dbDelete(type, id, btn) {
+    if (!confirm('삭제하시겠습니까? 복구할 수 없습니다.')) return;
+    try {
+        const res = await fetch(`${API}/api/mypage/${type}/${id}`, { method: 'DELETE' });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || '삭제 실패');
+        // 해당 행 제거
+        btn.closest('.db-sub-row').remove();
+    } catch (err) {
+        alert(err.message);
+    }
 }
 
 
