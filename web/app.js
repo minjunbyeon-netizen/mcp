@@ -462,18 +462,25 @@ function renderWriteResult(data, dnaId) {
     window._lastVersions = versions;
     window._lastDNAId = dnaId;
 
-    document.getElementById('write-versions').innerHTML = versions.map((v, i) => `
+    const vTypeLabel = { empathy: '독자공감형', info: '핵심정보형', story: '스토리텔링형',
+                          formal: '포멀', balanced: '밸런스', casual: '캐주얼' };
+    document.getElementById('write-versions').innerHTML = versions.map((v, i) => {
+        const typeLabel = v.version_label || vTypeLabel[v.version_type] || `버전 ${i + 1}`;
+        return `
         <div class="version-block">
             <div class="version-header">
-                <span class="version-label">버전 ${i + 1}</span>
-                ${v.title ? `<span class="version-title-text">${v.title}</span>` : ''}
+                <div class="version-label-row">
+                    <span class="version-badge">${typeLabel}</span>
+                    ${v.title ? `<span class="version-title-text">${v.title}</span>` : ''}
+                </div>
                 <div class="version-actions">
                     <button class="btn btn-secondary btn-sm" onclick="copyVersion(${i})">네이버 복사</button>
                     <button class="btn btn-primary btn-sm" onclick="saveVersion(${i})">저장</button>
                 </div>
             </div>
             <div class="version-content">${formatBlogContent(v.content || '')}</div>
-        </div>`).join('');
+        </div>`;
+    }).join('');
 
     document.getElementById('write-preview-result').classList.remove('hidden');
 }

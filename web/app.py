@@ -1015,6 +1015,34 @@ def generate_blog():
         except Exception as e:
             print(f"[WARN] 블로그 DNA 로드 실패: {e}")
 
+    # ── DNA에서 블로그 신원·분량·구조 가이드 추출 ──────────────
+    dna_blog_id = (dna_analysis or {}).get('blog_id', blog_dna_id or '')
+
+    # 분량 가이드: c14_length_stats 또는 c11_length_stats
+    _c14 = (dna_analysis or {}).get("c14_length_stats",
+             (dna_analysis or {}).get("c11_length_stats", {}))
+    if _c14:
+        _avg    = _c14.get('avg_chars_per_post', '')
+        _guide  = _c14.get('density_guide', _c14.get('writing_density_guide', ''))
+        _ratio  = _c14.get('content_ratio', '')
+        length_guide_text = "▸ 이 블로그의 평균 글 길이: " + str(_avg)
+        if _guide: length_guide_text += f"\n▸ 분량 지침: {_guide}"
+        if _ratio: length_guide_text += f"\n▸ 서론:본론:결론 = {_ratio}"
+    else:
+        length_guide_text = "▸ 최소 1,500자 이상, 권장 2,000~2,500자\n▸ 서론(10%) → 본론(75%) → 결론(15%)"
+
+    # 구조 가이드: c1_template_structure
+    _c1 = (dna_analysis or {}).get("c1_template_structure", {})
+    if _c1:
+        _pattern  = _c1.get('overall_pattern', '')
+        _flow     = _c1.get('section_flow', [])
+        _subfmt   = _c1.get('subheading_format', _c1.get('heading_style', ''))
+        struct_guide_text = f"▸ 구조 패턴: {_pattern}"
+        if _flow: struct_guide_text += "\n▸ 섹션 흐름: " + " → ".join(_flow)
+        if _subfmt: struct_guide_text += f"\n▸ 소제목 포맷: {_subfmt}"
+    else:
+        struct_guide_text = "▸ 서론 → 본론(3~5단락) → 결론 구조"
+
     template_name = style_template.get("name", "정보전달형")
     formality_score = style_template.get("formality_score", 5)
     custom_prompt = style_template.get("custom_prompt", "")
@@ -1073,33 +1101,58 @@ def generate_blog():
             if active_gfiles:
                 native_note = f"첨부된 파일 {len(active_gfiles)}개를 직접 읽고 핵심 내용을 파악하세요."
 
-            prompt = f"""당신은 실전형 블로그 콘텐츠 에디터입니다.
-아래 스타일 가이드와 자료를 바탕으로 3가지 버전의 블로그 글을 만드세요.
-반드시 JSON만 출력하세요.
+            # ── 블로그 신원 헤더 ──────────────────────────────────
+            identity_header = ""
+            if dna_blog_id:
+                identity_header = f"""당신은 '{dna_blog_id}' 네이버 블로그의 전담 콘텐츠 작성자입니다.
+아래 [글쓰기 DNA]는 이 블로그가 지금까지 써온 글을 정밀 분석한 결과입니다.
+당신은 이 DNA를 완벽히 내재화했습니다. 이 블로그처럼 생각하고, 이 블로그의 언어로 씁니다.
+DNA에서 벗어나는 순간 실패입니다. DNA를 따르는 것이 곧 이 블로그답게 쓰는 것입니다."""
+            else:
+                identity_header = f"""당신은 실전형 블로그 콘텐츠 에디터입니다.
+아래 스타일 가이드를 바탕으로 블로그 글을 작성하세요.
+[글쓰기 스타일: {template_name} / 격식도 {formality_score}/10]
+{custom_prompt}"""
 
-[글쓰기 스타일 템플릿: {template_name}]
-- 격식도: {formality_score}/10
+            # ── DNA 없는 경우 기본 안내 ───────────────────────────
+            dna_section = ""
+            if blog_dna_text:
+                dna_section = f"""
+{'━'*52}
+[{dna_blog_id} 블로그 글쓰기 DNA — 이것이 당신의 글쓰기 정체성]
+{'━'*52}
+{blog_dna_text}
+{'━'*52}"""
+            else:
+                dna_section = f"""
+[글쓰기 스타일]
+- 템플릿: {template_name} / 격식도: {formality_score}/10
 - 종결어미: {', '.join(style_template.get('ending_patterns', []))}
-{custom_prompt}
+{custom_prompt}"""
 
-{calibration_prompt}
+            # ── 참고 블로그 URL 샘플 ─────────────────────────────
+            ref_section = ""
+            if reference_blog_text:
+                ref_section = f"""
+[추가 참고 블로그 스타일 (URL에서 수집)]
+{reference_blog_text[:2500]}"""
 
-[참고 블로그 스타일 샘플]
-{reference_blog_text[:3000] if reference_blog_text else '없음 (스타일 참고 URL 미제공)'}
+            # ── 보정 기록 ────────────────────────────────────────
+            cal_section = f"\n{calibration_prompt}\n" if calibration_prompt else ""
 
-[블로그 DNA — 반드시 이 스타일로 작성]
-{blog_dna_text or '선택 안 함 (일반 블로그 스타일로 작성)'}
+            prompt = f"""{identity_header}
+반드시 JSON만 출력하세요.
+{dna_section}
+{ref_section}
+{cal_section}
+{'━'*52}
+[이번 작업: 아래 자료를 {dna_blog_id or '이'} 블로그 스타일로 변환]
+{'━'*52}
 
-[DNA 스타일 준수 규칙]
-- 위 DNA 가이드의 이모지, 특수기호(✅ 〰️ ➡️ 등), 종결어미, 도입/마무리 패턴을 그대로 사용
-- 실제 글 전문 샘플이 있다면 그 스타일을 최대한 모방
-- 줄바꿈 패턴, 문장 길이, 단락 구성도 샘플과 유사하게
-- 참고 블로그 스타일 샘플이 있다면 그 글의 구조와 톤을 참고하여 작성
-
-[첨부 파일 안내]
+[첨부 파일]
 {native_note or '없음'}
 
-[추가 텍스트 자료]
+[텍스트 자료 / 보도자료]
 {material_bundle.get('briefing', '')[:8000] or '없음'}
 
 [타겟 독자]
@@ -1108,33 +1161,46 @@ def generate_blog():
 [콘텐츠 앵글]
 {content_angle}
 
-[키워드]
+[핵심 키워드]
 {", ".join(keywords) if keywords else "없음"}
 
-[글 길이 요구사항 — 반드시 준수]
-- 각 버전 본문은 최소 1,500자 이상, 권장 2,000~3,000자
-- 서론(흥미 유발) → 본론(핵심 내용 3~5개 단락) → 결론(행동 유도) 구조 필수
-- 각 단락은 3~6문장 이상으로 충분히 풀어서 작성
-- 정보를 압축하지 말고 독자가 이해하기 쉽게 상세히 설명
+{'━'*52}
+[분량 기준 — DNA 기반, 반드시 준수]
+{'━'*52}
+{length_guide_text}
 
-[절대 금지 규칙 — 반드시 준수]
-- 제목과 본문에 작성자 실명 노출 금지
-- ** ** (별표 볼드) 절대 사용 금지
-- ## # (샵 헤딩) 절대 사용 금지
-- __ __ (언더스코어 볼드/이탤릭) 절대 사용 금지
-- ``` (백틱 코드블록) 절대 사용 금지
-- <> 꺽쇠괄호 절대 사용 금지
-- --- === (구분선) 절대 사용 금지
-- 마크다운 기호 전체 사용 금지 — 순수 텍스트만 출력
-- 각 버전은 구조와 어조가 분명히 달라야 함
-- 핵심 일정/대상/혜택/문의 정보를 가능한 한 놓치지 말 것
+{'━'*52}
+[구조 기준 — DNA 기반, 반드시 준수]
+{'━'*52}
+{struct_guide_text}
+
+{'━'*52}
+[3가지 버전 작성 지침]
+{'━'*52}
+아래 3개 버전은 반드시 동일한 블로그 DNA 스타일을 유지하면서, 접근 각도만 다르게 작성합니다.
+- 버전1 [독자공감형]: 주민/독자 입장에서 "내가 얻는 혜택과 변화"에 집중. 공감·경험 공유 중심.
+- 버전2 [핵심정보형]: 핵심 일정·대상·내용·절차를 명확하고 체계적으로 전달. 팩트 중심.
+- 버전3 [스토리텔링형]: 배경·맥락·의미를 서사적으로 풀어내며 독자를 이야기 속으로 끌어들임.
+
+★ 세 버전 모두 동일한 DNA 스타일(톤·어투·이모지·구조·길이)을 유지할 것
+★ 각 버전의 제목도 해당 각도에 맞게 다르게 작성할 것
+
+{'━'*52}
+[절대 준수 규칙]
+{'━'*52}
+- 작성자 실명·개인정보 노출 금지
+- ** (별표볼드), ## (샵헤딩), __ (언더스코어), ``` (백틱), --- === (마크다운 구분선) 사용 금지
+- DNA에 꺽쇠(《》 【】 「」 등)가 있으면 적극 사용, 없으면 사용 금지
+- DNA에 이모지/특수기호가 있으면 동일하게 사용, 없으면 사용 금지
+- 핵심 일정·대상·혜택·문의처 누락 금지
+- 각 버전 제목은 서로 달라야 함
 
 [출력 JSON]
 {{
   "versions": [
-    {{"version_type":"formal","version_label":"포멀","title":"제목","content":"본문","tags":["태그"],"meta_description":"설명"}},
-    {{"version_type":"balanced","version_label":"밸런스","title":"제목","content":"본문","tags":["태그"],"meta_description":"설명"}},
-    {{"version_type":"casual","version_label":"캐주얼","title":"제목","content":"본문","tags":["태그"],"meta_description":"설명"}}
+    {{"version_type":"empathy","version_label":"독자공감형","title":"제목","content":"본문","tags":["태그"],"meta_description":"설명"}},
+    {{"version_type":"info","version_label":"핵심정보형","title":"제목","content":"본문","tags":["태그"],"meta_description":"설명"}},
+    {{"version_type":"story","version_label":"스토리텔링형","title":"제목","content":"본문","tags":["태그"],"meta_description":"설명"}}
   ]
 }}"""
 

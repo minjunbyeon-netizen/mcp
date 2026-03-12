@@ -408,6 +408,23 @@ textarea { resize: vertical; line-height: 1.6; }
     background: var(--bg);
     border-bottom: 1px solid var(--border);
 }
+.version-label-row {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+}
+.version-badge {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--bg);
+    background: var(--text-primary);
+    padding: 3px 8px;
+    border-radius: 980px;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
 .version-label {
     font-size: 12px;
     font-weight: 700;
@@ -415,7 +432,6 @@ textarea { resize: vertical; line-height: 1.6; }
     text-transform: uppercase;
 }
 .version-title-text {
-    flex: 1;
     font-size: 14px;
     font-weight: 700;
     color: var(--text-primary);
@@ -423,7 +439,7 @@ textarea { resize: vertical; line-height: 1.6; }
     overflow: hidden;
     text-overflow: ellipsis;
 }
-.version-actions { display: flex; gap: 8px; margin-left: auto; }
+.version-actions { display: flex; gap: 8px; margin-left: auto; flex-shrink: 0; }
 .version-content {
     padding: 20px 24px;
     font-size: 14px;
