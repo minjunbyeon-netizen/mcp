@@ -1,300 +1,174 @@
 <!DOCTYPE html>
 <html lang="ko">
-
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>auto-blog | 블로그 자동 생성</title>
-    <meta name="description" content="스타일 템플릿 + 블로그 DNA → 블로그 자동 생성">
+    <title>auto-blog</title>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg">
     <link rel="stylesheet" href="style.css">
-    <link
-        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Sans+KR:wght@300;400;500;600;700&display=swap"
-        rel="stylesheet">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap" rel="stylesheet">
 </head>
-
 <body>
-    <!-- Login Gate (로그인 전 전체 화면) -->
-    <div id="login-gate" class="login-gate hidden">
-        <div class="login-gate-card">
-            <div class="login-gate-logo">auto-blog</div>
-            <p class="login-gate-desc">AI 블로그 자동 생성 도구</p>
-            <p class="login-gate-subdesc">서비스를 이용하려면 로그인이 필요합니다.</p>
-            <a href="/login" class="google-login-btn login-gate-btn">
-                <svg width="20" height="20" viewBox="0 0 24 24">
-                    <path fill="#fff"
-                        d="M12.545,10.239v3.821h5.445c-0.712,2.315-2.647,3.972-5.445,3.972c-3.332,0-6.033-2.701-6.033-6.032s2.701-6.032,6.033-6.032c1.498,0,2.866,0.549,3.921,1.453l2.814-2.814C17.503,2.988,15.139,2,12.545,2C7.021,2,2.543,6.477,2.543,12s4.478,10,10.002,10c8.396,0,10.249-7.85,9.426-11.748L12.545,10.239z" />
-                </svg>
-                Google 계정으로 로그인
-            </a>
-            <p class="login-gate-footer">Powered by Google OAuth</p>
-        </div>
+
+<!-- Login Gate -->
+<div id="login-gate" class="login-gate hidden">
+    <div class="login-card">
+        <div class="login-logo">auto-blog</div>
+        <p class="login-desc">AI 블로그 자동 생성 도구</p>
+        <a href="/login" class="btn btn-primary login-btn">Google 계정으로 로그인</a>
     </div>
+</div>
 
-    <!-- App Content (로그인 후에만 표시) -->
-    <div id="app-content" class="app-layout">
-        <!-- Top Bar -->
-        <header class="top-bar">
-            <div class="top-bar-left">
-                <h1 class="top-bar-logo">Persona Tools</h1>
-                <span class="top-bar-badge">관리자</span>
+<!-- App -->
+<div id="app-content" class="app-layout hidden">
+
+    <!-- Sidebar -->
+    <aside class="sidebar">
+        <div class="sidebar-logo">auto-blog</div>
+        <nav class="sidebar-nav">
+            <button class="nav-item active" data-panel="collect">블로그 수집</button>
+            <button class="nav-item" data-panel="write">블로그 글 작성</button>
+            <button class="nav-item" data-panel="style">블로그 스타일 업데이트</button>
+        </nav>
+        <div class="sidebar-footer">
+            <div id="sb-logged-in" class="sb-user hidden">
+                <img id="sb-avatar" src="" alt="" class="sb-avatar">
+                <span id="sb-username" class="sb-username"></span>
+                <a href="/logout" class="sb-logout">로그아웃</a>
             </div>
-            <div class="top-bar-right" id="auth-section">
-                <!-- 로그인 상태 -->
-                <div id="user-section" style="display:none; align-items:center; gap:10px;">
-                    <img id="user-avatar" src="" alt="Profile" class="user-avatar">
-                    <span id="user-name" class="user-name"></span>
-                    <a href="/logout" class="logout-btn">로그아웃</a>
+            <div id="sb-logged-out" class="sb-user">
+                <a href="/login" class="btn btn-primary" style="width:100%;text-align:center">로그인</a>
+            </div>
+        </div>
+    </aside>
+
+    <!-- Main -->
+    <main class="main-content">
+
+        <!-- ===== PANEL 1: 블로그 수집 ===== -->
+        <div id="panel-collect" class="panel active">
+            <div class="panel-header">
+                <h2 class="panel-title">블로그 수집</h2>
+                <p class="panel-desc">참고할 블로그 URL을 입력하면 글과 스타일을 분석합니다.</p>
+            </div>
+
+            <div class="panel-body">
+                <form id="collect-form" class="form">
+                    <div class="form-row">
+                        <div class="form-group" style="flex:2">
+                            <label for="collect-url">블로그 URL 또는 ID</label>
+                            <input type="text" id="collect-url" placeholder="예: thejinjucity 또는 https://blog.naver.com/thejinjucity" required>
+                        </div>
+                        <div class="form-group" style="flex:0 0 120px">
+                            <label for="collect-count">수집 개수</label>
+                            <select id="collect-count">
+                                <option value="10" selected>10개</option>
+                                <option value="15">15개</option>
+                                <option value="20">20개</option>
+                                <option value="30">30개</option>
+                            </select>
+                        </div>
+                    </div>
+                    <button type="submit" class="btn btn-primary">
+                        <span class="btn-text">수집 시작</span>
+                        <span class="btn-loading hidden">수집 중...</span>
+                    </button>
+                </form>
+
+                <!-- 수집 결과 -->
+                <div id="collect-result" class="hidden" style="margin-top:32px">
+                    <div id="collect-summary" class="result-summary"></div>
+                    <div id="collect-posts-preview" class="posts-preview"></div>
+                    <div style="margin-top:20px">
+                        <button id="btn-analyze-dna" class="btn btn-primary">이 블로그 DNA 분석하기</button>
+                    </div>
                 </div>
-                <!-- 비로그인 상태 -->
-                <div id="topbar-login-section" style="display:none;">
-                    <a href="/login" class="topbar-login-btn">Google로 로그인</a>
+
+                <!-- DNA 분석 결과 -->
+                <div id="collect-dna-result" class="hidden" style="margin-top:32px">
+                    <div id="collect-dna-content"></div>
+                    <div class="next-action" style="margin-top:20px">
+                        <button id="btn-go-write" class="btn btn-primary">이 스타일로 글 작성하기</button>
+                    </div>
+                </div>
+
+                <!-- 수집 이력 -->
+                <div style="margin-top:48px">
+                    <h3 class="section-title">수집 이력</h3>
+                    <div id="collections-list" class="table-wrap">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>블로그 ID</th>
+                                    <th>수집 글 수</th>
+                                    <th>수집 일시</th>
+                                    <th>DNA</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody id="collections-tbody">
+                                <tr><td colspan="5" class="empty-cell">로딩 중...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
-        </header>
+        </div>
 
-        <!-- Sidebar + Content -->
-        <div class="layout-body">
-            <!-- Sidebar -->
-            <aside class="sidebar">
-                <div class="sidebar-section">
-                    <div class="sidebar-section-title">블로그 관리</div>
-                    <button class="nav-item active" data-panel="s1-blog-collect">블로그 수집</button>
-                    <button class="nav-item" data-panel="s1-blog-status">글쓰기 DNA 분석</button>
-                    <button class="nav-item" data-panel="s2-blog-write">블로그 글 작성</button>
-                </div>
-                <div class="sidebar-section">
-                    <div class="sidebar-section-title">마이페이지</div>
-                    <button class="nav-item" data-panel="my-blogs">블로그 글 관리</button>
-                    <button class="nav-item" data-panel="my-dna">글쓰기 DNA 관리</button>
-                    <button class="nav-item" data-panel="my-calibrations">보정 기록</button>
-                    <button class="nav-item nav-item-highlight" data-panel="quick-compare">빠른 비교 테스트</button>
-                </div>
+        <!-- ===== PANEL 2: 블로그 글 작성 ===== -->
+        <div id="panel-write" class="panel hidden">
+            <div class="panel-header">
+                <h2 class="panel-title">블로그 글 작성</h2>
+                <p class="panel-desc">수집된 스타일을 적용해 보도자료를 블로그 글로 변환합니다.</p>
+            </div>
+            <div class="write-layout">
+                <!-- 왼쪽: 설정 -->
+                <div class="write-config">
+                    <form id="write-form">
 
-                <!-- 사이드바 하단 유저 영역 -->
-                <div class="sidebar-user-area" id="sidebar-user-area">
-                    <div id="sidebar-logged-in" class="hidden">
-                        <img id="sidebar-avatar" src="" alt="" class="sidebar-avatar">
-                        <span id="sidebar-username" class="sidebar-username"></span>
-                        <a href="/logout" class="sidebar-logout-btn">로그아웃</a>
-                    </div>
-                    <div id="sidebar-logged-out">
-                        <a href="/login" class="sidebar-login-btn">Google로 로그인</a>
-                    </div>
-                </div>
-            </aside>
-
-            <!-- Main Content -->
-            <main class="main-content">
-                <!-- 1-2 블로그 글 수집 -->
-                <div id="s1-blog-collect" class="content-panel active">
-                    <div class="content-header">
-                        <h2 class="content-title">블로그 수집</h2>
-                        <p class="content-desc">참고할 블로그를 수집합니다. 수집된 글의 글쓰기 스타일을 AI가 분석하고, 그 스타일에 맞춰 블로그를 작성할 수 있습니다.</p>
-                    </div>
-                    <div class="content-body">
-
-                        <div class="flow-steps">
-                            <div class="flow-step flow-step-active">1 블로그 수집</div>
-                            <div class="flow-step-arrow">→</div>
-                            <div class="flow-step">2 DNA 분석</div>
-                            <div class="flow-step-arrow">→</div>
-                            <div class="flow-step">3 글 작성</div>
-                        </div>
-
-                        <form id="blog-collect-form" class="form">
-                            <div class="form-row">
-                                <div class="form-group" style="flex:2">
-                                    <label for="blog-id-input">참고할 블로그 주소 또는 ID</label>
-                                    <input type="text" id="blog-id-input"
-                                        placeholder="예: thejinjucity 또는 https://blog.naver.com/thejinjucity" required>
-                                </div>
-                                <div class="form-group" style="flex:1">
-                                    <label for="blog-count">수집 개수</label>
-                                    <select id="blog-count">
-                                        <option value="5">5개</option>
-                                        <option value="10" selected>10개 (권장)</option>
-                                        <option value="15">15개</option>
-                                        <option value="20">20개</option>
-                                        <option value="30">30개</option>
-                                    </select>
-                                </div>
-                            </div>
-
-                            <button type="submit" class="btn btn-primary">
-                                <span class="btn-text">수집 시작</span>
-                                <span class="btn-loading">수집 중... (시간이 걸릴 수 있습니다)</span>
-                            </button>
-                        </form>
-
-                        <div id="blog-collect-result" class="result-box hidden"></div>
-
-                        <!-- 수집 완료 후 다음 단계 안내 -->
-                        <div id="collect-next-step" class="next-step-banner hidden">
-                            <div class="next-step-text">수집 완료. 이제 글쓰기 DNA를 분석하세요.</div>
-                            <button class="btn btn-primary btn-sm" id="btn-go-dna-from-collect">DNA 분석하기</button>
-                        </div>
-
-                        <div class="card-section" style="margin-top: 28px;">
-                            <div class="card-subtitle-row">
-                                <h3 class="card-subtitle">수집 이력</h3>
-                                <span class="card-subtitle-hint">수집된 블로그를 선택해 DNA 분석을 진행하세요</span>
-                            </div>
-                            <div id="blog-collections-list" class="data-table-container">
-                                <table class="data-table">
-                                    <thead>
-                                        <tr>
-                                            <th>블로그 ID</th>
-                                            <th>수집 글 수</th>
-                                            <th>총 글자 수</th>
-                                            <th>수집 일시</th>
-                                            <th></th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="blog-collections-body">
-                                        <tr>
-                                            <td colspan="5" class="text-center text-muted">로딩 중...</td>
-                                        </tr>
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- 1-3 글쓰기 DNA 분석 -->
-                <div id="s1-blog-status" class="content-panel">
-                    <div class="content-header">
-                        <h2 class="content-title">글쓰기 DNA 분석</h2>
-                        <p class="content-desc">수집된 블로그의 글쓰기 패턴을 AI가 분석합니다. 분석 결과는 블로그 작성 시 스타일 가이드로 적용됩니다.</p>
-                    </div>
-                    <div class="content-body">
-
-                        <div class="flow-steps">
-                            <div class="flow-step flow-step-done">1 블로그 수집</div>
-                            <div class="flow-step-arrow">→</div>
-                            <div class="flow-step flow-step-active">2 DNA 분석</div>
-                            <div class="flow-step-arrow">→</div>
-                            <div class="flow-step">3 글 작성</div>
-                        </div>
-
-                        <form id="blog-status-form" class="form">
+                        <div class="form-section">
+                            <div class="form-section-label">1. 광고주 / 블로그 스타일 선택</div>
                             <div class="form-group">
-                                <label for="status-collection-select">분석할 블로그 컬렉션 선택</label>
-                                <div class="select-with-btn">
-                                    <select id="status-collection-select" required>
-                                        <option value="">컬렉션을 선택하세요</option>
-                                    </select>
-                                    <button type="button" id="refresh-collections-status" class="btn-icon"
-                                        title="목록 새로고침">↻</button>
-                                </div>
-                            </div>
-
-                            <button type="submit" class="btn btn-primary">
-                                <span class="btn-text">AI 분석 시작</span>
-                                <span class="btn-loading">분석 중...</span>
-                            </button>
-                        </form>
-
-                        <div id="blog-status-error" class="hidden" style="color:#FF3B30;padding:12px 0;font-size:0.9rem;"></div>
-
-                        <div id="blog-status-result" class="result-box hidden">
-                            <div class="dna-visual-container">
-                                <canvas id="dna-radar-chart"></canvas>
-                            </div>
-                            <div id="dna-details-content"></div>
-
-                            <!-- DNA 분석 완료 후 다음 단계 안내 -->
-                            <div class="next-step-banner" style="margin-top:24px">
-                                <div class="next-step-text">DNA 분석 완료. 이제 이 스타일로 블로그 글을 작성하세요.</div>
-                                <button class="btn btn-primary btn-sm" id="btn-go-write-from-dna">글 작성하기</button>
+                                <select id="write-dna-select">
+                                    <option value="">DNA 미적용 (기본 스타일)</option>
+                                </select>
+                                <div id="write-dna-tags" class="dna-tags-preview hidden"></div>
                             </div>
                         </div>
-                    </div>
-                </div>
 
-                <!-- 2-1 블로그 글 작성 -->
-                <div id="s2-blog-write" class="content-panel">
-                    <div class="content-header">
-                        <h2 class="content-title">블로그 글 작성</h2>
-                        <p class="content-desc">수집된 블로그 DNA 스타일을 적용해 보도자료를 블로그 글로 변환합니다.</p>
-                    </div>
-                    <div class="content-body">
-                        <form id="blog-form" class="form blog-write-form">
-
-                            <!-- STEP 1: 스타일 템플릿 선택 -->
-                            <div class="form-section">
-                                <div class="form-section-label">1. 글쓰기 스타일 선택</div>
-                                <div id="style-template-grid" class="style-template-grid"></div>
-                                <input type="hidden" id="style-template-id" value="informational">
-                            </div>
-
-                            <!-- STEP 2: 블로그 DNA -->
-                            <div class="form-section">
-                                <div class="form-section-label">2. 글쓰기 DNA 선택</div>
-                                <div class="select-with-btn">
-                                    <select id="blog-dna-select">
-                                        <option value="">DNA 미적용 (기본 스타일)</option>
-                                    </select>
-                                    <button type="button" id="refresh-blog-dna" class="btn-icon" title="목록 새로고침">↻</button>
-                                </div>
-                                <div id="dna-empty-hint" class="dna-empty-hint" style="display:none">
-                                    DNA가 없습니다. <button type="button" class="link-btn" id="btn-go-collect-from-write">블로그 수집 → DNA 분석</button> 후 다시 선택하세요.
-                                </div>
-                                <!-- DNA 스타일 미리보기 -->
-                                <div id="dna-preview-panel" class="dna-preview-panel" style="display:none;">
-                                    <div class="dna-preview-header" id="dna-preview-toggle">
-                                        <span>모방 스타일 미리보기</span>
-                                        <span id="dna-preview-arrow" class="dna-preview-arrow">▼ 펼치기</span>
+                        <div class="form-section">
+                            <div class="form-section-label">2. 보도자료 / 참고 자료</div>
+                            <div class="form-group">
+                                <label>파일 업로드</label>
+                                <div class="file-drop-area" id="write-drop-area">
+                                    <input type="file" id="write-files" accept=".txt,.pdf,.hwp,.docx,.xlsx,.xls,.jpg,.jpeg,.png" multiple hidden>
+                                    <div class="file-drop-inner" id="write-drop-inner">
+                                        <div class="file-drop-icon">+</div>
+                                        <p class="file-drop-text">PDF · HWP · DOCX · XLSX · 이미지</p>
+                                        <p class="file-drop-hint">클릭하거나 드래그</p>
                                     </div>
-                                    <div id="dna-preview-body" class="dna-preview-body" style="display:none;">
-                                        <div id="dna-preview-content" class="dna-preview-content"></div>
-                                    </div>
+                                    <div id="write-files-selected" class="files-selected hidden"></div>
                                 </div>
                             </div>
-
-                            <!-- STEP 3: 자료 입력 -->
-                            <div class="form-section">
-                                <div class="form-section-label">3. 보도자료 / 참고 자료</div>
-                                <div class="form-group">
-                                    <label>파일 업로드 <span style="font-weight:400;color:var(--text-muted)">PDF · HWP · DOCX · 이미지</span></label>
-                                    <div class="file-upload-area" id="press-file-upload-area">
-                                        <input type="file" id="press-file" accept=".txt,.pdf,.hwp,.docx,.jpg,.jpeg,.png" multiple hidden>
-                                        <div class="file-upload-content">
-                                            <div class="file-upload-icon">+</div>
-                                            <p class="file-upload-text">PDF, DOCX, HWP, 이미지 홍보물을 드래그하거나 클릭하여 선택</p>
-                                            <p class="file-upload-hint">지원 형식: .txt .pdf .hwp .docx .jpg .png</p>
-                                        </div>
-                                        <div class="file-selected hidden" id="press-file-selected">
-                                            <span class="file-name" id="press-file-name"></span>
-                                            <button type="button" class="file-remove" id="press-file-remove">X</button>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div class="or-divider">또는</div>
-                                <div class="form-group">
-                                    <label for="press-url">자료 URL <span style="font-weight:400;color:var(--text-muted)">웹페이지 · PDF URL</span></label>
-                                    <input type="text" id="press-url" placeholder="https://... 보도자료 URL 또는 PDF 링크">
-                                </div>
-                                <div class="or-divider">또는</div>
-                                <div class="form-group">
-                                    <label for="press-release">직접 입력</label>
-                                    <textarea id="press-release" rows="5" placeholder="보도자료 내용을 붙여넣기 하세요..."></textarea>
-                                </div>
-                                <div class="form-group" style="margin-top:20px">
-                                    <label for="reference-blog-url">참고 블로그 URL <span style="font-weight:400;color:var(--text-muted)">선택 — 스타일 참고용</span></label>
-                                    <input type="text" id="reference-blog-url" placeholder="https://blog.naver.com/... 글쓰기 스타일을 참고할 블로그 포스트">
-                                </div>
+                            <div class="or-divider">또는</div>
+                            <div class="form-group">
+                                <label for="write-url">URL 입력</label>
+                                <input type="text" id="write-url" placeholder="https://...">
                             </div>
+                            <div class="or-divider">또는</div>
+                            <div class="form-group">
+                                <label for="write-text">직접 입력</label>
+                                <textarea id="write-text" rows="5" placeholder="보도자료 내용을 붙여넣기..."></textarea>
+                            </div>
+                        </div>
 
-                            <!-- STEP 4: 옵션 -->
-                            <div class="form-section">
-                                <div class="form-section-label">4. 생성 옵션</div>
-                                <div class="form-row">
+                        <div class="form-section">
+                            <details class="options-details">
+                                <summary class="form-section-label" style="cursor:pointer;list-style:none">3. 생성 옵션 <span style="font-weight:400;color:var(--text-muted);font-size:0.85rem">(선택)</span></summary>
+                                <div style="margin-top:12px">
                                     <div class="form-group">
-                                        <label for="target-audience">타겟 독자</label>
-                                        <select id="target-audience">
+                                        <label for="write-audience">타겟 독자</label>
+                                        <select id="write-audience">
                                             <option value="일반 시민">일반 시민 (전체)</option>
                                             <option value="육아맘/학부모">육아맘/학부모</option>
                                             <option value="시니어/어르신">시니어/어르신</option>
@@ -304,217 +178,77 @@
                                         </select>
                                     </div>
                                     <div class="form-group">
-                                        <label for="content-angle">콘텐츠 앵글</label>
-                                        <select id="content-angle">
-                                            <option value="정보전달형">정보전달형 (뉴스/공지사항)</option>
-                                            <option value="스토리텔링형">스토리텔링형 (친근한 이야기)</option>
-                                            <option value="Q&A형">Q&A형 (궁금증 해결)</option>
-                                            <option value="체험기형">체험기형 (가상 체험/후기)</option>
-                                            <option value="체크리스트형">체크리스트형 (정리/가이드)</option>
+                                        <label for="write-angle">콘텐츠 앵글</label>
+                                        <select id="write-angle">
+                                            <option value="정보전달형">정보전달형</option>
+                                            <option value="스토리텔링형">스토리텔링형</option>
+                                            <option value="Q&A형">Q&A형</option>
+                                            <option value="체험기형">체험기형</option>
+                                            <option value="체크리스트형">체크리스트형</option>
                                         </select>
                                     </div>
-                                </div>
-                                <div class="form-group">
-                                    <label for="keywords">타겟 키워드 <span style="font-weight:400; color:var(--text-muted);">(콤마로 구분)</span></label>
-                                    <input type="text" id="keywords" placeholder="예: 예술, 공연, 축제">
-                                </div>
-                            </div>
-
-                            <button type="submit" class="btn btn-primary" style="width:100%; padding:14px;">
-                                <span class="btn-text">블로그 생성</span>
-                                <span class="btn-loading">생성 중...</span>
-                            </button>
-                        </form>
-
-                        <div id="blog-result" class="result-box hidden">
-                            <div class="blog-writer-layout">
-                                <div id="blog-versions-area" class="blog-versions-area"></div>
-                                <div class="mobile-preview-container">
-                                    <div class="iphone-frame">
-                                        <div class="iphone-screen">
-                                            <div id="mobile-preview-content" class="mobile-content"></div>
-                                        </div>
+                                    <div class="form-group">
+                                        <label for="write-keywords">키워드 <span style="font-weight:400;color:var(--text-muted)">(콤마 구분)</span></label>
+                                        <input type="text" id="write-keywords" placeholder="예: 진주, 공연, 축제">
                                     </div>
                                 </div>
-                            </div>
+                            </details>
                         </div>
 
-                        <!-- 최근 작성한 글 -->
-                        <div class="recent-history" style="margin-top:32px;">
-                            <h3 class="recent-history-title">최근 작성한 글</h3>
-                            <div class="empty-state" id="recent-blogs-empty" style="display:none;">아직 작성된 글이 없습니다.</div>
-                            <table class="list-table" id="recent-blogs-grid">
-                                <thead><tr><th>제목</th><th>스타일</th><th>버전</th><th>날짜</th><th></th></tr></thead>
-                                <tbody></tbody>
-                            </table>
-                        </div>
-                    </div>
+                        <button type="submit" class="btn btn-primary" style="width:100%">
+                            <span class="btn-text">블로그 글 생성</span>
+                            <span class="btn-loading hidden">생성 중...</span>
+                        </button>
+                    </form>
                 </div>
 
-                <!-- 마이페이지: 블로그 글 관리 -->
-                <div id="my-blogs" class="content-panel">
-                    <div class="content-header">
-                        <h2 class="content-title">블로그 글 관리</h2>
+                <!-- 오른쪽: 미리보기 -->
+                <div class="write-preview">
+                    <div id="write-preview-empty" class="preview-empty">
+                        <p>글이 생성되면 여기에 표시됩니다</p>
                     </div>
-                    <div class="content-body">
-                        <div class="empty-state" id="my-blogs-empty" style="display:none;">생성된 블로그 글이 없습니다.</div>
-                        <table class="list-table" id="my-blogs-grid">
-                            <thead><tr><th>제목</th><th>스타일</th><th>버전</th><th>날짜</th><th></th></tr></thead>
-                            <tbody></tbody>
-                        </table>
+                    <div id="write-preview-result" class="hidden">
+                        <div id="write-versions"></div>
                     </div>
                 </div>
-
-                <!-- 마이페이지: 글쓰기 DNA 관리 -->
-                <div id="my-dna" class="content-panel">
-                    <div class="content-header">
-                        <h2 class="content-title">글쓰기 DNA 관리</h2>
-                    </div>
-                    <div class="content-body">
-                        <div class="empty-state" id="my-dna-empty" style="display:none;">DNA 분석 결과가 없습니다.</div>
-                        <table class="list-table" id="my-dna-grid">
-                            <thead><tr><th>블로그 ID</th><th>분석 글 수</th><th>날짜</th><th></th></tr></thead>
-                            <tbody></tbody>
-                        </table>
-                    </div>
-                </div>
-
-                <!-- 마이페이지: 보정 기록 -->
-                <div id="my-calibrations" class="content-panel">
-                    <div class="content-header">
-                        <h2 class="content-title">보정 기록</h2>
-                        <p class="content-desc">AI 글과 실제 통과된 글의 비교 분석 기록입니다. 저장된 보정 기록은 다음 블로그 생성 시 자동으로 반영됩니다.</p>
-                    </div>
-                    <div class="content-body">
-                        <div class="empty-state" id="my-calibrations-empty" style="display:none;">보정 기록이 없습니다. 블로그 생성 후 실제 통과된 글을 등록하면 자동으로 학습됩니다.</div>
-                        <table class="list-table" id="my-calibrations-grid">
-                            <thead>
-                                <tr>
-                                    <th>스타일</th>
-                                    <th>AI 글</th>
-                                    <th>일치율</th>
-                                    <th>보정 요약</th>
-                                    <th>날짜</th>
-                                    <th></th>
-                                </tr>
-                            </thead>
-                            <tbody></tbody>
-                        </table>
-                    </div>
-                </div>
-
-                <!-- 빠른 비교 테스트 -->
-                <div id="quick-compare" class="content-panel">
-                    <div class="content-header">
-                        <h2 class="content-title">빠른 비교 테스트</h2>
-                        <p class="content-desc">AI 글과 실제 게시된 글 URL을 바로 비교합니다. 저장 없이 즉시 분석해 보정합니다.</p>
-                    </div>
-                    <div class="content-body">
-                        <div class="qc-layout">
-                            <!-- 왼쪽: AI 글 -->
-                            <div class="qc-col">
-                                <div class="qc-col-header">
-                                    <span class="qc-col-label">AI 생성 글</span>
-                                    <button class="btn-sm-outline" id="qc-load-latest">최근 생성 글 불러오기</button>
-                                </div>
-                                <input type="text" id="qc-ai-title" placeholder="제목" class="qc-input-title">
-                                <textarea id="qc-ai-content" rows="14" placeholder="AI가 생성한 블로그 본문을 여기에 붙여넣으세요..." class="qc-textarea"></textarea>
-                            </div>
-
-                            <!-- 오른쪽: 통과된 글 URL -->
-                            <div class="qc-col">
-                                <div class="qc-col-header">
-                                    <span class="qc-col-label">실제 게시된 글</span>
-                                </div>
-                                <input type="text" id="qc-approved-url" placeholder="https://blog.naver.com/..." class="qc-input-url">
-                                <div class="qc-url-hint">URL을 입력하면 자동으로 크롤링합니다.</div>
-
-                                <div class="qc-style-row">
-                                    <label>스타일 템플릿</label>
-                                    <select id="qc-style-select">
-                                        <option value="">스타일 선택 (선택사항)</option>
-                                    </select>
-                                </div>
-
-                                <button class="btn btn-primary qc-submit-btn" id="qc-submit">
-                                    <span class="btn-text">비교 분석 시작</span>
-                                    <span class="btn-loading">분석 중...</span>
-                                </button>
-                            </div>
-                        </div>
-
-                        <!-- 결과 -->
-                        <div id="qc-result" class="hidden" style="margin-top:28px"></div>
-
-                        <!-- 보정 이력 요약 -->
-                        <div style="margin-top:32px">
-                            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-                                <h4 style="margin:0">최근 보정 이력</h4>
-                                <button class="btn-sm-outline" id="qc-refresh-history">새로고침</button>
-                            </div>
-                            <div id="qc-history"></div>
-                        </div>
-                    </div>
-                </div>
-
-            </main>
-        </div>
-    </div> <!-- /app-content -->
-
-    <!-- 보정 모달 -->
-    <div id="calibration-modal" class="detail-modal hidden">
-        <div class="detail-modal-overlay" id="cal-modal-overlay"></div>
-        <div class="detail-modal-content" style="max-width:600px">
-            <div class="detail-modal-header">
-                <h3>실제 게시된 글과 비교</h3>
-                <button class="detail-modal-close" id="cal-modal-close">&times;</button>
-            </div>
-            <div class="detail-modal-body" style="padding:24px">
-                <p style="color:var(--text-muted);font-size:0.88rem;margin-bottom:20px;line-height:1.6">
-                    같은 배포자료로 작성해 실제 검수를 통과한 블로그 URL을 입력하세요.<br>
-                    AI가 두 글을 비교 분석해 <strong style="color:var(--text-primary)">다음 생성부터 자동으로 스타일을 맞춰갑니다.</strong>
-                </p>
-
-                <div class="form-group">
-                    <label style="font-size:0.85rem;color:var(--text-secondary)">실제 게시된 블로그 URL</label>
-                    <input type="text" id="cal-approved-url"
-                        placeholder="https://blog.naver.com/..." style="margin-top:6px">
-                </div>
-
-                <div style="margin-top:10px;font-size:0.82rem;color:var(--text-muted)">
-                    AI 글: <span id="cal-ai-title-preview" style="color:var(--text-secondary)">—</span>
-                </div>
-
-                <div style="display:flex;gap:12px;justify-content:flex-end;margin-top:20px">
-                    <button class="btn" id="cal-modal-cancel">취소</button>
-                    <button class="btn btn-primary" id="cal-modal-submit">
-                        <span class="btn-text">비교 분석 시작</span>
-                        <span class="btn-loading">분석 중...</span>
-                    </button>
-                </div>
-                <div id="cal-result" class="hidden" style="margin-top:24px"></div>
             </div>
         </div>
+
+        <!-- ===== PANEL 3: 블로그 스타일 업데이트 ===== -->
+        <div id="panel-style" class="panel hidden">
+            <div class="panel-header">
+                <h2 class="panel-title">블로그 스타일 업데이트</h2>
+                <p class="panel-desc">수집된 블로그의 페르소나 태그를 켜고 꺼서 생성 스타일을 세밀하게 조정합니다.</p>
+            </div>
+            <div class="style-layout">
+                <!-- 왼쪽: DNA 목록 -->
+                <div class="style-list">
+                    <div id="style-dna-list" class="dna-card-list"></div>
+                </div>
+                <!-- 오른쪽: 태그 편집 -->
+                <div class="style-detail" id="style-detail">
+                    <div class="style-detail-empty">
+                        <p>왼쪽에서 블로그를 선택하세요</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </main>
+</div>
+
+<!-- 상세보기 모달 -->
+<div id="detail-modal" class="modal hidden">
+    <div class="modal-overlay" id="detail-modal-overlay"></div>
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3 id="detail-modal-title"></h3>
+            <button class="modal-close" id="detail-modal-close">&times;</button>
+        </div>
+        <div class="modal-body" id="detail-modal-body"></div>
     </div>
+</div>
 
-    <!-- 상세보기 모달 -->
-    <div id="detail-modal" class="detail-modal hidden">
-        <div class="detail-modal-overlay"></div>
-        <div class="detail-modal-content">
-            <div class="detail-modal-header">
-                <h3 id="detail-modal-title">상세보기</h3>
-                <div style="display:flex;gap:8px;align-items:center;">
-                    <button id="detail-modal-export" class="btn-view"
-                        style="background:rgba(52,168,83,0.15);color:#34a853;padding:6px 14px;font-size:0.82rem;">Google
-                        Docs 내보내기</button>
-                    <button class="detail-modal-close" id="detail-modal-close">&times;</button>
-                </div>
-            </div>
-            <div class="detail-modal-body" id="detail-modal-body"></div>
-        </div>
-    </div>
-
-    <script src="app.js"></script>
+<script src="app.js"></script>
 </body>
-
 </html>

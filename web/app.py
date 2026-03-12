@@ -631,6 +631,10 @@ def generate_blog():
     direct_text = request.form.get("press_release", "")
     press_url = request.form.get("press_url", "").strip()
     reference_blog_url = request.form.get("reference_blog_url", "").strip()
+    try:
+        active_tags = json.loads(request.form.get("active_tags", "[]"))
+    except Exception:
+        active_tags = []
 
     # URL로 보도자료 크롤링
     if press_url:
@@ -803,6 +807,12 @@ def generate_blog():
                 title_list = [f"- {p.get('title', '')}" for p in unique_posts[3:12]]
                 if title_list:
                     dna_parts.append(f"\n【최근 글 제목 목록 (주제 참고용)】\n" + "\n".join(title_list))
+
+            # 활성 페르소나 태그 추가
+            if active_tags:
+                tag_labels = [t.get("label", "") for t in active_tags if t.get("label")]
+                if tag_labels:
+                    dna_parts.append(f"\n[활성화된 스타일 태그 — 이 특징들을 반드시 반영]\n" + "\n".join(f"- {l}" for l in tag_labels))
 
             blog_dna_text = "\n".join(dna_parts)
 
@@ -1978,6 +1988,23 @@ def mypage_business_detail(biz_id):
     return jsonify(data)
 
 
+@app.route('/api/mypage/dna/<dna_id>/tags', methods=['PATCH'])
+@login_required
+def update_dna_tags(dna_id):
+    """DNA 활성 페르소나 태그 업데이트"""
+    fp = DNA_DIR / f"{dna_id}.json"
+    if not fp.exists():
+        return jsonify({"error": "DNA를 찾을 수 없습니다."}), 404
+    with open(fp, 'r', encoding='utf-8') as f:
+        data = json.load(f)
+    body = request.json or {}
+    data["active_tags"] = body.get("active_tags", [])
+    data["updated_at"] = datetime.now().isoformat()
+    with open(fp, 'w', encoding='utf-8') as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+    return jsonify({"success": True})
+
+
 @app.route('/api/mypage/<data_type>/<item_id>', methods=['DELETE'])
 @login_required
 def mypage_delete(data_type, item_id):
@@ -2208,5 +2235,7 @@ if __name__ == '__main__':
     print(f"  스타일 템플릿: {len(STYLE_TEMPLATES)}개")
     print("=" * 60)
     
-    app.run(host='0.0.0.0', port=5050, debug=True)
+    from waitress import serve
+    print("  WSGI: waitress (production)")
+    serve(app, host='0.0.0.0', port=5050, threads=4)
 

@@ -528,5 +528,19 @@ def extract_text_from_file(file_path: Path) -> str:
     elif ext in ['.jpg', '.jpeg', '.png']:
         return _extract_text_from_image(file_path)
 
+    elif ext in ('.xlsx', '.xls'):
+        try:
+            import openpyxl
+            wb = openpyxl.load_workbook(file_path, read_only=True, data_only=True)
+            lines = []
+            for ws in wb.worksheets:
+                for row in ws.iter_rows(values_only=True):
+                    row_text = "\t".join(str(c) if c is not None else "" for c in row)
+                    if row_text.strip():
+                        lines.append(row_text)
+            return "\n".join(lines)
+        except ImportError:
+            raise ValueError("Excel 파일 처리에 openpyxl이 필요합니다: pip install openpyxl")
+
     else:
         raise ValueError(f"지원되지 않는 파일 형식: {ext}")
