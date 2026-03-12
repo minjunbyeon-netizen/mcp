@@ -30,17 +30,25 @@ async function initAuth() {
     try {
         const res = await fetch(`${API}/api/auth/status`);
         const data = await res.json();
-        if (data.logged_in) {
+
+        // SSO 미설정(로컬 개발) 또는 로그인 완료 → 앱 바로 진입
+        if (data.logged_in || !data.sso_enabled) {
             document.getElementById('login-gate').classList.add('hidden');
             document.getElementById('app-content').classList.remove('hidden');
             document.getElementById('sb-logged-out').classList.add('hidden');
-            document.getElementById('sb-logged-in').classList.remove('hidden');
-            if (data.user) {
+
+            if (data.logged_in && data.user) {
+                document.getElementById('sb-logged-in').classList.remove('hidden');
                 const el = document.getElementById('sb-username');
                 if (el) el.textContent = data.user.name || data.user.email || '';
                 const av = document.getElementById('sb-avatar');
                 if (av && data.user.picture) av.src = data.user.picture;
+            } else {
+                // SSO 미설정 → 로그인 영역 숨김
+                document.getElementById('sb-logged-in').classList.add('hidden');
+                document.getElementById('sb-logged-out').classList.add('hidden');
             }
+
             loadCollectHistory();
             loadDNAList();
         } else {
@@ -48,8 +56,11 @@ async function initAuth() {
             document.getElementById('app-content').classList.add('hidden');
         }
     } catch {
-        document.getElementById('login-gate').classList.remove('hidden');
-        document.getElementById('app-content').classList.add('hidden');
+        // 연결 실패 시에도 앱 진입 허용 (로컬 개발 편의)
+        document.getElementById('login-gate').classList.add('hidden');
+        document.getElementById('app-content').classList.remove('hidden');
+        loadCollectHistory();
+        loadDNAList();
     }
 }
 
@@ -84,6 +95,8 @@ function goToPanel(panelId) {
 // 3. PANEL 1 — 블로그 수집
 // ═══════════════════════════════════════════════════════════
 function initCollectPanel() {
+    initBlogSearch();
+
     const form = document.getElementById('collect-form');
     form.addEventListener('submit', async (e) => {
         e.preventDefault();
@@ -121,6 +134,83 @@ function initCollectPanel() {
         goToPanel('write');
         loadDNAList();
     });
+}
+
+// ── 블로그 검색 자동완성 ─────────────────────────────────
+function initBlogSearch() {
+    const input = document.getElementById('collect-url');
+    const dropdown = document.getElementById('collect-search-dropdown');
+    let _timer = null;
+
+    input.addEventListener('input', () => {
+        clearTimeout(_timer);
+        const q = input.value.trim();
+
+        // URL이나 정확한 ID 형태면 검색 스킵
+        if (!q || q.length < 2 || q.startsWith('http') || /^[A-Za-z0-9_]{4,}$/.test(q) && !q.includes(' ')) {
+            dropdown.classList.add('hidden');
+            return;
+        }
+        _timer = setTimeout(() => fetchBlogSearch(q), 400);
+    });
+
+    input.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') dropdown.classList.add('hidden');
+        if (e.key === 'ArrowDown') {
+            const first = dropdown.querySelector('.search-item');
+            if (first) first.focus();
+        }
+    });
+
+    // 외부 클릭 시 닫기
+    document.addEventListener('click', (e) => {
+        if (!e.target.closest('.search-input-wrap')) {
+            dropdown.classList.add('hidden');
+        }
+    });
+}
+
+async function fetchBlogSearch(query) {
+    const dropdown = document.getElementById('collect-search-dropdown');
+    dropdown.innerHTML = `<div class="search-item-loading">검색 중...</div>`;
+    dropdown.classList.remove('hidden');
+
+    try {
+        const res = await fetch(`${API}/api/blog/search-users?q=${encodeURIComponent(query)}`);
+        const data = await res.json();
+        const results = data.results || [];
+
+        if (!results.length) {
+            dropdown.innerHTML = `<div class="search-item-empty">검색 결과가 없습니다</div>`;
+            return;
+        }
+
+        dropdown.innerHTML = results.map(r => `
+            <button class="search-item" type="button"
+                    data-blog-id="${r.blog_id}"
+                    onclick="selectBlogResult('${r.blog_id}')">
+                <span class="search-item-id">${r.blog_id}</span>
+                ${r.name ? `<span class="search-item-name">${r.name}</span>` : ''}
+                <span class="search-item-url">blog.naver.com/${r.blog_id}</span>
+            </button>`).join('');
+
+        // 키보드 탐색
+        dropdown.querySelectorAll('.search-item').forEach((el, i, arr) => {
+            el.addEventListener('keydown', (e) => {
+                if (e.key === 'ArrowDown') arr[i + 1]?.focus();
+                if (e.key === 'ArrowUp') { if (i === 0) document.getElementById('collect-url').focus(); else arr[i - 1]?.focus(); }
+                if (e.key === 'Escape') document.getElementById('collect-search-dropdown').classList.add('hidden');
+            });
+        });
+    } catch {
+        dropdown.classList.add('hidden');
+    }
+}
+
+function selectBlogResult(blogId) {
+    document.getElementById('collect-url').value = blogId;
+    document.getElementById('collect-search-dropdown').classList.add('hidden');
+    document.getElementById('collect-url').focus();
 }
 
 function renderCollectResult(data) {

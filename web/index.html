@@ -57,7 +57,10 @@
                     <div class="form-row">
                         <div class="form-group" style="flex:2">
                             <label for="collect-url">블로그 URL 또는 ID</label>
-                            <input type="text" id="collect-url" placeholder="예: thejinjucity 또는 https://blog.naver.com/thejinjucity" required>
+                            <div class="search-input-wrap">
+                                <input type="text" id="collect-url" placeholder="블로그 ID, URL, 또는 키워드로 검색" required autocomplete="off">
+                                <div id="collect-search-dropdown" class="search-dropdown hidden"></div>
+                            </div>
                         </div>
                         <div class="form-group" style="flex:0 0 120px">
                             <label for="collect-count">수집 개수</label>

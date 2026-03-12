@@ -1507,6 +1507,62 @@ def export_blog_docs():
 # API: Blog Collection (blog_pull 통합)
 # ============================================================
 
+@app.route('/api/blog/search-users', methods=['GET'])
+def search_naver_blog_users():
+    """네이버 블로그 사용자 검색 (키워드 → 블로그 ID 목록)"""
+    query = request.args.get('q', '').strip()
+    if not query or len(query) < 2:
+        return jsonify({"results": []})
+    try:
+        from bs4 import BeautifulSoup as _BS
+        _headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+            "Accept-Language": "ko-KR,ko;q=0.9",
+            "Referer": "https://search.naver.com/",
+        }
+        import urllib.parse as _up
+        url = f"https://search.naver.com/search.naver?where=blog&query={_up.quote(query)}&sm=tab_opt&nso=so%3Add%2Cp%3Aall"
+        resp = http_requests.get(url, headers=_headers, timeout=8)
+        soup = _BS(resp.text, 'html.parser')
+
+        results = []
+        seen = set()
+        _SKIP = {'postview', 'blognews', 'blogid', 'search', 'nblog', 'connect'}
+
+        for a in soup.find_all('a', href=True):
+            href = a['href']
+            m = re.search(r'(?:m\.)?blog\.naver\.com/([A-Za-z0-9_]{3,})', href)
+            if not m:
+                continue
+            bid = m.group(1).lower()
+            if bid in _SKIP or bid in seen:
+                continue
+
+            # 블로그명 추출 시도 (상위 요소에서)
+            name = ''
+            try:
+                card = a.find_parent(class_=re.compile(r'title|blog|author|writer', re.I))
+                if card:
+                    name_el = card.find(class_=re.compile(r'name|title|author', re.I))
+                    if name_el:
+                        name = name_el.get_text(strip=True)[:40]
+            except Exception:
+                pass
+
+            seen.add(bid)
+            results.append({
+                "blog_id": m.group(1),
+                "name": name,
+                "url": f"https://blog.naver.com/{m.group(1)}"
+            })
+            if len(results) >= 10:
+                break
+
+        return jsonify({"results": results})
+    except Exception as e:
+        return jsonify({"results": [], "error": str(e)})
+
+
 try:
     from run_crawler import get_blog_id, get_post_list, get_post_content, get_post_content_with_style, save_results
     import run_crawler as _run_crawler
