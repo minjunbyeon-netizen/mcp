@@ -845,6 +845,77 @@ textarea { resize: vertical; line-height: 1.6; }
 }
 
 
+/* ── DNA 모달 탭 ──────────────────────────────────────── */
+.dna-modal-header {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    margin-bottom: 20px;
+}
+.dna-modal-blogid { font-size: 18px; font-weight: 700; }
+.dna-modal-meta { font-size: 13px; color: var(--text-muted); }
+
+.tab-bar {
+    display: flex;
+    gap: 0;
+    border-bottom: 1.5px solid var(--border);
+    margin-bottom: 24px;
+}
+.tab-btn {
+    background: none;
+    border: none;
+    padding: 10px 20px;
+    font-size: 14px;
+    font-weight: 400;
+    color: var(--text-muted);
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1.5px;
+    transition: color 150ms;
+}
+.tab-btn:hover { color: var(--text-secondary); }
+.tab-btn.active {
+    color: var(--text-primary);
+    font-weight: 700;
+    border-bottom-color: #000;
+}
+
+.tab-pane { display: none; }
+.tab-pane.active { display: block; }
+
+.tab-desc {
+    font-size: 13px;
+    color: var(--text-muted);
+    line-height: 1.6;
+    margin-bottom: 20px;
+}
+
+.tab-pane-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 24px;
+    padding-top: 20px;
+    border-top: 1px solid var(--border);
+}
+.tag-count-hint {
+    font-size: 13px;
+    color: var(--text-muted);
+    flex: 1;
+}
+
+.example-item {
+    font-size: 13px;
+    color: var(--text-muted);
+    padding: 3px 0;
+    line-height: 1.5;
+    font-style: normal;
+}
+.dna-detail-example .dna-detail-val {
+    display: flex;
+    flex-direction: column;
+}
+
 /* ── 기타 ─────────────────────────────────────────────── */
 .empty-hint {
     text-align: center;

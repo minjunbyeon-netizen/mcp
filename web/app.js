@@ -769,39 +769,143 @@ function renderDBCard(g) {
 
 
 async function dbViewDNA(dnaId) {
-    openModal('DNA 분석 상세', '<div class="loading-hint">불러오는 중...</div>');
+    // 와이드 모달로 열기
+    const modalContent = document.getElementById('detail-modal-content');
+    modalContent.style.maxWidth = '860px';
+
+    openModal('스타일 편집', '<div class="loading-hint">불러오는 중...</div>');
+
     try {
         const res = await fetch(`${API}/api/mypage/dna/${dnaId}`);
         const dna = await res.json();
-        // DNA 키는 분석 시기에 따라 c1_tone 또는 c1_template_structure 등 다를 수 있음
-        const cats = Object.keys(dna).filter(k => /^c\d+_/.test(k)).sort();
-        const labels = cats.map(k => k.replace(/^c\d+_/, '').replace(/_/g, ' '));
 
-        let html = `<div style="margin-bottom:16px">
-            <strong>${dna.blog_id || ''}</strong>
-            <span style="color:var(--text-muted);font-size:13px;margin-left:8px">${dna.post_count || 0}개 분석 · ${(dna.created_at || '').slice(0,10)}</span>
-        </div>`;
-
-        cats.forEach((key, i) => {
-            const d = dna[key];
-            if (!d) return;
-            const title = d.title || labels[i];
-            const entries = Object.entries(d)
-                .filter(([k]) => !['title','examples','opening_examples','closing_examples'].includes(k))
-                .map(([k, v]) => {
-                    const val = Array.isArray(v) ? v.slice(0,4).join(', ') : String(v);
-                    return val ? `<div class="dna-detail-row"><span class="dna-detail-key">${k}</span><span class="dna-detail-val">${val}</span></div>` : '';
-                }).join('');
-            if (!entries) return;
-            html += `<div class="dna-detail-section">
-                <div class="dna-detail-title">${title}</div>
-                ${entries}
-            </div>`;
+        const allTags = extractPersonaTags(dna);
+        const activeIds = new Set((dna.active_tags || []).map(t => t.id));
+        const groups = {};
+        allTags.forEach(t => {
+            if (!groups[t.cat]) groups[t.cat] = [];
+            groups[t.cat].push(t);
         });
 
+        // 분석 상세 섹션
+        const cats = Object.keys(dna).filter(k => /^c\d+_/.test(k)).sort();
+
+        const html = `
+            <div class="dna-modal-header">
+                <span class="dna-modal-blogid">${dna.blog_id || ''}</span>
+                <span class="dna-modal-meta">${dna.post_count || 0}개 분석 · ${(dna.created_at || '').slice(0,10)}</span>
+            </div>
+
+            <!-- 탭 -->
+            <div class="tab-bar">
+                <button class="tab-btn active" data-tab="tags">스타일 태그 편집</button>
+                <button class="tab-btn" data-tab="detail">분석 상세</button>
+            </div>
+
+            <!-- 탭 1: 스타일 태그 편집 -->
+            <div class="tab-pane active" id="tab-tags">
+                <p class="tab-desc">태그를 켜면 글 생성 시 해당 스타일 특징이 강조 반영됩니다. 태그를 선택적으로 조합해 원하는 글쓰기 스타일을 세밀하게 조정하세요.</p>
+                ${Object.entries(groups).map(([cat, tags]) => `
+                    <div class="tag-group">
+                        <div class="tag-group-label">${cat}</div>
+                        <div class="tags-wrap">
+                            ${tags.map(t => `
+                                <span class="tag ${activeIds.has(t.id) ? 'tag-on' : ''}"
+                                      data-tag-id="${t.id}"
+                                      data-tag-label="${encodeURIComponent(t.label)}"
+                                      data-tag-cat="${t.cat}">${t.label}</span>`).join('')}
+                        </div>
+                    </div>`).join('')}
+                <div class="tab-pane-actions">
+                    <span class="tag-count-hint" id="tag-count-hint">${activeIds.size}개 태그 활성</span>
+                    <button class="btn btn-secondary btn-sm" onclick="clearAllTags()">전체 해제</button>
+                    <button class="btn btn-primary btn-sm" onclick="dbSaveTagsFromModal('${dnaId}')">태그 저장</button>
+                </div>
+            </div>
+
+            <!-- 탭 2: 분석 상세 -->
+            <div class="tab-pane" id="tab-detail">
+                ${cats.map(key => {
+                    const d = dna[key];
+                    if (!d || typeof d !== 'object') return '';
+                    const label = (d.title || key.replace(/^c\d+_/, '').replace(/_/g, ' ')).toUpperCase();
+                    const rows = Object.entries(d)
+                        .filter(([k]) => !['title'].includes(k))
+                        .map(([k, v]) => {
+                            const isExample = ['examples','opening_examples','closing_examples'].includes(k);
+                            const val = Array.isArray(v)
+                                ? (isExample ? v.slice(0,2).map(s => `<div class="example-item">"${s}"</div>`).join('') : v.slice(0,5).join(' · '))
+                                : String(v);
+                            if (!val || val === 'undefined') return '';
+                            return `<div class="dna-detail-row ${isExample ? 'dna-detail-example' : ''}">
+                                <span class="dna-detail-key">${k}</span>
+                                <span class="dna-detail-val">${val}</span>
+                            </div>`;
+                        }).join('');
+                    if (!rows) return '';
+                    return `<div class="dna-detail-section">
+                        <div class="dna-detail-title">${label}</div>
+                        ${rows}
+                    </div>`;
+                }).join('')}
+            </div>`;
+
+        document.getElementById('detail-modal-title').textContent = `${dna.blog_id} 스타일 편집`;
         document.getElementById('detail-modal-body').innerHTML = html;
+
+        // 탭 전환
+        document.querySelectorAll('.tab-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+                document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+                btn.classList.add('active');
+                document.getElementById(`tab-${btn.dataset.tab}`).classList.add('active');
+            });
+        });
+
+        // 태그 토글 + 카운트 업데이트
+        document.querySelectorAll('#tab-tags .tag').forEach(el => {
+            el.addEventListener('click', () => {
+                el.classList.toggle('tag-on');
+                updateTagCount();
+            });
+        });
+
     } catch (err) {
         document.getElementById('detail-modal-body').innerHTML = `<div class="error-hint">${err.message}</div>`;
+    }
+}
+
+function updateTagCount() {
+    const count = document.querySelectorAll('#tab-tags .tag.tag-on').length;
+    const el = document.getElementById('tag-count-hint');
+    if (el) el.textContent = `${count}개 태그 활성`;
+}
+
+function clearAllTags() {
+    document.querySelectorAll('#tab-tags .tag').forEach(t => t.classList.remove('tag-on'));
+    updateTagCount();
+}
+
+async function dbSaveTagsFromModal(dnaId) {
+    const activeTags = Array.from(document.querySelectorAll('#tab-tags .tag.tag-on')).map(el => ({
+        id: el.dataset.tagId,
+        label: decodeURIComponent(el.dataset.tagLabel),
+        cat: el.dataset.tagCat
+    }));
+    try {
+        const res = await fetch(`${API}/api/mypage/dna/${dnaId}/tags`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ active_tags: activeTags })
+        });
+        if (!res.ok) throw new Error('저장 실패');
+        updateTagCount();
+        // 저장 버튼 피드백
+        const btn = document.querySelector('[onclick*="dbSaveTagsFromModal"]');
+        if (btn) { btn.textContent = '저장 완료'; setTimeout(() => { btn.textContent = '태그 저장'; }, 1500); }
+    } catch (err) {
+        alert(err.message);
     }
 }
 
@@ -930,6 +1034,9 @@ function openModal(title, bodyHtml) {
 
 function closeModal() {
     document.getElementById('detail-modal').classList.add('hidden');
+    // 와이드 모달 초기화
+    const mc = document.getElementById('detail-modal-content');
+    if (mc) mc.style.maxWidth = '';
 }
 
 
