@@ -816,37 +816,70 @@ def generate_blog():
             if dna_analysis:
                 c1  = dna_analysis.get("c1_template_structure", {})
                 c2  = dna_analysis.get("c2_tone_mood", {})
-                c3  = dna_analysis.get("c3_speech_style", {})
-                c5  = dna_analysis.get("c5_frequent_expressions", {})
-                c6  = dna_analysis.get("c6_sentence_patterns", {})
-                c9  = dna_analysis.get("c9_opening_closing", {})
-                c10 = dna_analysis.get("c10_visual_formatting", {})
-                c11 = dna_analysis.get("c11_length_stats", {})
+                # c3: 새 이름 우선, 구버전 하위호환
+                c3  = dna_analysis.get("c3_speech_endings", dna_analysis.get("c3_speech_style", {}))
+                # c4: 문장 구조
+                c4  = dna_analysis.get("c4_sentence_structure", dna_analysis.get("c6_sentence_patterns", {}))
+                # c5: 시그니처 표현
+                c5  = dna_analysis.get("c6_signature_expressions", dna_analysis.get("c5_frequent_expressions", {}))
+                # c6: 단락
+                c6p = dna_analysis.get("c5_paragraph_composition", dna_analysis.get("c8_paragraph_composition", {}))
+                # c8: 화법
+                c8  = dna_analysis.get("c8_rhetoric", dna_analysis.get("c4_rhetoric", {}))
+                # c9: 도입
+                c9  = dna_analysis.get("c9_opening_patterns", dna_analysis.get("c9_opening_closing", {}))
+                # c10: 마무리
+                c10c = dna_analysis.get("c10_closing_patterns", dna_analysis.get("c9_opening_closing", {}))
+                # c11: 시각
+                c11v = dna_analysis.get("c11_visual_symbols", dna_analysis.get("c10_visual_formatting", {}))
                 c12 = dna_analysis.get("c12_typography", {})
                 c13 = dna_analysis.get("c13_brackets_quotes", {})
-                c14 = dna_analysis.get("c14_title_patterns", {})
-                c15 = dna_analysis.get("c15_image_media", {})
+                c14 = dna_analysis.get("c14_length_stats", dna_analysis.get("c11_length_stats", {}))
+                c15 = dna_analysis.get("c15_title_patterns", dna_analysis.get("c14_title_patterns", {}))
+                c7  = dna_analysis.get("c7_vocabulary", {})
 
-                dna_parts.append("【블로그 글쓰기 DNA 스타일 가이드】")
+                dna_parts.append("【블로그 글쓰기 DNA 스타일 가이드 — 모든 항목 100% 재현할 것】")
                 # 구조 & 톤
-                dna_parts.append(f"구조 패턴: {c1.get('overall_pattern', '')}")
+                dna_parts.append(f"구조 패턴: {c1.get('overall_pattern', '')} / 섹션 수: {c1.get('section_count', '')}")
                 dna_parts.append(f"섹션 흐름: {' → '.join(c1.get('section_flow', []))}")
-                dna_parts.append(f"톤: {c2.get('primary_tone', '')} / 격식도: {c2.get('formality_level', '')}/10")
-                # 어투
-                dna_parts.append(f"종결어미 패턴: {', '.join(c3.get('ending_patterns', []))}")
-                dna_parts.append(f"독자 호칭: {c3.get('reader_address', '')}")
-                # 표현
-                dna_parts.append(f"시그니처 표현: {', '.join(c5.get('signature_phrases', [])[:5])}")
-                dna_parts.append(f"전환 표현: {', '.join(c5.get('transition_words', [])[:4])}")
-                # 문장
-                dna_parts.append(f"문장 길이: {c6.get('avg_length', '')} / 리듬: {c6.get('rhythm', '')}")
+                dna_parts.append(f"소제목 포맷: {c1.get('subheading_format', c1.get('heading_style', ''))}")
+                dna_parts.append(f"톤: {c2.get('primary_tone', '')} / 격식도: {c2.get('formality_level', '')}/10 / 활발함: {c2.get('energy_level', '')}/10")
+                dna_parts.append(f"톤 변화 패턴: {c2.get('tone_shift_pattern', '')}")
+                # 어투/종결어미
+                primary_endings = c3.get('primary_endings', c3.get('ending_patterns', []))
+                dna_parts.append(f"종결어미 TOP5: {', '.join(primary_endings[:5])}")
+                dna_parts.append(f"격식:비격식 비율: {c3.get('formality_mix', '')} / 연속 같은 어미: {c3.get('consecutive_same_ending', '')}")
+                dna_parts.append(f"독자 호칭: {c3.get('reader_address', '')} / 의문형 패턴: {c3.get('question_ending_style', '')}")
+                # 문장 구조
+                dna_parts.append(f"문장 길이: 평균 {c4.get('avg_chars_per_sentence', c4.get('avg_length', ''))}자 / 짧은:{c4.get('short_sentence_ratio', '')} 중간:{c4.get('medium_sentence_ratio', '')} 긴:{c4.get('long_sentence_ratio', '')}")
+                dna_parts.append(f"리듬 패턴: {c4.get('rhythm_pattern', c4.get('rhythm', ''))}")
+                dna_parts.append(f"문장 시작 패턴: {', '.join(c4.get('leading_phrase_patterns', [])[:5])}")
+                # 단락
+                dna_parts.append(f"단락당 문장: {c6p.get('avg_sentences_per_paragraph', '')} / 여백: {c6p.get('whitespace_style', c6p.get('whitespace_usage', ''))}")
+                dna_parts.append(f"단락 시작 패턴: {c6p.get('paragraph_opening_pattern', '')}")
+                # 시그니처 표현
+                sig = c5.get('signature_phrases', [])
+                trans = c5.get('transition_words', [])
+                dna_parts.append(f"시그니처 표현: {', '.join(sig[:7])}")
+                dna_parts.append(f"전환 표현: {', '.join(trans[:6])}")
+                dna_parts.append(f"강조 표현: {', '.join(c5.get('emphasis_expressions', [])[:5])}")
+                dna_parts.append(f"긍정 추임새: {', '.join(c5.get('affirmation_expressions', [])[:5])}")
+                # 어휘
+                dna_parts.append(f"어휘 수준: {c7.get('level', '')} / 순우리말:{c7.get('korean_ratio', '')} 한자어:{c7.get('sino_korean_ratio', '')} 외래어:{c7.get('foreign_word_ratio', '')}")
+                dna_parts.append(f"특징 어휘: {', '.join(c7.get('characteristic_words', [])[:8])}")
                 # 도입/마무리
                 dna_parts.append(f"도입 방식: {', '.join(c9.get('opening_types', []))}")
-                dna_parts.append(f"마무리 방식: {', '.join(c9.get('closing_types', []))}")
+                dna_parts.append(f"첫 문장 패턴: {c9.get('first_sentence_pattern', '')}")
+                dna_parts.append(f"마무리 방식: {', '.join(c10c.get('closing_types', []))}")
+                dna_parts.append(f"CTA 방식: {c10c.get('cta_style', '')} / 표현: {', '.join(c10c.get('cta_keywords', [])[:4])}")
                 # 시각 요소
-                dna_parts.append(f"이모지 사용(1-10): {c10.get('emoji_usage', '')} / 자주 쓰는 이모지: {', '.join(c10.get('emoji_types', []))}")
-                dna_parts.append(f"특수기호: {', '.join(c10.get('special_symbols', []))}")
-                dna_parts.append(f"구분선 스타일: {c10.get('separator_style', '')}")
+                emoji_list = c11v.get('emoji_list', c11v.get('emoji_types', []))
+                dna_parts.append(f"이모지 빈도(1-10): {c11v.get('emoji_frequency', c11v.get('emoji_usage', ''))} / 글당 이모지 수: {c11v.get('emoji_per_post', '')}")
+                dna_parts.append(f"자주 쓰는 이모지: {', '.join(emoji_list[:15])}")
+                dna_parts.append(f"이모지 위치: {c11v.get('emoji_position', '')}")
+                dna_parts.append(f"특수기호: {', '.join(c11v.get('special_symbols', [])[:15])}")
+                sep = c11v.get('separator_patterns', [c11v.get('separator_style', '')])
+                dna_parts.append(f"구분선: {', '.join(sep[:3]) if isinstance(sep, list) else sep}")
                 # 글자수/분량 (c11)
                 if c11:
                     dna_parts.append(f"\n【분량 기준】")
@@ -886,17 +919,78 @@ def generate_blog():
                     dna_parts.append(f"숫자 활용: {c14.get('number_usage', '')} / 감정 후크: {c14.get('emotion_hook', '')}")
                     if c14.get('examples'):
                         dna_parts.append(f"제목 예시: {' | '.join(c14.get('examples', [])[:3])}")
-                # 이미지 (c15)
-                if c15:
+                # 이미지 (c16 또는 c15 하위호환)
+                c16 = dna_analysis.get("c16_image_media", dna_analysis.get("c15_image_media", {}))
+                if c16:
                     dna_parts.append(f"\n【이미지/미디어 패턴】")
-                    dna_parts.append(f"글당 이미지 수: {c15.get('avg_images_per_post', '')} / 배치: {c15.get('image_position', '')}")
-                    dna_parts.append(f"캡션 방식: {c15.get('image_caption_style', '')} / 밀도: {c15.get('media_density', '')}")
+                    dna_parts.append(f"글당 이미지 수: {c16.get('avg_images_per_post', c16.get('avg_images', ''))} / 배치: {c16.get('image_placement', c16.get('image_position', ''))}")
+                    dna_parts.append(f"캡션 방식: {c16.get('caption_style', c16.get('image_caption_style', ''))} / 밀도: {c16.get('media_density', '')}")
+
+                # c17 — 문장부호
+                c17 = dna_analysis.get("c17_punctuation", {})
+                if c17:
+                    dna_parts.append(f"\n【문장부호/구두점 패턴 — 반드시 재현할 것】")
+                    dna_parts.append(f"마침표 방식: {c17.get('period_style', '')} / 생략 비율: {c17.get('period_omission_ratio', '')}")
+                    dna_parts.append(f"쉼표 빈도(1-10): {c17.get('comma_frequency', '')} / 방식: {c17.get('comma_style', '')}")
+                    dna_parts.append(f"느낌표 빈도(1-10): {c17.get('exclamation_frequency', '')} / 방식: {c17.get('exclamation_style', '')}")
+                    dna_parts.append(f"물음표 맥락: {c17.get('question_mark_usage', '')}")
+                    dna_parts.append(f"말줄임표: {c17.get('ellipsis_usage', '')} / 물결표: {c17.get('tilde_usage', '')} / 대시: {c17.get('dash_usage', '')}")
+                    if c17.get('multiple_punct_usage'):
+                        dna_parts.append(f"복수 부호(!! ~~): {c17.get('multiple_punct_usage', '')}")
+                    if c17.get('examples'):
+                        dna_parts.append(f"구두점 예시:\n" + "\n".join(c17['examples'][:2]))
+
+                # c18 — 숫자/데이터
+                c18 = dna_analysis.get("c18_numbers_data", {})
+                if c18:
+                    dna_parts.append(f"\n【숫자/단위/데이터 표현 — 반드시 재현할 것】")
+                    dna_parts.append(f"숫자 선호: {c18.get('numeral_preference', '')}")
+                    dna_parts.append(f"가격 형식: {c18.get('price_format', '')} / 날짜 형식: {c18.get('date_format', '')}")
+                    dna_parts.append(f"단위 스타일: {c18.get('unit_style', '')} / 순위 형식: {c18.get('ranking_format', '')}")
+                    dna_parts.append(f"어림수 표현: {c18.get('approximation_style', '')}")
+                    if c18.get('examples'):
+                        dna_parts.append(f"수치 예시: {' | '.join(c18['examples'][:3])}")
+
+                # c19 — 독자 상호작용
+                c19 = dna_analysis.get("c19_reader_engagement", {})
+                if c19:
+                    dna_parts.append(f"\n【독자 참여 유도 방식 — 반드시 재현할 것】")
+                    dna_parts.append(f"독자 질문 빈도(1-10): {c19.get('direct_question_frequency', '')}")
+                    if c19.get('empathy_phrases'):
+                        dna_parts.append(f"공감 표현: {', '.join(c19['empathy_phrases'][:4])}")
+                    if c19.get('inclusive_expressions'):
+                        dna_parts.append(f"포용 표현: {', '.join(c19['inclusive_expressions'][:4])}")
+                    dna_parts.append(f"추천 강도: {c19.get('recommendation_strength', '')}")
+                    if c19.get('recommendation_expressions'):
+                        dna_parts.append(f"추천 표현: {', '.join(c19['recommendation_expressions'][:4])}")
+                    if c19.get('urgency_patterns'):
+                        dna_parts.append(f"긴박감 표현: {', '.join(c19['urgency_patterns'][:3])}")
+                    if c19.get('examples'):
+                        dna_parts.append(f"참여 유도 예시:\n" + "\n".join(c19['examples'][:2]))
+
+                # c20 — 감탄사/추임새
+                c20 = dna_analysis.get("c20_interjections_fillers", {})
+                if c20:
+                    dna_parts.append(f"\n【감탄사/추임새/습관어 — 반드시 재현할 것】")
+                    if c20.get('interjections'):
+                        dna_parts.append(f"감탄사: {', '.join(c20['interjections'][:8])}")
+                    if c20.get('filler_starters'):
+                        dna_parts.append(f"시작 습관어: {', '.join(c20['filler_starters'][:6])}")
+                    if c20.get('affirmations'):
+                        dna_parts.append(f"긍정 추임새: {', '.join(c20['affirmations'][:5])}")
+                    if c20.get('excitement_expressions'):
+                        dna_parts.append(f"흥분 표현: {', '.join(c20['excitement_expressions'][:5])}")
+                    dna_parts.append(f"사용 빈도(1-10): {c20.get('frequency', '')} / 위치: {c20.get('position_pattern', '')}")
+                    if c20.get('examples'):
+                        dna_parts.append(f"추임새 예시:\n" + "\n".join(c20['examples'][:2]))
 
                 # 도입/마무리 실제 예시
-                if c9.get("opening_examples"):
-                    dna_parts.append(f"\n실제 도입부 예시:\n" + "\n".join(c9["opening_examples"][:2]))
-                if c9.get("closing_examples"):
-                    dna_parts.append(f"\n실제 마무리 예시:\n" + "\n".join(c9["closing_examples"][:2]))
+                c9_open = dna_analysis.get("c9_opening_patterns", dna_analysis.get("c9_opening_closing", {}))
+                c10_close = dna_analysis.get("c10_closing_patterns", dna_analysis.get("c9_opening_closing", {}))
+                if c9_open.get("opening_examples"):
+                    dna_parts.append(f"\n실제 도입부 예시 (이대로 따라 쓸 것):\n" + "\n".join(c9_open["opening_examples"][:3]))
+                if c10_close.get("closing_examples"):
+                    dna_parts.append(f"\n실제 마무리 예시 (이대로 따라 쓸 것):\n" + "\n".join(c10_close["closing_examples"][:3]))
 
             # 원본 글 전문 최대 3개 (스타일 레퍼런스)
             if unique_posts:
@@ -1871,175 +1965,287 @@ def analyze_blog_status():
 
         analysis_prompt = f"""당신은 블로그 글쓰기 DNA 분석 전문가입니다.
 아래는 네이버 블로그 '{blog_id}'에서 수집한 최근 글들입니다.
-이 블로그의 글쓰기 스타일, 구조, 어투, 화법, 표현 패턴을 아주 꼼꼼하게 분석해주세요.
-모든 분석은 실제 글에서 발견된 패턴과 근거를 바탕으로 해야 합니다.
+이 블로거의 글쓰기 스타일을 **100% 재현**할 수 있을 만큼 철저하게 분석하세요.
+목표: 이 분석 결과만 보고 AI가 써도 원본 블로거와 구분이 안 될 정도로 완벽한 스타일 복제.
 
 {blog_summary}
 {visual_summary}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-【분석 지침】
+【분석 지침 — 반드시 준수】
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-- 15가지 카테고리별로 글에서 실제로 발견한 패턴을 근거(evidence)와 함께 제시
-- 각 항목의 examples에는 실제 글에서 발췌한 표현을 반드시 포함
-- 블로그 글을 그대로 재현할 수 있을 정도로 구체적으로 분석
-- HTML 소스 분석이 가능한 경우 폰트명·크기·색상·꺽쇠 사용을 실제 값으로 기재
+- 20가지 카테고리 전부 빠짐없이 채울 것
+- 모든 수치(비율%, 1-10점, 글자수)는 반드시 숫자로 기재
+- examples 필드에는 반드시 원문 그대로 발췌 (요약 금지)
+- 꺽쇠·괄호·이모지·특수기호는 실제 문자 그대로 기재 (설명 금지)
+- 이 분석만으로 원본 블로거처럼 글 쓸 수 있을 만큼 구체적으로
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-【출력 JSON 스키마 (15가지 카테고리)】
+【출력 JSON 스키마 (20가지 카테고리 — 완전 심층 분석)】
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 {{
   "c1_template_structure": {{
-    "title": "글 템플릿/구조",
-    "overall_pattern": "글의 전체적인 구조 패턴 (예: 서론-본론-결론, 리스트형, Q&A형 등)",
-    "section_flow": ["도입부 패턴", "본문 전개 방식", "마무리 패턴"],
-    "heading_style": "소제목/헤딩 사용 방식",
-    "average_sections": "평균 섹션 수와 구성",
-    "examples": ["실제 글에서 발췌한 구조 예시"]
+    "title": "글 전체 구조/템플릿",
+    "overall_pattern": "주된 구조 유형 (서론-본론-결론형 / 리스트나열형 / Q&A형 / 체험기형 / 비교형 / 혼합형 등)",
+    "section_count": "평균 섹션 수 (숫자로 기재, 예: 4~6개)",
+    "section_flow": ["섹션 순서 패턴 — 구체적으로 (예: '인사+상황설명 → 본론A → 본론B → 정리 → CTA')"],
+    "heading_style": "소제목 사용 방식 (있음/없음, 사용 빈도, 포맷)",
+    "subheading_format": "소제목 포맷 패턴 (꺽쇠 포함 여부, 이모지 선행 여부, 굵기 등 — 실제 예시 포함)",
+    "info_hierarchy": "정보 배치 순서 (결론 먼저형 / 과정 순서형 / 배경→결론형)",
+    "template_consistency": "글마다 템플릿 일관성 (높음/보통/낮음)",
+    "examples": ["실제 글 하나의 구조를 요약한 예시 — 섹션별로"]
   }},
   "c2_tone_mood": {{
-    "title": "톤/분위기",
-    "primary_tone": "주된 톤 (예: 친근한, 전문적, 공식적, 감성적 등)",
+    "title": "전체 톤/분위기",
+    "primary_tone": "주된 톤 — 구체적으로 (예: '친근하고 수다스러운', '따뜻한 정보전달형', '캐주얼한 일기체')",
     "secondary_tone": "보조 톤",
-    "formality_level": "격식 수준 (1-10)",
+    "formality_level": "격식 수준 (1-10, 1=완전 비격식, 10=완전 격식)",
     "warmth_level": "친밀감 수준 (1-10)",
-    "consistency": "톤 일관성 평가",
-    "examples": ["톤을 보여주는 실제 문장 발췌"]
+    "energy_level": "활발함/에너지 수준 (1-10, 1=차분, 10=매우 활발)",
+    "positivity_level": "긍정성 수준 (1-10)",
+    "consistency": "톤 일관성 (높음/보통/글마다 다름)",
+    "tone_shift_pattern": "글 내 톤 변화 패턴 (예: '도입부 친근 → 본문 정보전달 → 마무리 감성')",
+    "examples": ["톤이 잘 드러나는 실제 문장 3개 이상"]
   }},
-  "c3_speech_style": {{
-    "title": "어투/말투",
-    "ending_patterns": ["자주 쓰는 종결어미 (예: ~요, ~습니다, ~해요, ~거든요)"],
-    "characteristic_phrases": ["특징적인 말투 패턴"],
-    "question_style": "질문 던지기 방식 (있다면)",
-    "reader_address": "독자를 부르는 방식 (예: 여러분, ~님, 우리 등)",
-    "examples": ["실제 어투 발췌"]
+  "c3_speech_endings": {{
+    "title": "종결어미/어투 패턴",
+    "primary_endings": ["가장 자주 쓰는 종결어미 TOP5 — 각 어미와 예문 포함 (예: '~요 (60%)', '~해요 (20%)')"],
+    "secondary_endings": ["2순위 종결어미 목록"],
+    "formality_mix": "격식체:비격식체 비율 (예: '2:8 — 비격식 압도적')",
+    "question_ending_style": "의문형 어미 패턴 (예: '~인가요?', '~지 않을까요?', '~죠?' 등)",
+    "exclamation_style": "감탄/강조형 어미 패턴",
+    "consecutive_same_ending": "같은 어미 연속 사용 여부 (예: '~요로 3문장 연속 가능')",
+    "reader_address": "독자 호칭 방식 (예: 직접 호칭 없음 / '여러분' / '~하시는 분들' 등)",
+    "sentence_end_variety": "문장 끝 변화 다양성 (높음/보통/낮음)",
+    "examples": ["종결어미 패턴이 잘 드러나는 연속 문장 발췌"]
   }},
-  "c4_rhetoric": {{
-    "title": "화법/수사법",
-    "storytelling": "스토리텔링 활용 여부와 방식",
-    "persuasion_technique": "설득/전달 기법",
-    "humor_usage": "유머/위트 활용 수준 (1-10)",
-    "metaphor_usage": "비유/은유 활용 빈도와 스타일",
-    "emotional_appeal": "감정 호소 방식",
-    "examples": ["화법이 드러나는 실제 문장"]
+  "c4_sentence_structure": {{
+    "title": "문장 구조/길이/리듬",
+    "avg_chars_per_sentence": "문장당 평균 글자수 (숫자, 예: 28자)",
+    "short_sentence_ratio": "짧은 문장(20자 이하) 비율 (예: 35%)",
+    "medium_sentence_ratio": "중간 문장(21-50자) 비율 (예: 50%)",
+    "long_sentence_ratio": "긴 문장(51자 이상) 비율 (예: 15%)",
+    "complexity": "문장 복잡도 (단문 위주/복문 위주/혼합 — 근거 포함)",
+    "rhythm_pattern": "리듬 패턴 — 구체적으로 (예: '짧은 문장 2~3개 → 긴 문장 1개 → 짧은 문장')",
+    "list_usage": "리스트/나열 구조 사용 빈도 (1-10)",
+    "parenthetical_usage": "삽입구 사용 빈도 (1-10)",
+    "leading_phrase_patterns": ["문장 시작 패턴 목록 (예: '그런데', '사실', '이렇게 해서')"],
+    "examples": ["리듬/길이 특징이 잘 드러나는 연속 문단 발췌"]
   }},
-  "c5_frequent_expressions": {{
-    "title": "자주 쓰는 표현",
-    "signature_phrases": ["이 블로거만의 시그니처 표현 5개 이상"],
-    "transition_words": ["자주 쓰는 접속/전환 표현"],
-    "emphasis_expressions": ["강조할 때 쓰는 표현"],
-    "filler_expressions": ["습관적으로 쓰는 군더더기 표현"],
-    "examples": ["실제 반복 등장하는 표현 발췌"]
+  "c5_paragraph_composition": {{
+    "title": "단락/문단 구성",
+    "avg_sentences_per_paragraph": "문단당 평균 문장 수 (숫자, 예: 2.5문장)",
+    "avg_paragraphs_per_post": "글당 평균 문단 수 (숫자)",
+    "paragraph_opening_pattern": "단락 첫 문장 시작 패턴 (예: '접속사로 시작', '주제문 먼저', '질문으로 시작')",
+    "paragraph_closing_pattern": "단락 마지막 문장 패턴",
+    "transition_style": "단락 간 전환 방식",
+    "whitespace_style": "여백/줄바꿈 활용 방식 (예: '단문 1개=단락 1개', '짧은 단락 선호')",
+    "single_sentence_paragraph_ratio": "한 문장짜리 단락 비율 (예: 40%)",
+    "content_density": "정보 밀도 (높음/중간/낮음)",
+    "examples": ["단락 구성이 잘 보이는 실제 단락 2~3개 발췌"]
   }},
-  "c6_sentence_patterns": {{
-    "title": "문장 구조 패턴",
-    "avg_length": "평균 문장 길이 (짧은/중간/긴)",
-    "complexity": "문장 복잡도 (단문 위주/복문 위주/혼합)",
-    "rhythm": "문장 리듬감 (짧은 문장과 긴 문장의 배치 패턴)",
-    "list_usage": "나열/리스트 활용 빈도 (1-10)",
-    "examples": ["특징적인 문장 구조 발췌"]
+  "c6_signature_expressions": {{
+    "title": "시그니처/자주 쓰는 표현",
+    "signature_phrases": ["이 블로거만의 시그니처 표현 7개 이상 — 실제 표현 그대로"],
+    "paragraph_openers": ["단락 시작에 자주 쓰는 표현 (예: '그리고', '근데', '사실 말하면')"],
+    "transition_words": ["접속/전환 표현 7개 이상 — 실제 표현"],
+    "emphasis_expressions": ["강조할 때 쓰는 표현 목록"],
+    "filler_expressions": ["습관적/군더더기 표현 목록"],
+    "affirmation_expressions": ["긍정/동의 추임새 목록 (예: '맞아요', '그렇죠', '역시')"],
+    "reaction_expressions": ["반응/감탄 표현 목록 (예: '대박', '진짜', '헐')"],
+    "examples": ["실제 글에서 위 표현들이 연속으로 쓰인 발췌"]
   }},
   "c7_vocabulary": {{
     "title": "어휘/용어 선택",
-    "level": "어휘 수준 (쉬운/보통/전문적)",
-    "style": "한자어 vs 순우리말 vs 외래어 비율",
-    "jargon_usage": "전문용어/업계용어 사용 빈도",
-    "trendy_words": "유행어/신조어 사용 여부",
-    "characteristic_words": ["이 블로거가 특히 자주 쓰는 단어 목록"],
-    "examples": ["어휘 특성이 보이는 문장 발췌"]
+    "level": "어휘 수준 (매우 쉬움/쉬움/보통/전문적)",
+    "korean_ratio": "순우리말 비율 % (예: 60%)",
+    "sino_korean_ratio": "한자어 비율 % (예: 30%)",
+    "foreign_word_ratio": "외래어/영어 혼용 비율 % (예: 10%)",
+    "jargon_usage": "전문용어 사용 빈도 (없음/가끔/자주)",
+    "trendy_words": "유행어/신조어 사용 여부와 실제 예시",
+    "characteristic_words": ["이 블로거만의 특징 어휘 10개 이상 — 실제 단어"],
+    "avoided_expressions": "의도적으로 안 쓰는 표현 패턴 (발견된 경우)",
+    "number_word_preference": "숫자 표현 선호 (아라비아숫자 선호 / 한글 수사 선호 / 혼용)",
+    "examples": ["어휘 특성이 잘 드러나는 문장 발췌"]
   }},
-  "c8_paragraph_composition": {{
-    "title": "단락/문단 구성",
-    "avg_paragraph_length": "평균 문단 길이 (짧은/중간/긴)",
-    "paragraph_count": "글당 평균 문단 수",
-    "whitespace_usage": "여백/줄바꿈 활용 (많은/적절/적은)",
-    "content_density": "정보 밀도 (높은/중간/낮은)",
-    "examples": ["단락 구성 특징이 보이는 예시"]
+  "c8_rhetoric": {{
+    "title": "화법/수사법",
+    "storytelling_style": "스토리텔링 방식 (경험 공유형/관찰 서술형/정보 나열형 등) + 비중",
+    "persuasion_technique": "설득/전달 기법 — 구체적으로",
+    "humor_level": "유머 수준 (1-10)",
+    "humor_style": "유머 스타일 (자기비하형/관찰형/상황형/언어유희형 등)",
+    "metaphor_frequency": "비유/은유 빈도 (1-10)",
+    "repetition_usage": "반복법 사용 여부와 패턴",
+    "contrast_usage": "대조/대비 활용 여부",
+    "rhetorical_question": "수사 의문문 사용 빈도 (1-10)",
+    "self_disclosure_level": "개인 경험/감정 노출 수준 (1-10)",
+    "examples": ["화법/수사법이 잘 드러나는 실제 문장 3개"]
   }},
-  "c9_opening_closing": {{
-    "title": "도입/마무리 패턴",
-    "opening_types": ["자주 쓰는 도입 방식 (예: 질문, 인사, 상황 설명, 공감 유도 등)"],
-    "closing_types": ["자주 쓰는 마무리 방식 (예: 요약, CTA, 인사, 감성 마무리 등)"],
-    "hook_technique": "독자 후킹 기법",
-    "cta_pattern": "행동 유도(CTA) 패턴",
-    "opening_examples": ["실제 도입부 발췌"],
-    "closing_examples": ["실제 마무리부 발췌"]
+  "c9_opening_patterns": {{
+    "title": "도입부 패턴",
+    "opening_types": ["자주 쓰는 도입 방식 목록 — 구체적으로 (예: '날씨/계절 언급 + 개인 상황 연결', '직접 결론 제시')"],
+    "first_sentence_pattern": "첫 문장의 전형적 패턴 — 구체적으로",
+    "opening_length": "도입부 길이 (짧음=1~2문장 / 보통=3~4문장 / 김=5문장 이상)",
+    "hook_type": "독자 후킹 방식 (감정 공감형/정보 예고형/질문형/상황 묘사형)",
+    "personal_intro_style": "개인 상황 도입 방식",
+    "keyword_in_opening": "도입부 키워드 배치 여부",
+    "opening_examples": ["실제 도입부 원문 발췌 3개 이상 — 첫 3~4줄 그대로"]
   }},
-  "c10_visual_formatting": {{
-    "title": "시각적 요소/포맷팅",
-    "emoji_usage": "이모지/이모티콘 사용 빈도 (1-10)",
-    "emoji_types": ["자주 쓰는 이모지 종류 — 실제 문자로"],
-    "center_align": "중앙정렬 사용 여부 및 빈도 (HTML 분석 기반)",
-    "text_colors": ["강조 텍스트 색상 목록 (HTML color 속성 기반)"],
-    "highlight_colors": ["배경 하이라이트 색상 (background-color 기반)"],
-    "separator_style": "구분선/구분 요소 스타일 (예: ─────, ===, 빈줄 등)",
-    "special_symbols": ["특수기호 사용 패턴 — ✅ 〰️ ➡️ ▼ ⚠️ 등 실제 문자로"],
-    "line_break_style": "줄바꿈 패턴 (짧은 줄 중앙정렬형 vs 긴 단락형)",
-    "writing_guide": "이 블로그 스타일을 재현하기 위한 구체적 작성 가이드 (3~5문장)",
-    "examples": ["포맷팅 특징이 보이는 실제 예시 — 기호/이모지 포함"]
+  "c10_closing_patterns": {{
+    "title": "마무리 패턴",
+    "closing_types": ["자주 쓰는 마무리 방식 목록 — 구체적으로"],
+    "last_sentence_pattern": "마지막 문장의 전형적 패턴",
+    "cta_style": "CTA 방식 (구독요청/공감클릭요청/댓글유도/재방문요청/없음 등)",
+    "cta_keywords": ["CTA에 자주 쓰는 표현 — 실제 표현으로"],
+    "farewell_style": "인사 마무리 방식 (없음/짧게/감성적으로 등)",
+    "emotion_at_close": "마무리의 감정 톤",
+    "summary_habit": "마지막에 요약하는 습관 여부",
+    "closing_examples": ["실제 마무리부 원문 발췌 3개 이상 — 마지막 3~4줄 그대로"]
   }},
-  "c11_length_stats": {{
-    "title": "글자수/분량 통계",
-    "avg_chars_per_post": "글당 평균 글자수 (공백 포함, 예: 약 1200자)",
-    "avg_sentences_per_post": "글당 평균 문장 수 (예: 약 25문장)",
-    "avg_chars_per_sentence": "문장당 평균 글자수 (예: 약 40자)",
-    "avg_paragraphs_per_post": "글당 평균 단락/문단 수",
-    "content_ratio": "서론:본론:결론 분량 비율 (예: 10%:75%:15%)",
-    "length_consistency": "글 길이 일관성 (균일함/편차큼)",
-    "short_post_threshold": "짧은 글의 기준 (예: 500자 미만)",
-    "long_post_threshold": "긴 글의 기준 (예: 2000자 이상)",
-    "writing_density_guide": "분량 재현을 위한 구체적 지침 (예: '한 단락에 2~3문장, 총 5~7단락 구성')"
+  "c11_visual_symbols": {{
+    "title": "시각 요소/이모지/기호",
+    "emoji_frequency": "이모지 사용 빈도 (1-10)",
+    "emoji_list": ["자주 쓰는 이모지 — 실제 문자로 15개 이상"],
+    "emoji_position": "이모지 위치 패턴 (소제목 앞/문장 끝/단독 줄/문장 중간 등)",
+    "emoji_per_post": "글당 평균 이모지 수 (예: 약 12개)",
+    "center_align_usage": "중앙정렬 사용 여부와 빈도",
+    "text_colors": ["강조 텍스트 색상 — HTML hex 또는 색상명"],
+    "highlight_colors": ["하이라이트 색상 — HTML hex 또는 색상명"],
+    "separator_patterns": ["구분선/구분 요소 패턴 — 실제 기호로 (예: '─────', '✦ ✦ ✦', '===')"],
+    "special_symbols": ["특수기호 목록 — 실제 문자로 20개 이상 (✅ ▶ ➡️ ⭐ ♥ 등)"],
+    "symbol_usage_context": "특수기호 사용 맥락 (강조/리스트마커/구분/감정 표현 등)",
+    "line_break_style": "줄바꿈 방식 — 구체적으로",
+    "formatting_guide": "시각 스타일 재현을 위한 구체적 지침 (3~5문장)",
+    "examples": ["시각 요소가 잘 보이는 실제 단락 발췌 — 기호/이모지 그대로"]
   }},
   "c12_typography": {{
-    "title": "폰트/글꼴 스타일",
-    "font_families": ["실제 사용 폰트명 목록 (HTML font-family 기반, 예: 맑은 고딕, 나눔고딕)"],
-    "base_font_size": "본문 기본 글자 크기 (예: 15px 또는 '보통')",
-    "heading_font_size": "소제목 글자 크기 (예: 18px, 20px 등)",
-    "font_size_variety": "크기 변화 다양성 (단일/2~3종/다양)",
+    "title": "폰트/글꼴/타이포그래피",
+    "font_families": ["사용 폰트명 목록 — HTML font-family 속성 기반"],
+    "base_font_size": "본문 기본 크기 (px 또는 '설정 안됨')",
+    "heading_font_size": "소제목/강조부 크기",
+    "font_size_levels": ["사용하는 모든 크기 단계 목록"],
     "bold_frequency": "볼드 사용 빈도 (1-10)",
-    "bold_purpose": "볼드 사용 목적 (예: 핵심 단어 강조, 소제목 대용, 감탄 표현)",
-    "bold_examples": ["볼드 강조가 사용된 실제 예시 (볼드 단어/구절 포함)"],
-    "italic_usage": "기울임꼴 사용 여부 및 목적",
-    "underline_usage": "밑줄 사용 여부 및 목적",
-    "color_text_examples": ["색상 강조된 텍스트 실제 예시"],
-    "highlight_examples": ["하이라이트(형광펜) 사용 실제 예시"],
-    "font_guide": "이 블로그 글꼴 스타일을 재현하기 위한 구체적 지침"
+    "bold_purpose": "볼드 주 용도",
+    "bold_scope": "볼드 범위 (단어 단위/구 단위/문장 전체)",
+    "bold_examples": ["볼드 강조 실제 예시 5개 이상 — **볼드부분** 표시"],
+    "italic_usage": "기울임꼴 사용 여부/빈도/목적",
+    "underline_usage": "밑줄 사용 여부/빈도/목적",
+    "strikethrough_usage": "취소선 사용 여부",
+    "color_text_frequency": "색상 텍스트 빈도 (1-10)",
+    "color_examples": ["색상 텍스트 실제 예시"],
+    "highlight_frequency": "형광펜 사용 빈도 (1-10)",
+    "highlight_examples": ["형광펜 사용 실제 예시"],
+    "typography_guide": "글꼴 스타일 재현 지침 (구체적으로)"
   }},
   "c13_brackets_quotes": {{
-    "title": "꺽쇠/괄호/인용부호 패턴",
-    "angle_bracket_types": ["사용하는 꺽쇠 종류 — 실제 문자로 (예: 《 》, 〈 〉, 「 」, 『 』, ≪ ≫)"],
-    "angle_bracket_purpose": "꺽쇠 사용 목적 (예: 강조, 제목 표시, 카테고리 구분, 섹션 제목)",
+    "title": "꺽쇠/괄호/인용부호",
+    "angle_brackets": ["사용하는 꺽쇠 종류 — 실제 기호로 (《 》 〈 〉 「 」 『 』 ≪ ≫ < > 중 실제 쓰는 것)"],
+    "angle_bracket_purpose": "꺽쇠 주 용도 (소제목마커/강조/인용/카테고리태그 등)",
     "angle_bracket_frequency": "꺽쇠 사용 빈도 (없음/가끔/자주/항상)",
-    "square_bracket_types": ["사용하는 대괄호 종류 — 실제 문자로 (예: 【 】, [ ], ［ ］)"],
-    "square_bracket_purpose": "대괄호 사용 목적 (예: 태그 표시, 카테고리, 부연설명)",
-    "round_bracket_usage": "소괄호 () 사용 패턴 (예: 부연설명, 영문 병기, 수치 표시)",
-    "quotation_mark_style": "따옴표 방식 (예: "큰따옴표", '작은따옴표', 「」, 『』)",
-    "bracket_nesting": "괄호 중첩 사용 여부 (예: 《[카테고리] 소제목》)",
-    "examples": ["꺽쇠·괄호가 사용된 실제 문장 발췌 — 반드시 기호 그대로 포함"]
+    "angle_bracket_examples": ["꺽쇠 사용 실제 예시 5개 이상 — 기호 그대로"],
+    "square_brackets": ["대괄호 종류 — 실제 기호로 (【 】 [ ] ［ ］ 중 실제 쓰는 것)"],
+    "square_bracket_purpose": "대괄호 용도와 빈도",
+    "round_bracket_pattern": "소괄호 () 사용 패턴 (부연설명/영문병기/수치표시/생략 등) + 빈도",
+    "quotation_style": "따옴표 방식 (''/\"\" /「」/없음) + 용도",
+    "bracket_combo_pattern": "복합 패턴 (예: 꺽쇠 안에 이모지, 대괄호+소괄호 동시 사용 등)",
+    "examples": ["모든 유형 괄호 사용 실제 예시 — 기호 반드시 그대로 포함"]
   }},
-  "c14_title_patterns": {{
+  "c14_length_stats": {{
+    "title": "글자수/분량 통계",
+    "avg_chars_per_post": "평균 글자수 (공백 포함, 숫자로)",
+    "min_chars": "최소 글자수",
+    "max_chars": "최대 글자수",
+    "avg_sentences_per_post": "평균 문장 수 (숫자로)",
+    "avg_paragraphs_per_post": "평균 단락 수 (숫자로)",
+    "avg_sentences_per_paragraph": "단락당 평균 문장 수 (숫자로)",
+    "content_ratio": "서론:본론:결론 분량 비율 (예: '15%:70%:15%')",
+    "length_consistency": "분량 일관성 (높음/보통/낮음)",
+    "density_guide": "분량 재현 지침 — 구체적으로 (예: '단락 1개 = 2~3문장, 총 10~12단락, 약 1500자 목표')"
+  }},
+  "c15_title_patterns": {{
     "title": "제목 작성 패턴",
-    "avg_title_length": "평균 제목 글자수 (예: 약 20자)",
-    "title_structure": "주로 쓰는 제목 구조 (예: [키워드]+[동사형], 의문문형, 숫자+명사형)",
-    "keyword_placement": "키워드 위치 (앞/중간/끝/분산)",
-    "number_usage": "숫자 활용 여부와 방식 (예: TOP 5, 3가지 방법, N번째 등)",
-    "emotion_hook": "감정 유발 단어 패턴 (예: 꼭!, 강추!, 실화?, 미쳤다 등)",
-    "location_brand_pattern": "지명·브랜드명 포함 패턴",
-    "title_keywords": ["자주 등장하는 제목 키워드 목록"],
-    "examples": ["실제 제목 발췌 5개 이상 — 패턴이 잘 드러나는 것 위주"]
+    "avg_length": "평균 제목 글자수 (숫자, 예: 22자)",
+    "min_length": "최단 제목 글자수",
+    "max_length": "최장 제목 글자수",
+    "structure_types": ["제목 구조 유형 목록 — 구체적으로 (예: '지역명+장소명+후기형', '숫자+혜택 나열형')"],
+    "keyword_position": "핵심 키워드 주 위치 (앞/중간/끝)",
+    "number_usage": "숫자 활용 여부와 형식 (없음/아라비아숫자/한글 수사/TOP형)",
+    "bracket_in_title": "제목 내 괄호/꺽쇠 사용 여부와 예시",
+    "emotion_words": ["감정 유발/클릭 유도 단어 목록 — 실제 단어"],
+    "location_brand_inclusion": "지명/브랜드명 포함 패턴",
+    "title_ending_pattern": "제목 끝 패턴 (마침표 없음/어미 형태)",
+    "title_keywords": ["자주 등장하는 핵심 키워드 목록"],
+    "seo_pattern": "SEO 키워드 배치 패턴",
+    "examples": ["실제 제목 7개 이상 — 패턴이 다양하게 드러나는 것"]
   }},
-  "c15_image_media": {{
-    "title": "이미지/미디어 활용 패턴",
-    "avg_images_per_post": "글당 평균 이미지 수 (예: 약 5장)",
-    "image_position": "이미지 배치 방식 (예: 글 상단 1장+본문 중간 분산, 마지막 정리용 등)",
-    "image_caption_style": "이미지 설명/캡션 방식 (없음/짧게/상세히/이모지 포함)",
-    "image_type": "이미지 종류 (직접 촬영/스크린샷/공식 이미지/혼합)",
-    "image_layout": "이미지 정렬 방식 (좌/중앙/우/전체폭)",
-    "use_tables": "표(table) 사용 여부 및 목적",
-    "use_maps_links": "지도/링크 삽입 여부",
-    "media_density": "글 대비 이미지 비중 (이미지 중심/텍스트 중심/균형)",
-    "examples": ["이미지 활용 특징이 드러나는 설명 또는 캡션 실제 예시"]
+  "c16_image_media": {{
+    "title": "이미지/미디어 활용",
+    "avg_images_per_post": "글당 평균 이미지 수 (숫자)",
+    "image_placement": "이미지 배치 패턴 — 구체적으로 (예: '본문 사이사이 1~2장씩', '글 상단 대표 1장+중간 분산')",
+    "caption_style": "캡션 스타일 (없음/짧은 설명/이모지+설명/상세 설명)",
+    "image_types": "이미지 종류 (직접 촬영/스크린샷/공식 홍보 이미지/혼합)",
+    "layout": "이미지 정렬 (좌정렬/중앙/전체폭/혼합)",
+    "use_tables": "표 사용 여부/빈도/목적",
+    "use_maps_links": "지도/외부링크 삽입 여부",
+    "media_density": "텍스트 대비 이미지 비중 (이미지 중심/균형/텍스트 중심)",
+    "thumbnail_pattern": "대표 이미지/썸네일 패턴",
+    "examples": ["이미지 활용 특징이 드러나는 캡션/설명 실제 예시"]
+  }},
+  "c17_punctuation": {{
+    "title": "문장부호/구두점 패턴",
+    "period_style": "마침표 사용 방식 (매 문장 사용/자주 생략/완전 생략 등)",
+    "comma_frequency": "쉼표 사용 빈도 (1-10)",
+    "comma_style": "쉼표 사용 방식 (나열할 때만/긴 문장에서만/자유롭게)",
+    "exclamation_frequency": "느낌표 빈도 (1-10)",
+    "exclamation_style": "느낌표 사용 방식 (단독!/중복!!/감탄사 뒤 등)",
+    "question_mark_usage": "물음표 사용 맥락 (의문문에만/수사의문문에도/감탄형으로도)",
+    "ellipsis_usage": "말줄임표 (...) 사용 빈도와 맥락",
+    "dash_usage": "대시(— 또는 –) 사용 여부와 목적",
+    "tilde_usage": "물결표(~) 사용 빈도와 맥락 (1-10)",
+    "colon_usage": "콜론(:) 사용 방식",
+    "multiple_punct_usage": "복수 부호 (예: !! ?? !? ~~) 사용 여부와 빈도",
+    "period_omission_ratio": "마침표 생략 비율 (예: '70% 문장에서 생략')",
+    "examples": ["구두점 특징이 잘 드러나는 연속 문장 발췌"]
+  }},
+  "c18_numbers_data": {{
+    "title": "숫자/단위/데이터 표현",
+    "numeral_preference": "아라비아숫자 vs 한글 수사 선호도 (예: '아라비아숫자 90% 사용')",
+    "price_format": "가격 표기 방식 — 실제 예시 (예: '15,000원' / '1만5천원' / '만오천원')",
+    "date_format": "날짜 표기 방식 — 실제 예시 (예: '2024.03.10' / '3월 10일' / '24년 3월')",
+    "time_format": "시간 표기 방식 — 실제 예시",
+    "unit_style": "단위 표기 스타일 (숫자에 붙여쓰기/띄어쓰기, 한글단위/영문단위)",
+    "ranking_format": "순위 표기 방식 (1위/1등/TOP1/첫 번째 중 실제 쓰는 것)",
+    "statistics_usage": "통계/수치 인용 빈도 (없음/가끔/자주)",
+    "approximation_style": "어림수 표현 방식 (약/대략/~정도/거의 등)",
+    "large_number_format": "큰 숫자 표기 (예: 1,000,000 / 100만 / 백만)",
+    "examples": ["숫자/데이터 표현이 잘 드러나는 실제 예시 5개 이상"]
+  }},
+  "c19_reader_engagement": {{
+    "title": "독자 상호작용/참여 유도",
+    "direct_question_frequency": "독자에게 직접 질문 빈도 (1-10)",
+    "empathy_phrases": ["공감 유도 표현 목록 — 실제 표현 (예: '저만 그런 건 아니죠?', '다들 아시죠?')"],
+    "inclusive_expressions": ["'우리/함께' 등 포용 표현 목록 — 실제 표현"],
+    "experience_sharing_style": "개인 경험 공유 방식 (구체적/추상적/감정 중심/사실 중심)",
+    "recommendation_strength": "추천 강도 (약한 제안형/강한 추천형/명령형)",
+    "recommendation_expressions": ["추천할 때 쓰는 표현 목록"],
+    "social_proof_usage": "사회적 증거 활용 (입소문 언급/후기 인용/전문가 언급 등)",
+    "urgency_patterns": ["긴박감/희소성 유도 표현 목록 — 실제 표현"],
+    "reader_benefit_emphasis": "독자 이익 강조 방식",
+    "community_building": "공동체 감각 형성 방식 (있다면)",
+    "examples": ["참여 유도가 잘 드러나는 실제 문장 3개 이상"]
+  }},
+  "c20_interjections_fillers": {{
+    "title": "감탄사/추임새/습관어",
+    "interjections": ["감탄사 목록 — 실제 표현 10개 이상 (와, 오, 아, 헉, 대박, 진짜, 하 등)"],
+    "filler_starters": ["문장/단락 시작 습관어 목록 (그래서, 사실, 근데, 아무튼, 그리고 등)"],
+    "affirmations": ["동의/긍정 추임새 목록 (맞아요, 그렇죠, 역시, 당연히 등)"],
+    "hesitation_expressions": ["망설임/생각 표현 목록 (음..., 그러니까..., 어... 등)"],
+    "excitement_expressions": ["흥분/놀람 표현 목록 (진짜요?!, 대박이에요!, 말이 돼요? 등)"],
+    "self_talk_patterns": ["혼잣말/독백 표현 목록 (있다면)"],
+    "frequency": "전반적 감탄사/추임새 사용 빈도 (1-10)",
+    "position_pattern": "주로 어디서 씀 (문장 앞/중간/끝, 단독 줄)",
+    "examples": ["감탄사/추임새가 잘 드러나는 실제 단락 발췌"]
   }}
 }}
 

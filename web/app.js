@@ -1274,12 +1274,48 @@ function extractPersonaTags(dna) {
     if (tp.emotion_hook) add('c14_emotion', tp.emotion_hook, '제목');
     (tp.title_keywords || []).slice(0, 4).forEach((k, i) => add(`c14_kw_${i}`, k, '제목 키워드'));
 
-    // c15 — 이미지/미디어
-    const im = dna.c15_image_media || {};
-    if (im.avg_images_per_post) add('c15_img_count', im.avg_images_per_post, '이미지');
-    if (im.image_position) add('c15_img_pos', im.image_position, '이미지');
-    if (im.image_caption_style) add('c15_caption', im.image_caption_style, '이미지');
+    // c15 또는 c16 — 이미지/미디어
+    const im = dna.c16_image_media || dna.c15_image_media || {};
+    if (im.avg_images_per_post || im.avg_images) add('c15_img_count', im.avg_images_per_post || im.avg_images, '이미지');
+    if (im.image_placement || im.image_position) add('c15_img_pos', im.image_placement || im.image_position, '이미지');
+    if (im.caption_style || im.image_caption_style) add('c15_caption', im.caption_style || im.image_caption_style, '이미지');
     if (im.media_density) add('c15_density', im.media_density, '이미지');
+
+    // c17 — 문장부호/구두점
+    const pu = dna.c17_punctuation || {};
+    if (pu.period_style) add('c17_period', pu.period_style, '문장부호');
+    if (pu.comma_frequency) add('c17_comma', `쉼표 ${pu.comma_frequency}/10`, '문장부호');
+    if (pu.exclamation_frequency) add('c17_exclaim', `느낌표 ${pu.exclamation_frequency}/10`, '문장부호');
+    if (pu.exclamation_style) add('c17_exclaim_style', pu.exclamation_style, '문장부호');
+    if (pu.tilde_usage) add('c17_tilde', `물결표: ${pu.tilde_usage}`, '문장부호');
+    if (pu.ellipsis_usage) add('c17_ellipsis', `말줄임표: ${pu.ellipsis_usage}`, '문장부호');
+    if (pu.multiple_punct_usage) add('c17_multi_punct', pu.multiple_punct_usage, '문장부호');
+    if (pu.period_omission_ratio) add('c17_period_omit', `마침표 생략: ${pu.period_omission_ratio}`, '문장부호');
+
+    // c18 — 숫자/데이터
+    const nd = dna.c18_numbers_data || {};
+    if (nd.numeral_preference) add('c18_numeral', nd.numeral_preference, '숫자 표현');
+    if (nd.price_format) add('c18_price', `가격: ${nd.price_format}`, '숫자 표현');
+    if (nd.date_format) add('c18_date', `날짜: ${nd.date_format}`, '숫자 표현');
+    if (nd.unit_style) add('c18_unit', nd.unit_style, '숫자 표현');
+    if (nd.ranking_format) add('c18_rank', `순위: ${nd.ranking_format}`, '숫자 표현');
+    if (nd.approximation_style) add('c18_approx', `어림수: ${nd.approximation_style}`, '숫자 표현');
+
+    // c19 — 독자 상호작용
+    const re = dna.c19_reader_engagement || {};
+    if (re.direct_question_frequency) add('c19_q_freq', `독자질문 ${re.direct_question_frequency}/10`, '독자 참여');
+    (re.empathy_phrases || []).slice(0, 4).forEach((v, i) => add(`c19_empathy_${i}`, v, '독자 참여'));
+    if (re.recommendation_strength) add('c19_rec_strength', `추천: ${re.recommendation_strength}`, '독자 참여');
+    (re.recommendation_expressions || []).slice(0, 3).forEach((v, i) => add(`c19_rec_${i}`, v, '독자 참여'));
+    (re.urgency_patterns || []).slice(0, 3).forEach((v, i) => add(`c19_urgency_${i}`, v, '독자 참여'));
+
+    // c20 — 감탄사/추임새
+    const fi = dna.c20_interjections_fillers || {};
+    (fi.interjections || []).slice(0, 8).forEach((v, i) => add(`c20_interj_${i}`, v, '감탄사'));
+    (fi.filler_starters || []).slice(0, 5).forEach((v, i) => add(`c20_filler_${i}`, v, '추임새'));
+    (fi.affirmations || []).slice(0, 4).forEach((v, i) => add(`c20_affirm_${i}`, v, '추임새'));
+    (fi.excitement_expressions || []).slice(0, 4).forEach((v, i) => add(`c20_excite_${i}`, v, '감탄사'));
+    if (fi.frequency) add('c20_freq', `추임새 ${fi.frequency}/10`, '감탄사');
 
     return tags;
 }
