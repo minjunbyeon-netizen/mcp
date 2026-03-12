@@ -68,3 +68,7 @@ def get_design_checklist() -> list:
 
 if __name__ == "__main__":
     mcp.run()
+
+
+def main():
+    mcp.run()

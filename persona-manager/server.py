@@ -255,3 +255,7 @@ def get_client_persona(client_id: str) -> dict:
 
 if __name__ == "__main__":
     mcp.run()
+
+
+def main():
+    mcp.run()

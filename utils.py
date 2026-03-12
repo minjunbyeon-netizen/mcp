@@ -5,8 +5,12 @@ LoadingSpinner, JSON 추출, API 키 로드, 파일 텍스트 추출 등 공통 
 """
 
 import os
+import base64
 import json
 import re
+import struct
+import subprocess
+import tempfile
 import threading
 import time
 import logging
@@ -143,6 +147,98 @@ def load_api_key(key_name: str = "GEMINI_API_KEY") -> str | None:
     return None
 
 
+_SAFE_TEXT_PUNCTUATION = set(".,:;!?()[]{}<>/%&@#*+-_=~'\"`|\\·•※○●△▲▽▼→←↑↓…")
+
+
+def _is_hangul_char(ch: str) -> bool:
+    cp = ord(ch)
+    return (
+        0xAC00 <= cp <= 0xD7A3 or
+        0x3131 <= cp <= 0x318E
+    )
+
+
+def _is_cjk_char(ch: str) -> bool:
+    cp = ord(ch)
+    return (
+        0x3400 <= cp <= 0x4DBF or
+        0x4E00 <= cp <= 0x9FFF or
+        0xF900 <= cp <= 0xFAFF
+    )
+
+
+def _is_safe_display_char(ch: str, allow_cjk: bool = False) -> bool:
+    if ch in "\n\r\t":
+        return True
+    if ch in _SAFE_TEXT_PUNCTUATION:
+        return True
+    if " " <= ch <= "~":
+        return True
+    if _is_hangul_char(ch):
+        return True
+    if allow_cjk and _is_cjk_char(ch):
+        return True
+    return False
+
+
+def sanitize_text_for_display(text: str, allow_cjk: bool = False) -> str:
+    """
+    화면 표시용 텍스트 정제.
+
+    - 제어 문자와 비정상 유니코드 노이즈 제거
+    - 줄바꿈은 보존
+    - 공백은 과하게 누적되지 않도록 정리
+    """
+    text = (text or "").replace("\r\n", "\n").replace("\r", "\n")
+    cleaned = "".join(
+        ch if _is_safe_display_char(ch, allow_cjk=allow_cjk) else " "
+        for ch in text
+    )
+    cleaned = re.sub(r"[ \t]+", " ", cleaned)
+    cleaned = re.sub(r" *\n *", "\n", cleaned)
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+    return cleaned.strip()
+
+
+def is_meaningful_text_line(text: str) -> bool:
+    """잡음 라인을 제외하기 위한 휴리스틱."""
+    stripped = (text or "").strip()
+    if len(stripped) < 2:
+        return False
+    if re.fullmatch(r"[-=_.~#* ]{3,}", stripped):
+        return False
+
+    meaningful = len(re.findall(r"[A-Za-z0-9가-힣]", stripped))
+    hangul = len(re.findall(r"[가-힣]", stripped))
+    digits = len(re.findall(r"\d", stripped))
+    letters = len(re.findall(r"[A-Za-z]", stripped))
+    tokens = stripped.split()
+    single_char_tokens = sum(1 for token in tokens if len(token) == 1)
+
+    if meaningful < 2:
+        return False
+    if meaningful / max(len(stripped), 1) < 0.35:
+        return False
+    if hangul == 0 and digits == 0 and letters < 3:
+        return False
+    if letters >= 10 and hangul == 0 and digits == 0 and "http" not in stripped.lower():
+        return False
+    if len(tokens) >= 4 and single_char_tokens > len(tokens) // 2:
+        return False
+    return True
+
+
+def _dedupe_preserve_order(items: list[str]) -> list[str]:
+    seen = set()
+    result = []
+    for item in items:
+        key = re.sub(r"\s+", "", item).lower()
+        if key and key not in seen:
+            seen.add(key)
+            result.append(item)
+    return result
+
+
 # ============================================================
 # [M-5] 공통 파일 텍스트 추출 함수 (web/app.py에서 통합)
 # 지원 형식: .txt, .pdf (PyMuPDF 우선 → pdfplumber fallback),
@@ -156,6 +252,202 @@ try:
     _HWP_SUPPORTED = True
 except ImportError:
     _HWP_SUPPORTED = False
+
+
+def _run_windows_ocr(image_path: Path) -> str:
+    """
+    Windows 기본 OCR(WinRT)을 이용해 이미지에서 텍스트 추출.
+
+    Tesseract 설치 없이도 Windows 환경에서 동작하도록 설계한다.
+    실패 시 빈 문자열 반환.
+    """
+    if os.name != "nt":
+        return ""
+
+    image_path = Path(image_path).resolve()
+    script = f"""
+$ErrorActionPreference='Stop'
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+Add-Type -AssemblyName System.Runtime.WindowsRuntime
+$null = [Windows.Storage.StorageFile, Windows.Storage, ContentType = WindowsRuntime]
+$null = [Windows.Storage.FileAccessMode, Windows.Storage, ContentType = WindowsRuntime]
+$null = [Windows.Graphics.Imaging.BitmapDecoder, Windows.Graphics.Imaging, ContentType = WindowsRuntime]
+$null = [Windows.Graphics.Imaging.SoftwareBitmap, Windows.Graphics.Imaging, ContentType = WindowsRuntime]
+$null = [Windows.Storage.Streams.IRandomAccessStream, Windows.Storage.Streams, ContentType = WindowsRuntime]
+$null = [Windows.Media.Ocr.OcrEngine, Windows.Foundation, ContentType = WindowsRuntime]
+$null = [Windows.Media.Ocr.OcrResult, Windows.Foundation, ContentType = WindowsRuntime]
+function Await([object]$Operation, [type]$ResultType) {{
+  $asTaskGeneric = [System.WindowsRuntimeSystemExtensions].GetMethods() |
+    Where-Object {{ $_.Name -eq 'AsTask' -and $_.IsGenericMethod -and $_.GetParameters().Count -eq 1 }} |
+    Select-Object -First 1
+  $asTask = $asTaskGeneric.MakeGenericMethod($ResultType)
+  $task = $asTask.Invoke($null, @($Operation))
+  $task.Wait()
+  return $task.Result
+}}
+$path = {json.dumps(str(image_path), ensure_ascii=False)}
+$file = Await ([Windows.Storage.StorageFile]::GetFileFromPathAsync($path)) ([Windows.Storage.StorageFile])
+$stream = Await ($file.OpenAsync([Windows.Storage.FileAccessMode]::Read)) ([Windows.Storage.Streams.IRandomAccessStream])
+$decoder = Await ([Windows.Graphics.Imaging.BitmapDecoder]::CreateAsync($stream)) ([Windows.Graphics.Imaging.BitmapDecoder])
+$bitmap = Await ($decoder.GetSoftwareBitmapAsync()) ([Windows.Graphics.Imaging.SoftwareBitmap])
+$engine = [Windows.Media.Ocr.OcrEngine]::TryCreateFromUserProfileLanguages()
+$result = Await ($engine.RecognizeAsync($bitmap)) ([Windows.Media.Ocr.OcrResult])
+Write-Output $result.Text
+"""
+
+    encoded_script = base64.b64encode(script.encode("utf-16le")).decode("ascii")
+
+    try:
+        result = subprocess.run(
+            ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-EncodedCommand", encoded_script],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="ignore",
+            timeout=45,
+        )
+    except Exception:
+        return ""
+
+    if result.returncode != 0:
+        return ""
+    return result.stdout.strip()
+
+
+def _extract_text_from_image(file_path: Path) -> str:
+    """이미지 파일 OCR."""
+    try:
+        from rapidocr_onnxruntime import RapidOCR
+
+        engine = RapidOCR()
+        result, _ = engine(str(file_path))
+        if result:
+            lines = [item[1] for item in result if len(item) >= 2 and item[1]]
+            text = "\n".join(lines).strip()
+            if text:
+                return text
+    except Exception:
+        pass
+
+    text = _run_windows_ocr(file_path)
+    if text:
+        return text
+
+    try:
+        import pytesseract
+        from PIL import Image
+
+        return pytesseract.image_to_string(Image.open(file_path), lang="kor+eng").strip()
+    except Exception:
+        return ""
+
+
+def _ocr_pdf_with_windows(file_path: Path, max_pages: int = 8) -> str:
+    """텍스트가 거의 없는 스캔 PDF를 이미지 OCR로 보완."""
+    temp_dir = Path(tempfile.mkdtemp(prefix="pdf_ocr_"))
+    ocr_texts = []
+
+    try:
+        import fitz
+
+        doc = fitz.open(str(file_path))
+        page_count = min(len(doc), max_pages)
+        for page_index in range(page_count):
+            page = doc.load_page(page_index)
+            pix = page.get_pixmap(matrix=fitz.Matrix(2, 2), alpha=False)
+            image_path = temp_dir / f"page_{page_index + 1}.png"
+            pix.save(str(image_path))
+            text = _extract_text_from_image(image_path)
+            if text.strip():
+                ocr_texts.append(text.strip())
+        doc.close()
+    except Exception:
+        return ""
+    finally:
+        for image_file in temp_dir.glob("*"):
+            try:
+                image_file.unlink()
+            except Exception:
+                pass
+        try:
+            temp_dir.rmdir()
+        except Exception:
+            pass
+
+    return "\n\n".join(ocr_texts).strip()
+
+
+def _iter_hwp_records(raw: bytes):
+    """압축 해제된 HWP section에서 레코드를 순회."""
+    offset = 0
+    total = len(raw)
+    while offset + 4 <= total:
+        header = struct.unpack_from("<I", raw, offset)[0]
+        tag_id = header & 0x3FF
+        level = (header >> 10) & 0x3FF
+        size = (header >> 20) & 0xFFF
+        offset += 4
+        if size == 0xFFF:
+            if offset + 4 > total:
+                break
+            size = struct.unpack_from("<I", raw, offset)[0]
+            offset += 4
+        if offset + size > total:
+            break
+        yield tag_id, level, raw[offset:offset + size]
+        offset += size
+
+
+def _clean_hwp_text_chunk(text: str) -> str:
+    """HWP PARA_TEXT 레코드에서 사람이 읽을 수 있는 텍스트만 남긴다."""
+    cleaned = sanitize_text_for_display(text, allow_cjk=False)
+    cleaned = re.sub(r"^[A-Za-z]{4,}(?=[가-힣])", "", cleaned)
+    cleaned = re.sub(r"(?<=[가-힣])[A-Za-z]{4,}$", "", cleaned)
+
+    if re.search(r"[가-힣]", cleaned):
+        tokens = []
+        for token in cleaned.split():
+            if re.fullmatch(r"[a-z]{4,}", token):
+                continue
+            tokens.append(token)
+        cleaned = " ".join(tokens)
+
+    cleaned = re.sub(r"\s+", " ", cleaned).strip(" -|\t")
+    return cleaned
+
+
+def _extract_text_from_hwp(file_path: Path) -> str:
+    """HWP 본문에서 PARA_TEXT 레코드만 읽어 텍스트를 추출."""
+    if not _HWP_SUPPORTED:
+        raise ValueError("HWP 지원을 위해 'pip install olefile'를 실행하세요.")
+
+    text_parts = []
+    try:
+        ole = _olefile.OleFileIO(str(file_path))
+        for stream in ole.listdir():
+            if "BodyText" not in stream or not any(part.startswith("Section") for part in stream):
+                continue
+            try:
+                data = ole.openstream(stream).read()
+                raw = _zlib.decompress(data, -15)
+            except Exception:
+                continue
+
+            for tag_id, _level, payload in _iter_hwp_records(raw):
+                if tag_id != 67:
+                    continue
+                try:
+                    chunk = payload.decode("utf-16-le", errors="ignore")
+                except Exception:
+                    continue
+                chunk = _clean_hwp_text_chunk(chunk)
+                if is_meaningful_text_line(chunk):
+                    text_parts.append(chunk)
+        ole.close()
+    except Exception as e:
+        raise ValueError(f"HWP 파일 읽기 실패: {e}")
+
+    return "\n".join(_dedupe_preserve_order(text_parts))
 
 
 def extract_text_from_file(file_path: Path) -> str:
@@ -204,6 +496,11 @@ def extract_text_from_file(file_path: Path) -> str:
                     page_text = page.extract_text()
                     if page_text:
                         text += page_text + "\n"
+        text = text.strip()
+        if len(re.sub(r"\s+", "", text)) < 80:
+            ocr_text = _ocr_pdf_with_windows(file_path)
+            if ocr_text:
+                text = ocr_text
         return text
 
     elif ext == '.docx':
@@ -226,35 +523,10 @@ def extract_text_from_file(file_path: Path) -> str:
         return text
 
     elif ext == '.hwp':
-        if not _HWP_SUPPORTED:
-            raise ValueError("HWP 지원을 위해 'pip install olefile'를 실행하세요.")
-
-        text_parts = []
-        try:
-            ole = _olefile.OleFileIO(str(file_path))
-            for stream in ole.listdir():
-                if 'BodyText' in stream or 'Section' in stream:
-                    try:
-                        data = ole.openstream(stream).read()
-                        try:
-                            decompressed = _zlib.decompress(data, -15)
-                            chunk = decompressed.decode('utf-16-le', errors='ignore')
-                            chunk = ''.join(c for c in chunk if c.isprintable() or c in '\n\r\t')
-                            if chunk.strip():
-                                text_parts.append(chunk)
-                        except (_zlib.error, UnicodeDecodeError):
-                            pass
-                    except Exception:
-                        pass
-            ole.close()
-        except Exception as e:
-            raise ValueError(f"HWP 파일 읽기 실패: {e}")
-
-        return "\n".join(text_parts) if text_parts else ""
+        return _extract_text_from_hwp(file_path)
 
     elif ext in ['.jpg', '.jpeg', '.png']:
-        # 이미지는 호출자가 Gemini Vision으로 처리 (경로 마커 반환)
-        return f"[IMAGE_FILE:{file_path}]"
+        return _extract_text_from_image(file_path)
 
     else:
         raise ValueError(f"지원되지 않는 파일 형식: {ext}")

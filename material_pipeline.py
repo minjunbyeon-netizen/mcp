@@ -13,7 +13,7 @@ from collections import Counter
 from pathlib import Path
 from typing import Iterable
 
-from utils import extract_text_from_file
+from utils import extract_text_from_file, is_meaningful_text_line, sanitize_text_for_display
 
 
 IMPORTANT_KEYWORDS = [
@@ -24,7 +24,7 @@ IMPORTANT_KEYWORDS = [
 
 
 def _normalize_text(text: str) -> str:
-    text = (text or "").replace("\r\n", "\n").replace("\r", "\n")
+    text = sanitize_text_for_display(text, allow_cjk=False)
     text = re.sub(r"[ \t]+", " ", text)
     text = re.sub(r"\n{3,}", "\n\n", text)
     return text.strip()
@@ -34,7 +34,8 @@ def _extract_lines(text: str) -> list[str]:
     lines = []
     for line in _normalize_text(text).splitlines():
         clean = re.sub(r"\s+", " ", line).strip()
-        if len(clean) >= 4:
+        clean = re.sub(r"^[A-Za-z]{4,}(?=[가-힣])", "", clean)
+        if len(clean) >= 4 and is_meaningful_text_line(clean):
             lines.append(clean)
     return lines
 

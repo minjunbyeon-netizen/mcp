@@ -8,26 +8,23 @@ const API_BASE = '/api';
 const navItems = document.querySelectorAll('.nav-item');
 const contentPanels = document.querySelectorAll('.content-panel');
 
-navItems.forEach(item => {
-    item.addEventListener('click', () => {
-        const panelId = item.dataset.panel;
-
-        navItems.forEach(n => n.classList.remove('active'));
-        item.classList.add('active');
-
-        contentPanels.forEach(panel => {
-            panel.classList.remove('active');
-            if (panel.id === panelId) {
-                panel.classList.add('active');
-            }
-        });
-
-        // 마이페이지 패널 진입시 데이터 로드
-        if (panelId === 'my-blogs') loadMyBlogs();
-        if (panelId === 'my-dna') loadMyDna();
-        // 블로그 작성 패널 진입시 최근 작성 글 로드
-        if (panelId === 's2-blog-write') loadRecentBlogs();
+function navigateTo(panelId) {
+    navItems.forEach(n => {
+        n.classList.toggle('active', n.dataset.panel === panelId);
     });
+    contentPanels.forEach(panel => {
+        panel.classList.toggle('active', panel.id === panelId);
+    });
+    if (panelId === 'my-blogs') loadMyBlogs();
+    if (panelId === 'my-dna') loadMyDna();
+    if (panelId === 'my-calibrations') loadMyCalibrations();
+    if (panelId === 'quick-compare') { populateQcStyleSelect(); loadQcHistory(); }
+    if (panelId === 's2-blog-write') loadRecentBlogs();
+    if (panelId === 's1-blog-status') loadCollections();
+}
+
+navItems.forEach(item => {
+    item.addEventListener('click', () => navigateTo(item.dataset.panel));
 });
 
 
@@ -109,14 +106,37 @@ async function apiRequest(endpoint, method = 'GET', data = null, isFormData = fa
         }
     }
 
-    const response = await fetch(`${API_BASE}${endpoint}`, options);
-
-    if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || 'API 요청 실패');
+    const url = `${API_BASE}${endpoint}`;
+    let response;
+    try {
+        response = await fetch(url, options);
+    } catch (networkErr) {
+        console.error(`[API] 네트워크 오류 ${method} ${url}:`, networkErr);
+        throw new Error('네트워크 오류 — 서버에 연결할 수 없습니다.');
     }
 
-    return response.json();
+    if (!response.ok) {
+        const rawText = await response.text();
+        console.error(`[API] ${method} ${url} → ${response.status}\n응답:`, rawText.slice(0, 500));
+        if (rawText.trim().startsWith('<')) {
+            throw new Error(`서버 오류 (${response.status}) — 콘솔에서 상세 내용을 확인하세요.`);
+        }
+        try {
+            const errJson = JSON.parse(rawText);
+            throw new Error(errJson.error || `API 오류 (${response.status})`);
+        } catch (e) {
+            if (e.message.startsWith('API') || e.message.startsWith('서버')) throw e;
+            throw new Error(`API 오류 (${response.status}): ${rawText.slice(0, 100)}`);
+        }
+    }
+
+    const text = await response.text();
+    try {
+        return JSON.parse(text);
+    } catch (e) {
+        console.error(`[API] ${method} ${url} → 200이지만 JSON 아님:`, text.slice(0, 500));
+        throw new Error(`서버 응답 파싱 오류 — 콘솔을 확인하세요.`);
+    }
 }
 
 function setLoading(button, loading) {
@@ -138,6 +158,19 @@ function showResult(resultBox, content) {
 function showError(resultBox, message) {
     resultBox.innerHTML = `<div class="error-message">${message}</div>`;
     resultBox.classList.remove('hidden');
+}
+
+function escapeHtml(value) {
+    return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+function formatMultilineText(value) {
+    return escapeHtml(value).replace(/\n/g, '<br>');
 }
 
 // ============================================================
@@ -290,34 +323,40 @@ async function loadCollections() {
 
         const defaultOpt = '<option value="">컬렉션을 선택하세요</option>';
 
-        ['status-collection-select', 'biz-collection-select', 'blog-dna-select'].forEach(id => {
+        ['status-collection-select', 'biz-collection-select'].forEach(id => {
             const el = document.getElementById(id);
-            if (el) {
-                const defOpt = id === 'blog-dna-select'
-                    ? '<option value="">DNA 미적용</option>'
-                    : defaultOpt;
-                el.innerHTML = defOpt + optionsHTML;
-            }
+            if (el) el.innerHTML = defaultOpt + optionsHTML;
         });
 
         // Populate collection list in 1-2 tab (Table View)
         const listBody = document.getElementById('blog-collections-body');
         if (listBody) {
             if (collections.length === 0) {
-                listBody.innerHTML = '<tr><td colspan="4" class="text-center text-muted">수집된 블로그가 없습니다.</td></tr>';
+                listBody.innerHTML = '<tr><td colspan="5" class="text-center text-muted">수집된 블로그가 없습니다. 블로그 주소를 입력해 수집을 시작하세요.</td></tr>';
             } else {
                 listBody.innerHTML = collections.map(c => `
                     <tr>
-                        <td class="font-medium">
-                            <i class="fas fa-history" style="font-size: 0.75rem; color: var(--accent-primary); margin-right: 4px;"></i>
-                            ${c.blog_id}
-                        </td>
+                        <td class="font-medium">${c.blog_id}</td>
                         <td>${c.post_count}개</td>
                         <td>${(c.total_chars / 1000).toFixed(1)}K자</td>
                         <td class="text-muted" style="font-size: 0.85rem;">${c.last_collected_at}</td>
+                        <td>
+                            <button class="btn btn-sm" style="padding:4px 10px;font-size:0.8rem;"
+                                onclick="goToDnaAnalysis('${c.blog_id}')">DNA 분석</button>
+                        </td>
                     </tr>
                 `).join('');
             }
+        }
+
+        // DNA 선택 드롭다운이 비어있으면 힌트 표시
+        const dnaSelect = document.getElementById('blog-dna-select');
+        const dnaHint = document.getElementById('dna-empty-hint');
+        if (dnaSelect && dnaHint) {
+            const hasOptions = collections.length > 0;
+            dnaHint.style.display = hasOptions ? 'none' : 'block';
+            dnaSelect.innerHTML = (hasOptions ? '<option value="">DNA 미적용 (기본 스타일)</option>' : '<option value="">수집된 블로그 없음</option>')
+                + collections.map(c => `<option value="${c.blog_id}">${c.blog_id} (${c.post_count}개)</option>`).join('');
         }
 
         console.log(`${collections.length}개 컬렉션 로드됨`);
@@ -386,6 +425,14 @@ document.getElementById('blog-collect-form')?.addEventListener('submit', async (
 
         showResult(resultBox, html);
         loadCollections(); // Refresh collections list
+
+        // 다음 단계 배너 표시
+        const nextBanner = document.getElementById('collect-next-step');
+        if (nextBanner) {
+            nextBanner.classList.remove('hidden');
+            // DNA 선택 드롭다운에 방금 수집한 블로그 자동 선택 준비
+            nextBanner.dataset.blogId = result.blog_id;
+        }
 
     } catch (error) {
         showError(resultBox, error.message);
@@ -501,6 +548,33 @@ document.getElementById('blog-status-form')?.addEventListener('submit', async (e
             `;
         }
 
+        // DNA 분석 완료 → blog-dna-select 자동 선택 + 글 작성 이동 버튼
+        const dnaSelect = document.getElementById('blog-dna-select');
+        if (dnaSelect) {
+            // blog_id 옵션이 있으면 선택
+            const opt = Array.from(dnaSelect.options).find(o => o.value === blog_id);
+            if (opt) {
+                dnaSelect.value = blog_id;
+                dnaSelect.dispatchEvent(new Event('change'));
+            }
+        }
+
+        // 분석 완료 후 글 작성 이동 버튼 추가 (없으면)
+        const resultBoxEl = document.getElementById('dna-result-box') || resultBox;
+        if (resultBoxEl && !resultBoxEl.querySelector('.dna-goto-write')) {
+            const gotoBtn = document.createElement('button');
+            gotoBtn.className = 'btn-primary dna-goto-write';
+            gotoBtn.style.cssText = 'margin-top:20px;width:100%;padding:13px;border-radius:980px;font-size:14px;font-weight:700';
+            gotoBtn.textContent = '이 DNA로 글 쓰러 가기';
+            gotoBtn.onclick = () => {
+                navigateTo('s2-blog-write');
+                // DNA select 다시 확인
+                const sel = document.getElementById('blog-dna-select');
+                if (sel) { sel.value = blog_id; sel.dispatchEvent(new Event('change')); }
+            };
+            resultBoxEl.appendChild(gotoBtn);
+        }
+
     } catch (error) {
         errorBox.textContent = `분석 실패: ${error.message}`;
         errorBox.classList.remove('hidden');
@@ -531,8 +605,57 @@ async function loadStyleTemplates() {
                 <div class="style-template-desc">${t.description}</div>
             </div>
         `).join('');
+
+        // 보정 후 이동 시 pending 스타일 자동 선택
+        if (window._pendingStyleId) {
+            const pendingCard = document.querySelector(`.style-template-card[data-template-id="${window._pendingStyleId}"]`);
+            if (pendingCard) {
+                selectStyleTemplate(window._pendingStyleId, pendingCard);
+                pendingCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+            window._pendingStyleId = null;
+        }
     } catch (err) {
         console.error('스타일 템플릿 로드 실패:', err);
+    }
+}
+
+// 생성된 버전을 빠른 비교 패널로 바로 전달
+function goToQuickCompareWithVersion(versionIdx) {
+    const versions = window._blogVersions;
+    if (!versions || !versions[versionIdx]) { alert('생성된 글이 없습니다.'); return; }
+
+    const activeEl = document.querySelectorAll('.version-content')[versionIdx];
+    const title   = activeEl?.querySelector('[data-field="title"]')?.innerText?.trim()
+                 || versions[versionIdx].title || '';
+    const content = activeEl?.querySelector('[data-field="content"]')?.innerText?.trim()
+                 || versions[versionIdx].content || '';
+
+    navigateTo('quick-compare');
+    document.getElementById('qc-ai-title').value   = title;
+    document.getElementById('qc-ai-content').value = content;
+
+    // 스타일도 동기화
+    const styleId = document.getElementById('style-template-id')?.value;
+    const qcSel   = document.getElementById('qc-style-select');
+    if (qcSel && styleId) qcSel.value = styleId;
+
+    // URL 필드 포커스
+    document.getElementById('qc-approved-url')?.focus();
+}
+
+// 보정 후 글 작성 패널로 이동 + 스타일 자동 선택
+function goToWriteWithStyle(styleId) {
+    navigateTo('s2-blog-write');
+    if (!styleId) return;
+    // 카드가 이미 렌더링 됐으면 바로 선택
+    const card = document.querySelector(`.style-template-card[data-template-id="${styleId}"]`);
+    if (card) {
+        selectStyleTemplate(styleId, card);
+        card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    } else {
+        // 아직 로딩 중이면 렌더 완료 후 선택
+        window._pendingStyleId = styleId;
     }
 }
 
@@ -557,10 +680,12 @@ document.getElementById('blog-form')?.addEventListener('submit', async (e) => {
     const styleTemplateId = document.getElementById('style-template-id')?.value || 'informational';
 
     const pressReleaseText = document.getElementById('press-release').value;
+    const pressUrl = document.getElementById('press-url')?.value?.trim() || '';
+    const referenceBlogUrl = document.getElementById('reference-blog-url')?.value?.trim() || '';
     const hasFile = pressFileInput.files.length > 0;
 
-    if (!hasFile && !pressReleaseText.trim()) {
-        showError(resultBox, '보도자료 파일을 업로드하거나 내용을 입력해주세요.');
+    if (!hasFile && !pressReleaseText.trim() && !pressUrl) {
+        showError(resultBox, '보도자료 파일, URL, 또는 내용을 입력해주세요.');
         return;
     }
 
@@ -578,8 +703,15 @@ document.getElementById('blog-form')?.addEventListener('submit', async (e) => {
 
     if (hasFile) {
         Array.from(pressFileInput.files).forEach(file => formData.append('files', file));
-    } else {
+    }
+    if (pressUrl) {
+        formData.append('press_url', pressUrl);
+    }
+    if (pressReleaseText.trim()) {
         formData.append('press_release', pressReleaseText);
+    }
+    if (referenceBlogUrl) {
+        formData.append('reference_blog_url', referenceBlogUrl);
     }
 
     setLoading(submitBtn, true);
@@ -637,6 +769,13 @@ document.getElementById('blog-form')?.addEventListener('submit', async (e) => {
                             <button type="button" class="btn btn-export-docs" onclick="exportBlogDocs(${i})">
                                 <span class="btn-text">📄 DOCX 내보내기</span>
                                 <span class="btn-loading">내보내기 중...</span>
+                            </button>
+                            <button type="button" class="btn btn-calibrate" onclick="openCalibrationModal(${i})" title="실제 검수 통과된 글을 등록해 AI 스타일을 보정합니다">
+                                <span class="btn-text">보정 등록</span>
+                            </button>
+                            <button type="button" class="btn" style="background:#f5f5f7;border:1px solid #d0d0d0;color:#1d1d1f"
+                                onclick="goToQuickCompareWithVersion(${i})" title="빠른 비교 테스트 패널에서 즉시 비교">
+                                <span class="btn-text">즉시 비교</span>
                             </button>
                         </div>
                     </div>
@@ -853,11 +992,14 @@ async function saveBlogVersion(idx) {
             output_dir: window._blogOutputDir || ''
         });
 
+        // 저장된 blog_id 기록 (보정 비교에 사용)
+        window._lastSavedBlogId = result.blog_id || window._blogOutputId || '';
+
         // Show success feedback
         btn.classList.add('save-success');
         const btnText = btn.querySelector('.btn-text');
         const origText = btnText.textContent;
-        btnText.textContent = '✅ 저장 완료!';
+        btnText.textContent = '저장 완료';
         setTimeout(() => {
             btnText.textContent = origText;
             btn.classList.remove('save-success');
@@ -1441,6 +1583,41 @@ function renderDetailContent(type, data) {
         }
         return html;
     }
+    if (type === 'blogs') {
+        const versions = Array.isArray(data.versions) ? data.versions : [];
+        const sourceBundle = data.source_bundle || {};
+        const sourceNames = Array.isArray(sourceBundle.sources)
+            ? sourceBundle.sources.map(source => `${source.name} (${source.char_count || 0}자)`)
+            : [];
+
+        let html = `<div class="detail-section">
+            <div class="detail-section-title">기본 정보</div>
+            <div class="detail-field"><span class="detail-field-label">제목</span><span class="detail-field-value">${escapeHtml(data.title || versions[0]?.title || '(제목없음)')}</span></div>
+            <div class="detail-field"><span class="detail-field-label">클라이언트</span><span class="detail-field-value">${escapeHtml(data.client_id || '-')}</span></div>
+            <div class="detail-field"><span class="detail-field-label">생성일</span><span class="detail-field-value">${escapeHtml(formatDate(data.created_at))}</span></div>
+            <div class="detail-field"><span class="detail-field-label">생성 방식</span><span class="detail-field-value">${escapeHtml(data.generation_mode === 'ai' ? 'AI 생성' : '오프라인 초안 엔진')}</span></div>
+        </div>`;
+
+        if (sourceNames.length > 0 || (sourceBundle.warnings || []).length > 0) {
+            html += `<div class="detail-section">
+                <div class="detail-section-title">입력 자료</div>
+                ${sourceNames.length > 0 ? `<div class="detail-text-block">${formatMultilineText(sourceNames.join('\n'))}</div>` : ''}
+                ${(sourceBundle.warnings || []).length > 0 ? `<div class="detail-text-block" style="margin-top:12px;">${formatMultilineText(sourceBundle.warnings.join('\n'))}</div>` : ''}
+            </div>`;
+        }
+
+        versions.forEach(version => {
+            const tags = Array.isArray(version.tags) ? version.tags : [];
+            html += `<div class="detail-section">
+                <div class="detail-section-title">${escapeHtml(version.version_label || version.version_type || '버전')}</div>
+                <div class="detail-field"><span class="detail-field-label">제목</span><span class="detail-field-value">${escapeHtml(version.title || '(제목없음)')}</span></div>
+                ${tags.length > 0 ? `<div class="detail-tags">${tags.map(tag => `<span class="detail-tag">#${escapeHtml(tag)}</span>`).join('')}</div>` : ''}
+                <div class="detail-text-block">${formatMultilineText(version.content || '')}</div>
+            </div>`;
+        });
+
+        return html;
+    }
     return `<div class="detail-text-block">${JSON.stringify(data, null, 2)}</div>`;
 }
 
@@ -1525,6 +1702,7 @@ async function loadRecentBlogs() {
                 <td class="lt-actions">
                     <button class="lt-btn" onclick="viewDetail('blogs','${item.id}','블로그 상세')">상세</button>
                     <button class="lt-btn lt-btn-docs" onclick="exportToGoogleDocs('blogs','${item.id}')">Docs</button>
+                    <button class="lt-btn lt-btn-calibrate" onclick="openCalibrationFromBlog('${item.id}','${item.title?.replace(/'/g,'') || ''}','${item.style_template_id || ''}')">비교</button>
                     <button class="lt-btn lt-btn-del" onclick="deleteItem('blogs','${item.id}',this); setTimeout(loadRecentBlogs,300);">삭제</button>
                 </td>`;
             tbody.appendChild(tr);
@@ -1536,6 +1714,482 @@ async function loadRecentBlogs() {
 // ============================================================
 // Initialize
 // ============================================================
+
+// ============================================================
+// 보정 루프 — openCalibrationModal / 모달 핸들러 / loadMyCalibrations
+// ============================================================
+
+// 최근 글 테이블의 "비교" 버튼에서 호출
+function openCalibrationFromBlog(blogId, blogTitle, styleTemplateId) {
+    const modal = document.getElementById('calibration-modal');
+    modal.dataset.blogId = blogId;
+    modal.dataset.styleTemplateId = styleTemplateId;
+
+    document.getElementById('cal-ai-title-preview').textContent = blogTitle || blogId;
+    document.getElementById('cal-approved-url').value = '';
+    document.getElementById('cal-result').classList.add('hidden');
+    document.getElementById('cal-result').innerHTML = '';
+
+    modal.classList.remove('hidden');
+}
+
+// 생성 직후 버전 탭의 "보정 등록" 버튼 — 저장 없이 바로 비교
+function openCalibrationModal(versionIdx) {
+    const versionEl = document.querySelector(`.version-content[data-version-idx="${versionIdx}"]`);
+    if (!versionEl) return;
+    const title   = versionEl.querySelector('[data-field="title"]')?.innerText?.trim() || '';
+    const content = versionEl.querySelector('[data-field="content"]')?.innerText?.trim() || '';
+    const styleId = document.getElementById('style-template-id')?.value || '';
+
+    const modal = document.getElementById('calibration-modal');
+    // ai_title/ai_content 직접 저장 (blog_id 불필요)
+    modal.dataset.blogId = window._lastSavedBlogId || '';
+    modal.dataset.aiTitle = title;
+    modal.dataset.aiContent = content;
+    modal.dataset.styleTemplateId = styleId;
+
+    document.getElementById('cal-ai-title-preview').textContent = title || '(현재 생성된 글)';
+    document.getElementById('cal-approved-url').value = '';
+    document.getElementById('cal-result').classList.add('hidden');
+    document.getElementById('cal-result').innerHTML = '';
+
+    modal.classList.remove('hidden');
+}
+
+function closeCalibrationModal() {
+    document.getElementById('calibration-modal').classList.add('hidden');
+}
+
+document.getElementById('cal-modal-close')?.addEventListener('click', closeCalibrationModal);
+document.getElementById('cal-modal-cancel')?.addEventListener('click', closeCalibrationModal);
+document.getElementById('cal-modal-overlay')?.addEventListener('click', closeCalibrationModal);
+
+document.getElementById('cal-modal-submit')?.addEventListener('click', async () => {
+    const modal = document.getElementById('calibration-modal');
+    const approvedUrl = document.getElementById('cal-approved-url').value.trim();
+
+    if (!approvedUrl) {
+        alert('실제 게시된 블로그 URL을 입력해주세요.');
+        return;
+    }
+    if (!approvedUrl.startsWith('http')) {
+        alert('올바른 URL을 입력해주세요. (https://... 형식)');
+        return;
+    }
+
+    const btn = document.getElementById('cal-modal-submit');
+    setLoading(btn, true);
+
+    const styleId = modal.dataset.styleTemplateId || document.getElementById('style-template-id')?.value || '';
+    const dnaId   = document.getElementById('blog-dna-select')?.value || '';
+    try {
+        const result = await apiRequest('/blog/calibrate-from-url', 'POST', {
+            blog_id:          modal.dataset.blogId || '',
+            ai_title:         modal.dataset.aiTitle || '',
+            ai_content:       modal.dataset.aiContent || '',
+            approved_url:     approvedUrl,
+            style_template_id: styleId,
+            blog_dna_id:      dnaId
+        });
+        const meta = result.meta || {
+            blog_id:          modal.dataset.blogId || '',
+            ai_title:         modal.dataset.aiTitle || '',
+            approved_url:     approvedUrl,
+            style_template_id: styleId,
+            blog_dna_id:      dnaId
+        };
+        renderCalibrationChecklist(result.analysis || {}, 'cal-result', meta);
+    } catch (e) {
+        alert('비교 분석 실패: ' + e.message);
+    } finally {
+        setLoading(btn, false);
+    }
+});
+
+// 보정 기록 패널
+async function loadMyCalibrations() {
+    try {
+        const data = await apiRequest('/blog/calibrations');
+        const cals = data.calibrations || [];
+        const grid = document.querySelector('#my-calibrations-grid tbody');
+        const empty = document.getElementById('my-calibrations-empty');
+
+        if (!cals.length) {
+            if (empty) empty.style.display = 'block';
+            if (grid) grid.innerHTML = '';
+            return;
+        }
+        if (empty) empty.style.display = 'none';
+        if (grid) {
+            grid.innerHTML = cals.map(c => {
+                const score = c.similarity_score ?? '?';
+                const scoreColor = score >= 80 ? 'var(--accent-success)' : score >= 60 ? 'var(--accent-warning)' : 'var(--accent-danger)';
+                const urlShort = c.approved_url ? c.approved_url.replace(/^https?:\/\//, '').substring(0, 30) + '...' : '—';
+                return `
+                <tr>
+                    <td style="font-size:0.85rem">${c.style_template_id || '—'}</td>
+                    <td style="font-size:0.82rem;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${c.ai_title}">${c.ai_title || '—'}</td>
+                    <td style="font-size:0.9rem;font-weight:700;color:${scoreColor};text-align:center">${score}%</td>
+                    <td style="font-size:0.82rem;color:var(--text-muted);max-width:220px">${c.tone_shift || c.calibration_prompt || '—'}</td>
+                    <td style="font-size:0.82rem;color:var(--text-muted)">${c.created_at || '—'}</td>
+                    <td><button class="btn-view" style="font-size:0.78rem;color:var(--accent-danger)"
+                        onclick="deleteCalibration('${c.calibration_id}')">삭제</button></td>
+                </tr>`;
+            }).join('');
+        }
+    } catch (e) {
+        console.error('보정 기록 로드 실패:', e);
+    }
+}
+
+async function deleteCalibration(calId) {
+    if (!confirm('이 보정 기록을 삭제하시겠습니까?')) return;
+    try {
+        await apiRequest(`/blog/calibration/${calId}`, 'DELETE');
+        loadMyCalibrations();
+    } catch (e) {
+        alert('삭제 실패: ' + e.message);
+    }
+}
+
+// ============================================================
+// 빠른 비교 테스트 패널
+// ============================================================
+
+// 전체 선택/해제 토글
+function toggleAllCalItems(checked, containerId) {
+    document.getElementById(containerId)
+        .querySelectorAll('.cal-item-check')
+        .forEach(cb => { cb.checked = checked; });
+}
+
+// 선택 항목 저장
+async function saveSelectedCalibration(containerId) {
+    const container = document.getElementById(containerId);
+    const a     = container._calAnalysis;
+    const meta  = container._calMeta;
+    const items = container._calItems;
+
+    const checks = container.querySelectorAll('.cal-item-check');
+    const selected = [];
+    checks.forEach((cb, i) => { if (cb.checked) selected.push(items[i]); });
+
+    if (!selected.length) { alert('최소 1개 항목을 선택해주세요.'); return; }
+
+    // 선택 항목 기반 calibration_prompt 구성
+    const doMore  = selected.filter(i => i.category === '더 활용').map(i => i.text);
+    const doLess  = selected.filter(i => i.category === '줄일 것').map(i => i.text);
+    const singles = selected.filter(i => i.category !== '더 활용' && i.category !== '줄일 것');
+    const parts = [];
+    if (doMore.length)  parts.push(`더 활용할 것: ${doMore.join(', ')}`);
+    if (doLess.length)  parts.push(`줄일 것: ${doLess.join(', ')}`);
+    singles.forEach(i => parts.push(`${i.category}: ${i.text}`));
+    const customPrompt = parts.join('. ');
+
+    const btn = document.getElementById(`${containerId}-save-btn`);
+    btn.disabled = true;
+    btn.textContent = '등록 중...';
+
+    try {
+        await apiRequest('/blog/calibration/save', 'POST', {
+            analysis: a,
+            selected_items: selected,
+            calibration_prompt: customPrompt,
+            meta: meta
+        });
+        btn.textContent = '등록 완료';
+        loadQcHistory?.();
+        loadMyCalibrations?.();
+
+        // 저장 완료 영역: 안내 + 바로 글 쓰기 버튼
+        const saveResult = document.getElementById(`${containerId}-save-result`);
+        if (saveResult) {
+            const styleId = meta.style_template_id || '';
+            saveResult.innerHTML = `
+                <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
+                    <span>보정 등록 완료 — 다음 생성부터 반영됩니다.</span>
+                    <button class="btn-primary" style="padding:8px 18px;font-size:13px;border-radius:980px;white-space:nowrap"
+                        onclick="goToWriteWithStyle('${styleId}')">바로 글 쓰기</button>
+                </div>`;
+            saveResult.style.display = 'block';
+        }
+    } catch (e) {
+        alert('저장 실패: ' + e.message);
+        btn.disabled = false;
+        btn.textContent = '선택한 항목 보정 등록';
+    }
+}
+
+// 분석 결과를 번호 체크리스트로 렌더링
+function renderCalibrationChecklist(a, containerId, meta) {
+    const items = [];
+    let n = 1;
+    (a.do_more     || []).forEach(s => items.push({ n: n++, category: '더 활용',  text: s }));
+    (a.do_less     || []).forEach(s => items.push({ n: n++, category: '줄일 것',  text: s }));
+    if (a.tone_shift)    items.push({ n: n++, category: '톤 변화',  text: a.tone_shift });
+    if (a.structure_diff)items.push({ n: n++, category: '구조',     text: a.structure_diff });
+    if (a.length_diff)   items.push({ n: n++, category: '분량',     text: a.length_diff });
+    (a.key_phrases || []).forEach(s => items.push({ n: n++, category: '특징 표현', text: s }));
+
+    const score = a.similarity_score ?? '?';
+    const scoreColor = score >= 80 ? 'var(--accent-success)' : score >= 60 ? 'var(--accent-warning)' : 'var(--accent-danger)';
+
+    const CATEGORY_COLORS = {
+        '더 활용':  '#0071E3',
+        '줄일 것':  '#FF3B30',
+        '톤 변화':  '#888',
+        '구조':     '#888',
+        '분량':     '#888',
+        '특징 표현':'#555',
+    };
+
+    const rows = items.map(item => `
+        <label class="cal-item-row">
+            <input type="checkbox" class="cal-item-check" checked>
+            <span class="cal-item-num">${item.n}</span>
+            <span class="cal-item-badge" style="background:${CATEGORY_COLORS[item.category] || '#888'}20;color:${CATEGORY_COLORS[item.category] || '#888'}">${item.category}</span>
+            <span class="cal-item-text">${escapeHtml(item.text)}</span>
+        </label>`).join('');
+
+    const container = document.getElementById(containerId);
+    container.innerHTML = `
+        <div class="cal-score-row">
+            <div class="cal-score-num" style="color:${scoreColor}">${score}<span class="cal-score-unit">%</span></div>
+            <div class="cal-score-label">현재 일치율</div>
+        </div>
+        <div class="cal-checklist-header">
+            <span style="font-size:13px;color:#555">반영할 항목을 선택하세요</span>
+            <div style="display:flex;gap:6px">
+                <button class="cal-toggle-btn" onclick="toggleAllCalItems(true,'${containerId}')">전체 선택</button>
+                <button class="cal-toggle-btn" onclick="toggleAllCalItems(false,'${containerId}')">전체 해제</button>
+            </div>
+        </div>
+        <div class="cal-checklist">${rows}</div>
+        <button id="${containerId}-save-btn" class="btn-primary cal-save-btn"
+            onclick="saveSelectedCalibration('${containerId}')">선택한 항목 보정 등록</button>
+        <div id="${containerId}-save-result" class="cal-save-done" style="display:none">보정 등록 완료 — 다음 생성부터 반영됩니다.</div>`;
+
+    container._calAnalysis = a;
+    container._calMeta     = meta;
+    container._calItems    = items;
+    container.classList.remove('hidden');
+}
+
+// 이전 코드와의 호환 — renderCalibrationResult 를 체크리스트로 대체
+function renderCalibrationResult(a, containerId, meta) {
+    renderCalibrationChecklist(a, containerId, meta || {});
+}
+
+// 최근 생성 글 불러오기
+document.getElementById('qc-load-latest')?.addEventListener('click', async () => {
+    // 1) 현재 세션 버전이 있으면 그걸 우선 사용
+    const versions = window._blogVersions;
+    if (versions && versions.length) {
+        const activeEl = document.querySelector('.version-content.active');
+        const title   = activeEl?.querySelector('[data-field="title"]')?.innerText?.trim()
+                     || versions[0].title || '';
+        const content = activeEl?.querySelector('[data-field="content"]')?.innerText?.trim()
+                     || versions[0].content || '';
+        document.getElementById('qc-ai-title').value   = title;
+        document.getElementById('qc-ai-content').value = content;
+        return;
+    }
+
+    // 2) 저장된 블로그 목록에서 선택
+    const btn = document.getElementById('qc-load-latest');
+    btn.disabled = true;
+    btn.textContent = '불러오는 중...';
+    try {
+        const res = await fetch('/api/mypage/blogs');
+        const data = await res.json();
+        const items = (data.items || []).slice(0, 20);
+        if (!items.length) { alert('저장된 블로그가 없습니다.'); return; }
+
+        let existingPicker = document.getElementById('qc-blog-picker');
+        if (existingPicker) existingPicker.remove();
+
+        const picker = document.createElement('div');
+        picker.id = 'qc-blog-picker';
+        picker.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#fff;border:1px solid #e0e0e0;border-radius:12px;padding:24px;z-index:9999;width:480px;max-height:60vh;overflow-y:auto;box-shadow:0 4px 24px rgba(0,0,0,0.12)';
+        picker.innerHTML = `
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+                <strong style="font-size:15px">불러올 블로그 선택</strong>
+                <button onclick="document.getElementById('qc-blog-picker').remove();document.getElementById('qc-backdrop').remove()" style="background:none;border:none;font-size:20px;cursor:pointer;color:#666">&times;</button>
+            </div>
+            <div id="qc-picker-list" style="display:flex;flex-direction:column;gap:8px"></div>`;
+        document.body.appendChild(picker);
+
+        const listEl = picker.querySelector('#qc-picker-list');
+        items.forEach(item => {
+            const row = document.createElement('button');
+            row.style.cssText = 'text-align:left;padding:10px 14px;border:1px solid #e0e0e0;border-radius:8px;background:#fff;cursor:pointer;font-size:13px;width:100%';
+            row.innerHTML = `<div style="font-weight:700;margin-bottom:2px">${escapeHtml(item.title || '(제목 없음)')}</div><div style="color:#888;font-size:12px">${item.created_at ? item.created_at.slice(0,16).replace('T',' ') : ''}</div>`;
+            row.onmouseenter = () => row.style.background = '#f5f5f7';
+            row.onmouseleave = () => row.style.background = '#fff';
+            row.addEventListener('click', async () => {
+                document.getElementById('qc-blog-picker')?.remove();
+                document.getElementById('qc-backdrop')?.remove();
+                try {
+                    const detailRes = await fetch(`/api/mypage/blogs/${item.id}`);
+                    const detail = await detailRes.json();
+                    const vs = detail.versions || [];
+                    const v = vs[0] || {};
+                    document.getElementById('qc-ai-title').value   = v.title || item.title || '';
+                    document.getElementById('qc-ai-content').value = v.content || '';
+                } catch(e) {
+                    alert('블로그 상세를 불러오지 못했습니다.');
+                }
+            });
+            listEl.appendChild(row);
+        });
+
+        const backdrop = document.createElement('div');
+        backdrop.id = 'qc-backdrop';
+        backdrop.style.cssText = 'position:fixed;inset:0;z-index:9998';
+        backdrop.onclick = () => { picker.remove(); backdrop.remove(); };
+        document.body.insertBefore(backdrop, picker);
+
+    } catch(e) {
+        alert('블로그 목록을 불러오지 못했습니다.');
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '최근 생성 글 불러오기';
+    }
+});
+
+// 빠른 비교 스타일 셀렉트 채우기
+function populateQcStyleSelect() {
+    const sel = document.getElementById('qc-style-select');
+    if (!sel) return;
+    const currentStyleId = document.getElementById('style-template-id')?.value || '';
+    // style-template-grid의 카드에서 추출
+    const cards = document.querySelectorAll('.style-template-card');
+    if (cards.length) {
+        sel.innerHTML = '<option value="">스타일 선택 (선택사항)</option>'
+            + Array.from(cards).map(c => {
+                const id = c.dataset.templateId;
+                const name = c.querySelector('.style-template-name')?.textContent || id;
+                return `<option value="${id}" ${id === currentStyleId ? 'selected' : ''}>${name}</option>`;
+            }).join('');
+    }
+}
+
+document.getElementById('qc-submit')?.addEventListener('click', async () => {
+    const aiTitle   = document.getElementById('qc-ai-title').value.trim();
+    const aiContent = document.getElementById('qc-ai-content').value.trim();
+    const url       = document.getElementById('qc-approved-url').value.trim();
+    const styleId   = document.getElementById('qc-style-select').value;
+
+    if (!aiContent) { alert('AI 생성 글 본문을 입력해주세요.'); return; }
+    if (!url || !url.startsWith('http')) { alert('실제 게시된 블로그 URL을 입력해주세요.'); return; }
+
+    const btn = document.getElementById('qc-submit');
+    setLoading(btn, true);
+    document.getElementById('qc-result').classList.add('hidden');
+
+    const dnaId = document.getElementById('blog-dna-select')?.value || '';
+    try {
+        const result = await apiRequest('/blog/calibrate-from-url', 'POST', {
+            ai_title: aiTitle,
+            ai_content: aiContent,
+            approved_url: url,
+            style_template_id: styleId,
+            blog_dna_id: dnaId
+        });
+        const meta = result.meta || {
+            ai_title: aiTitle,
+            approved_url: url,
+            style_template_id: styleId,
+            blog_dna_id: dnaId
+        };
+        renderCalibrationChecklist(result.analysis || {}, 'qc-result', meta);
+    } catch (e) {
+        alert('분석 실패: ' + e.message);
+    } finally {
+        setLoading(btn, false);
+    }
+});
+
+async function loadQcHistory() {
+    try {
+        const data = await apiRequest('/blog/calibrations');
+        const cals = (data.calibrations || []).slice(0, 10);
+        const el = document.getElementById('qc-history');
+        if (!el) return;
+        if (!cals.length) {
+            el.innerHTML = '<p style="color:var(--text-muted);font-size:0.85rem">아직 보정 기록이 없습니다.</p>';
+            return;
+        }
+        el.innerHTML = `<table class="list-table" style="font-size:0.83rem">
+            <thead><tr><th>날짜</th><th>스타일</th><th>일치율</th><th>보정 요약</th><th></th></tr></thead>
+            <tbody>${cals.map(c => {
+                const score = c.similarity_score ?? '?';
+                const sc = score >= 80 ? 'var(--accent-success)' : score >= 60 ? 'var(--accent-warning)' : 'var(--accent-danger)';
+                const date = (c.created_at || '').slice(0, 16).replace('T', ' ');
+                return `<tr>
+                    <td style="color:var(--text-muted);white-space:nowrap">${date}</td>
+                    <td>${c.style_template_id || '—'}</td>
+                    <td style="font-weight:700;color:${sc};text-align:center">${score}%</td>
+                    <td style="color:var(--text-muted);max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"
+                        title="${escapeHtml(c.tone_shift || c.calibration_prompt || '')}">${escapeHtml(c.tone_shift || c.calibration_prompt || '—')}</td>
+                    <td style="white-space:nowrap">
+                        <button onclick="deleteQcCal('${c.calibration_id}')"
+                            style="background:none;border:none;cursor:pointer;color:var(--accent-danger);font-size:13px;padding:2px 6px"
+                            title="삭제">&#10005;</button>
+                    </td>
+                </tr>`;
+            }).join('')}</tbody>
+        </table>`;
+    } catch (e) { console.error(e); }
+}
+
+async function deleteQcCal(calId) {
+    if (!confirm('이 보정 기록을 삭제하시겠습니까?')) return;
+    try {
+        await apiRequest(`/blog/calibration/${calId}`, 'DELETE');
+        loadQcHistory();
+        loadMyCalibrations?.();
+    } catch (e) {
+        alert('삭제 실패: ' + e.message);
+    }
+}
+
+document.getElementById('qc-refresh-history')?.addEventListener('click', loadQcHistory);
+
+// ── 흐름 버튼 핸들러 ──────────────────────────────────────────
+
+// 수집 패널: "DNA 분석하기" 버튼
+document.getElementById('btn-go-dna-from-collect')?.addEventListener('click', () => {
+    const banner = document.getElementById('collect-next-step');
+    const blogId = banner?.dataset.blogId;
+    navigateTo('s1-blog-status');
+    // 방금 수집한 블로그 자동 선택
+    if (blogId) {
+        setTimeout(() => {
+            const sel = document.getElementById('status-collection-select');
+            if (sel) sel.value = blogId;
+        }, 200);
+    }
+});
+
+// DNA 분석 패널: "글 작성하기" 버튼
+document.getElementById('btn-go-write-from-dna')?.addEventListener('click', () => {
+    navigateTo('s2-blog-write');
+});
+
+// 글 작성 패널: "블로그 수집 → DNA 분석" 링크
+document.getElementById('btn-go-collect-from-write')?.addEventListener('click', () => {
+    navigateTo('s1-blog-collect');
+});
+
+// 수집 이력 테이블: DNA 분석 바로가기
+function goToDnaAnalysis(blogId) {
+    navigateTo('s1-blog-status');
+    setTimeout(() => {
+        const sel = document.getElementById('status-collection-select');
+        if (sel) sel.value = blogId;
+    }, 200);
+}
 
 document.addEventListener('DOMContentLoaded', () => {
     checkAuthStatus();

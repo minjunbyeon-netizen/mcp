@@ -102,6 +102,8 @@ DNA_DIR = OUTPUT_DIR / "dna"
 DNA_DIR.mkdir(parents=True, exist_ok=True)
 BUSINESS_DIR = OUTPUT_DIR / "business"
 BUSINESS_DIR.mkdir(parents=True, exist_ok=True)
+CALIBRATIONS_DIR = OUTPUT_DIR / "calibrations"
+CALIBRATIONS_DIR.mkdir(parents=True, exist_ok=True)
 
 # blog_pull 모듈 경로 추가
 sys.path.insert(0, str(PROJECT_ROOT / "blog_pull"))
@@ -114,6 +116,67 @@ _STYLE_TEMPLATES_MAP: dict[str, dict] = {t["id"]: t for t in STYLE_TEMPLATES}
 
 # Google Gemini API 클라이언트
 from google import genai
+
+def _normalize_naver_blog_url(url: str) -> str:
+    """네이버 블로그 URL을 PostView URL로 변환 (JS 렌더링 우회)"""
+    # blog.naver.com/USER/POST_NO 또는 m.blog.naver.com/USER/POST_NO 패턴
+    m = re.match(
+        r'https?://(?:m\.)?blog\.naver\.com/([^/?#]+)/(\d+)',
+        url
+    )
+    if m:
+        blog_id, log_no = m.group(1), m.group(2)
+        return f'https://blog.naver.com/PostView.naver?blogId={blog_id}&logNo={log_no}'
+    return url
+
+
+def fetch_url_text(url: str) -> str:
+    """URL에서 텍스트 추출 (HTML 페이지 or PDF URL)"""
+    # 네이버 블로그는 JS 렌더링 — PostView URL로 변환
+    fetch_url = _normalize_naver_blog_url(url)
+
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept-Language': 'ko-KR,ko;q=0.9,en;q=0.8',
+        'Referer': 'https://blog.naver.com/',
+    }
+    try:
+        resp = http_requests.get(fetch_url, headers=headers, timeout=20, stream=True)
+        resp.raise_for_status()
+        content_type = resp.headers.get('Content-Type', '')
+
+        if 'application/pdf' in content_type or url.lower().endswith('.pdf'):
+            # PDF URL → 임시 파일로 저장 후 pdfplumber 추출
+            import pdfplumber
+            with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as tmp:
+                for chunk in resp.iter_content(chunk_size=8192):
+                    tmp.write(chunk)
+                tmp_path = Path(tmp.name)
+            try:
+                with pdfplumber.open(tmp_path) as pdf:
+                    pages = [p.extract_text() or '' for p in pdf.pages[:15]]
+                    return '\n'.join(pages)[:10000]
+            finally:
+                tmp_path.unlink(missing_ok=True)
+        else:
+            # HTML 페이지 → 태그 제거 후 텍스트 추출
+            html = resp.text
+            # script/style 제거
+            html = re.sub(r'<(script|style)[^>]*>.*?</(script|style)>', '', html, flags=re.DOTALL | re.IGNORECASE)
+            # HTML 태그 제거
+            text = re.sub(r'<[^>]+>', ' ', html)
+            # 연속 공백/줄바꿈 정리
+            text = re.sub(r'[ \t]+', ' ', text)
+            text = re.sub(r'\n{3,}', '\n\n', text)
+            text = text.strip()
+            if len(text) < 100:
+                raise ValueError(f"추출된 텍스트가 너무 짧습니다 ({len(text)}자). JS 렌더링 페이지일 수 있습니다.")
+            return text[:10000]
+    except ValueError:
+        raise
+    except Exception as e:
+        raise ValueError(f"URL 크롤링 실패 ({url}): {e}")
+
 
 def _strip_markdown(text: str) -> str:
     """블로그 본문에서 마크다운 기호를 모두 제거"""
@@ -330,16 +393,25 @@ def auth_status():
 # Static Files (Frontend)
 # ============================================================
 
+NO_CACHE_HEADERS = {
+    'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0',
+    'Pragma': 'no-cache',
+    'Expires': '0',
+}
+
 @app.route('/')
 def index():
-    return send_from_directory('.', 'index.html')
+    resp = send_from_directory('.', 'index.html')
+    for k, v in NO_CACHE_HEADERS.items():
+        resp.headers[k] = v
+    return resp
 
 @app.route('/<path:filename>')
 def static_files(filename):
     resp = send_from_directory('.', filename)
     if filename in ('app.js', 'style.css', 'index.html'):
-        resp.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
-        resp.headers['Pragma'] = 'no-cache'
+        for k, v in NO_CACHE_HEADERS.items():
+            resp.headers[k] = v
     return resp
 
 
@@ -557,6 +629,27 @@ def generate_blog():
     target_audience = request.form.get("target_audience", "일반 독자")
     content_angle = request.form.get("content_angle", "정보전달형")
     direct_text = request.form.get("press_release", "")
+    press_url = request.form.get("press_url", "").strip()
+    reference_blog_url = request.form.get("reference_blog_url", "").strip()
+
+    # URL로 보도자료 크롤링
+    if press_url:
+        try:
+            url_text = fetch_url_text(press_url)
+            if url_text:
+                direct_text = (direct_text + "\n\n" + url_text).strip() if direct_text else url_text
+                print(f"[OK] 보도자료 URL 크롤링 완료: {len(url_text)}자")
+        except Exception as e:
+            print(f"[WARN] 보도자료 URL 크롤링 실패: {e}")
+
+    # 참고 블로그 URL 크롤링 (스타일 참고용)
+    reference_blog_text = ""
+    if reference_blog_url:
+        try:
+            reference_blog_text = fetch_url_text(reference_blog_url)
+            print(f"[OK] 참고 블로그 URL 크롤링 완료: {len(reference_blog_text)}자")
+        except Exception as e:
+            print(f"[WARN] 참고 블로그 URL 크롤링 실패: {e}")
 
     uploaded_files = [file for file in request.files.getlist("files") if file and file.filename]
     if not uploaded_files and 'file' in request.files and request.files['file'].filename:
@@ -699,15 +792,15 @@ def generate_blog():
                 if c9.get("closing_examples"):
                     dna_parts.append(f"\n실제 마무리 예시:\n" + "\n".join(c9["closing_examples"][:2]))
 
-            # 원본 글 전문 1개 (가장 최근 글)
+            # 원본 글 전문 최대 3개 (스타일 레퍼런스)
             if unique_posts:
-                full_sample = unique_posts[0]
-                dna_parts.append(f"\n【실제 글 전문 샘플 (이 스타일을 그대로 따라쓸 것)】")
-                dna_parts.append(f"제목: {full_sample.get('title', '')}")
-                dna_parts.append(full_sample.get('content', '')[:2000])
+                dna_parts.append(f"\n【실제 글 샘플 (이 스타일을 최대한 그대로 따라 쓸 것 — 어투·구조·길이·표현 모두)】")
+                for si, sample in enumerate(unique_posts[:3], 1):
+                    dna_parts.append(f"\n[샘플 {si}] 제목: {sample.get('title', '')}")
+                    dna_parts.append(sample.get('content', '')[:1800])
 
                 # 제목 목록 (참고용)
-                title_list = [f"- {p.get('title', '')}" for p in unique_posts[1:8]]
+                title_list = [f"- {p.get('title', '')}" for p in unique_posts[3:12]]
                 if title_list:
                     dna_parts.append(f"\n【최근 글 제목 목록 (주제 참고용)】\n" + "\n".join(title_list))
 
@@ -719,6 +812,35 @@ def generate_blog():
     template_name = style_template.get("name", "정보전달형")
     formality_score = style_template.get("formality_score", 5)
     custom_prompt = style_template.get("custom_prompt", "")
+
+    # 보정 기록 로드 (같은 style_template_id + blog_dna_id 기준, 최근 3개)
+    calibration_prompt = ""
+    try:
+        cal_files = sorted(
+            CALIBRATIONS_DIR.glob("CAL_*.json"),
+            key=lambda f: f.stat().st_mtime,
+            reverse=True
+        )
+        matching = []
+        for cf in cal_files:
+            try:
+                d = json.loads(cf.read_text(encoding='utf-8'))
+                if d.get("style_template_id") == style_template_id:
+                    matching.append(d)
+                    if len(matching) >= 3:
+                        break
+            except Exception:
+                pass
+        if matching:
+            tips = []
+            for d in matching:
+                tips.append(d.get("calibration_prompt", "").strip())
+            combined = "\n".join(t for t in tips if t)
+            if combined:
+                calibration_prompt = f"[실제 통과된 글 기반 보정 지침 — 반드시 따를 것]\n{combined}"
+            print(f"[OK] 보정 기록 {len(matching)}개 적용")
+    except Exception as e:
+        print(f"[WARN] 보정 기록 로드 실패: {e}")
 
     api_key = os.getenv("GEMINI_API_KEY")
     generation_mode = "offline"
@@ -754,6 +876,11 @@ def generate_blog():
 - 종결어미: {', '.join(style_template.get('ending_patterns', []))}
 {custom_prompt}
 
+{calibration_prompt}
+
+[참고 블로그 스타일 샘플]
+{reference_blog_text[:3000] if reference_blog_text else '없음 (스타일 참고 URL 미제공)'}
+
 [블로그 DNA — 반드시 이 스타일로 작성]
 {blog_dna_text or '선택 안 함 (일반 블로그 스타일로 작성)'}
 
@@ -761,6 +888,7 @@ def generate_blog():
 - 위 DNA 가이드의 이모지, 특수기호(✅ 〰️ ➡️ 등), 종결어미, 도입/마무리 패턴을 그대로 사용
 - 실제 글 전문 샘플이 있다면 그 스타일을 최대한 모방
 - 줄바꿈 패턴, 문장 길이, 단락 구성도 샘플과 유사하게
+- 참고 블로그 스타일 샘플이 있다면 그 글의 구조와 톤을 참고하여 작성
 
 [첨부 파일 안내]
 {native_note or '없음'}
@@ -843,7 +971,7 @@ def generate_blog():
 
     if not versions:
         versions = generate_blog_versions_offline(
-            persona_data=persona_data,
+            persona_data={},
             material_bundle=material_bundle,
             keywords=keywords,
             target_audience=target_audience,
@@ -905,6 +1033,283 @@ def suggest_blog_prompts():
         })
     except Exception as e:
         return jsonify({"error": f"프롬프트 추출 실패: {str(e)}"}), 500
+
+
+# ============================================================
+# 보정 루프: AI글 vs 실제 통과된 글 비교 분석
+# ============================================================
+
+@app.route('/api/blog/calibrate', methods=['POST'])
+@login_required
+def calibrate_blog():
+    """AI 생성 글과 실제 통과된 글을 비교 분석해 보정 기록 저장"""
+    data = request.get_json()
+    ai_title    = data.get("ai_title", "")
+    ai_content  = data.get("ai_content", "")
+    approved_title   = data.get("approved_title", "")
+    approved_content = data.get("approved_content", "")
+    style_template_id = data.get("style_template_id", "")
+    blog_dna_id       = data.get("blog_dna_id", "")
+
+    if not ai_content or not approved_content:
+        return jsonify({"error": "AI 생성 글과 실제 통과된 글 모두 필요합니다."}), 400
+
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        return jsonify({"error": "Gemini API 키가 설정되지 않았습니다."}), 500
+
+    client = genai.Client(api_key=api_key)
+
+    prompt = f"""당신은 블로그 글쓰기 스타일 분석 전문가입니다.
+아래 두 글을 비교해 실제 통과된 글의 특징을 분석해주세요.
+두 글은 같은 배포자료(보도자료)를 기반으로 작성되었지만,
+하나는 AI가 초안을 쓴 것이고, 다른 하나는 실제 검수를 통과한 글입니다.
+
+[AI 생성 글]
+제목: {ai_title}
+{ai_content[:3000]}
+
+[실제 통과된 글]
+제목: {approved_title}
+{approved_content[:3000]}
+
+다음 JSON 형식으로 분석해주세요:
+{{
+  "do_more": [
+    "통과된 글에서 더 많이 사용된 표현/패턴 (구체적으로, 예시 포함)"
+  ],
+  "do_less": [
+    "AI 글에만 있고 통과된 글에서 없앤 것 (구체적으로)"
+  ],
+  "tone_shift": "전반적인 톤 변화 설명 (예: '더 친근하고 구어체로 바뀜')",
+  "structure_diff": "구조적 차이점 (예: '소제목 없이 자연스럽게 흐르는 방식 선호')",
+  "length_diff": "길이/분량 차이 및 방향 (예: '더 짧고 단락 사이 여백 많음')",
+  "key_phrases": [
+    "통과된 글에서 쓰인 특징적 표현이나 문장 패턴"
+  ],
+  "calibration_prompt": "다음 글 생성 시 AI에게 줄 한국어 지침 3~5문장 (이 분석을 요약한 핵심 가이드)"
+}}"""
+
+    try:
+        response = client.models.generate_content(
+            model='gemini-2.0-flash',
+            contents=prompt
+        )
+        analysis = parse_ai_json(response.text)
+    except Exception as e:
+        return jsonify({"error": f"분석 실패: {e}"}), 500
+
+    cal_id = f"CAL_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    record = {
+        "calibration_id": cal_id,
+        "style_template_id": style_template_id,
+        "blog_dna_id": blog_dna_id,
+        "ai_title": ai_title,
+        "ai_content": ai_content[:2000],
+        "approved_title": approved_title,
+        "approved_content": approved_content[:2000],
+        "analysis": analysis,
+        "calibration_prompt": analysis.get("calibration_prompt", ""),
+        "created_at": datetime.now().isoformat()
+    }
+    save_path = CALIBRATIONS_DIR / f"{cal_id}.json"
+    save_path.write_text(json.dumps(record, ensure_ascii=False, indent=2), encoding='utf-8')
+    print(f"[OK] 보정 기록 저장: {cal_id}")
+
+    return jsonify({"ok": True, "calibration_id": cal_id, "analysis": analysis})
+
+
+@app.route('/api/blog/calibrate-from-url', methods=['POST'])
+@login_required
+def calibrate_from_url():
+    """AI 블로그 + 실제 통과된 글 URL로 보정 분석.
+    blog_id로 저장본 로드 OR ai_title/ai_content 직접 전달 모두 지원.
+    """
+    data = request.get_json()
+    blog_id       = data.get("blog_id", "").strip()
+    approved_url  = data.get("approved_url", "").strip()
+    style_template_id = data.get("style_template_id", "")
+    blog_dna_id       = data.get("blog_dna_id", "")
+
+    # AI 글: 직접 전달 or 저장본 로드
+    ai_title   = data.get("ai_title", "").strip()
+    ai_content = data.get("ai_content", "").strip()
+
+    if not ai_title and not ai_content:
+        if not blog_id:
+            return jsonify({"error": "blog_id 또는 ai_title/ai_content가 필요합니다."}), 400
+        fp = OUTPUT_DIR / f"{blog_id}.json"
+        if not fp.exists():
+            return jsonify({"error": "저장된 블로그를 찾을 수 없습니다."}), 404
+        blog_data = load_blog_package(fp)
+        versions  = blog_data.get("versions", [])
+        version_type = data.get("version_type", "formal")
+        ai_version = next((v for v in versions if v.get("version_type") == version_type), None)
+        if not ai_version and versions:
+            ai_version = versions[0]
+        if not ai_version:
+            return jsonify({"error": "블로그 버전 데이터가 없습니다."}), 400
+        ai_title   = ai_version.get("title", "")
+        ai_content = ai_version.get("content", "")
+        if not style_template_id:
+            style_template_id = blog_data.get("style_template_id", "")
+
+    if not approved_url:
+        return jsonify({"error": "approved_url이 필요합니다."}), 400
+
+    # 통과된 글 URL 크롤링
+    try:
+        approved_text = fetch_url_text(approved_url)
+    except Exception as e:
+        return jsonify({"error": f"URL 크롤링 실패: {e}"}), 400
+
+    if not approved_text or len(approved_text) < 100:
+        return jsonify({"error": "URL에서 충분한 텍스트를 추출하지 못했습니다."}), 400
+
+    # 첫 줄을 제목으로, 나머지를 본문으로 분리
+    lines = [l.strip() for l in approved_text.splitlines() if l.strip()]
+    approved_title   = lines[0] if lines else ""
+    approved_content = "\n".join(lines[1:]) if len(lines) > 1 else approved_text
+
+    # Gemini 비교 분석
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        return jsonify({"error": "Gemini API 키가 설정되지 않았습니다."}), 500
+
+    client = genai.Client(api_key=api_key)
+
+    prompt = f"""당신은 블로그 글쓰기 스타일 분석 전문가입니다.
+아래 두 글을 비교해 실제 통과된 글의 특징을 분석해주세요.
+같은 배포자료(보도자료)를 기반으로 작성됐지만,
+하나는 AI 초안이고 다른 하나는 실제 검수를 통과해 게시된 글입니다.
+
+[AI 초안]
+제목: {ai_title}
+{ai_content[:3000]}
+
+[실제 게시된 글 (URL: {approved_url})]
+제목: {approved_title}
+{approved_content[:3000]}
+
+다음 JSON 형식으로 분석해주세요:
+{{
+  "do_more": ["통과된 글에서 더 많이 사용된 표현/패턴 (구체적으로, 예시 포함)"],
+  "do_less": ["AI 글에만 있고 통과된 글에서 없앤 것 (구체적으로)"],
+  "tone_shift": "전반적인 톤 변화 설명",
+  "structure_diff": "구조적 차이점",
+  "length_diff": "길이/분량 차이 및 방향",
+  "key_phrases": ["통과된 글에서 쓰인 특징적 표현이나 문장 패턴"],
+  "similarity_score": 현재_일치율_0_to_100_정수,
+  "calibration_prompt": "다음 글 생성 시 AI에게 줄 한국어 지침 3~5문장 (이 분석을 요약한 핵심 가이드)"
+}}"""
+
+    try:
+        response = client.models.generate_content(
+            model='gemini-2.0-flash',
+            contents=prompt
+        )
+        analysis = parse_ai_json(response.text)
+    except Exception as e:
+        return jsonify({"error": f"분석 실패: {e}"}), 500
+
+    # 분석만 반환 — 저장은 /api/blog/calibration/save 에서 수동으로
+    return jsonify({
+        "ok": True,
+        "analysis": analysis,
+        "meta": {
+            "blog_id": blog_id,
+            "approved_url": approved_url,
+            "style_template_id": style_template_id,
+            "blog_dna_id": blog_dna_id,
+            "ai_title": ai_title,
+            "approved_title": approved_title,
+        }
+    })
+
+
+@app.route('/api/blog/calibration/save', methods=['POST'])
+@login_required
+def save_calibration():
+    """사용자가 선택한 항목으로 보정 기록 저장"""
+    data = request.get_json()
+    analysis        = data.get("analysis", {})
+    selected_items  = data.get("selected_items", [])   # [{category, text}, ...]
+    custom_prompt   = data.get("calibration_prompt", "").strip()
+    meta            = data.get("meta", {})
+
+    if not selected_items:
+        return jsonify({"error": "선택된 항목이 없습니다."}), 400
+
+    # 선택된 항목 기반으로 calibration_prompt 재구성 (없으면 전달받은 것 사용)
+    if not custom_prompt:
+        do_more   = [i["text"] for i in selected_items if i.get("category") == "더 활용"]
+        do_less   = [i["text"] for i in selected_items if i.get("category") == "줄일 것"]
+        singles   = [i for i in selected_items if i.get("category") not in ("더 활용", "줄일 것")]
+        parts = []
+        if do_more:  parts.append(f"더 활용할 것: {', '.join(do_more)}")
+        if do_less:  parts.append(f"줄일 것: {', '.join(do_less)}")
+        for s in singles:
+            parts.append(f"{s.get('category', '')}: {s.get('text', '')}")
+        custom_prompt = ". ".join(parts)
+
+    cal_id = f"CAL_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    record = {
+        "calibration_id": cal_id,
+        "blog_id":            meta.get("blog_id", ""),
+        "approved_url":       meta.get("approved_url", ""),
+        "style_template_id":  meta.get("style_template_id", ""),
+        "blog_dna_id":        meta.get("blog_dna_id", ""),
+        "ai_title":           meta.get("ai_title", ""),
+        "approved_title":     meta.get("approved_title", ""),
+        "analysis":           analysis,
+        "selected_items":     selected_items,
+        "calibration_prompt": custom_prompt,
+        "similarity_score":   analysis.get("similarity_score", 0),
+        "created_at":         datetime.now().isoformat()
+    }
+    save_path = CALIBRATIONS_DIR / f"{cal_id}.json"
+    save_path.write_text(json.dumps(record, ensure_ascii=False, indent=2), encoding='utf-8')
+    print(f"[OK] 보정 기록 저장: {cal_id} ({len(selected_items)}개 항목 선택)")
+
+    return jsonify({"ok": True, "calibration_id": cal_id})
+
+
+@app.route('/api/blog/calibrations', methods=['GET'])
+@login_required
+def list_calibrations():
+    """보정 기록 목록 조회"""
+    style_template_id = request.args.get("style_template_id", "")
+    records = []
+    for f in sorted(CALIBRATIONS_DIR.glob("CAL_*.json"),
+                    key=lambda x: x.stat().st_mtime, reverse=True):
+        try:
+            d = json.loads(f.read_text(encoding='utf-8'))
+            if style_template_id and d.get("style_template_id") != style_template_id:
+                continue
+            records.append({
+                "calibration_id": d.get("calibration_id"),
+                "style_template_id": d.get("style_template_id"),
+                "blog_dna_id": d.get("blog_dna_id"),
+                "approved_url": d.get("approved_url", ""),
+                "ai_title": d.get("ai_title", "")[:50],
+                "approved_title": d.get("approved_title", "")[:50],
+                "tone_shift": d.get("analysis", {}).get("tone_shift", ""),
+                "similarity_score": d.get("similarity_score", d.get("analysis", {}).get("similarity_score", 0)),
+                "calibration_prompt": d.get("calibration_prompt", "")[:120],
+                "created_at": d.get("created_at", "")[:10]
+            })
+        except Exception:
+            pass
+    return jsonify({"calibrations": records})
+
+
+@app.route('/api/blog/calibration/<cal_id>', methods=['DELETE'])
+@login_required
+def delete_calibration(cal_id):
+    path = CALIBRATIONS_DIR / f"{cal_id}.json"
+    if path.exists():
+        path.unlink()
+    return jsonify({"ok": True})
 
 
 @app.route('/api/blog/generate-images', methods=['POST'])
@@ -1003,6 +1408,7 @@ def save_blog():
 
         return jsonify({
             "success": True,
+            "blog_id": output_id or Path(save_path).stem,
             "saved_path": str(save_path),
             "filename": Path(save_path).name
         })
@@ -1112,7 +1518,7 @@ def collect_blog():
     data = request.json
     
     blog_input = data.get("blog_id", "").strip()
-    count = min(int(data.get("count", 5)), 30)
+    count = min(int(data.get("count", 10)), 30)
     
     if not blog_input:
         return jsonify({"error": "블로그 주소 또는 ID를 입력해주세요."}), 400

@@ -12,6 +12,15 @@ import re
 from datetime import datetime
 from pathlib import Path
 from dotenv import load_dotenv
+import sys
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from blog_storage import build_blog_package, save_blog_package
+from material_pipeline import build_material_bundle
+from offline_engines import generate_single_blog_offline
 
 
 def extract_json_from_response(text: str) -> dict:
@@ -80,7 +89,9 @@ def generate_blog_post(
     custom_prompt = persona_data["custom_prompt"]
     client_name = persona_data["client_name"]
     
-    # Claude로 블로그 글 생성
+    material_bundle = build_material_bundle(direct_text=press_release)
+
+    # Gemini로 블로그 글 생성
     blog_prompt = f"""
 {custom_prompt}
 
@@ -109,38 +120,42 @@ JSON으로 반환:
     try:
         if not client:
             raise ValueError("Gemini API가 구성되지 않았습니다.")
-            
+
         response = client.models.generate_content(
             model='gemini-2.0-flash',
             contents=blog_prompt
         )
         blog_content = extract_json_from_response(response.text)
+        generation_mode = "ai"
 
     except Exception as e:
-        print(f"❌ 블로그 생성 실패: {e}")
-        return {"error": str(e)}
+        print(f"⚠️ AI 블로그 생성 실패, 오프라인 모드로 전환: {e}")
+        blog_content = generate_single_blog_offline(persona_data, material_bundle, target_keywords)
+        generation_mode = "offline"
     
     # 저장
     output_id = f"BLOG_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-    blog_data = {
-        "output_id": output_id,
-        "client_id": client_id,
-        "client_name": client_name,
-        "type": "blog",
-        "content": blog_content,
-        "created_at": datetime.now().isoformat()
-    }
-    
-    save_path = OUTPUT_DIR / f"{output_id}.json"
-    with open(save_path, 'w', encoding='utf-8') as f:
-        json.dump(blog_data, f, ensure_ascii=False, indent=2)
-    
-    # 마크다운 파일도 생성
-    md_path = OUTPUT_DIR / f"{output_id}.md"
-    with open(md_path, 'w', encoding='utf-8') as f:
-        f.write(f"# {blog_content['title']}\n\n")
-        f.write(f"{blog_content['content']}\n\n")
-        f.write(f"**태그:** {', '.join(blog_content['tags'])}\n")
+    blog_data = build_blog_package(
+        output_id=output_id,
+        client_id=client_id,
+        client_name=client_name,
+        versions=[{
+            "version_type": "primary",
+            "version_label": "메인",
+            "title": blog_content.get("title", ""),
+            "content": blog_content.get("content", ""),
+            "tags": blog_content.get("tags", []),
+            "meta_description": blog_content.get("meta_description", ""),
+        }],
+        source_bundle=material_bundle,
+        extra={
+            "content": blog_content,
+            "generation_mode": generation_mode,
+        },
+    )
+
+    save_path, markdown_paths = save_blog_package(blog_data, OUTPUT_DIR)
+    md_path = markdown_paths.get("primary", OUTPUT_DIR / f"{output_id}.md")
     
     print(f"✅ 블로그 생성 완료")
     print(f"💾 저장: {md_path}")
@@ -149,6 +164,7 @@ JSON으로 반환:
         "output_id": output_id,
         "client_name": client_name,
         "blog": blog_content,
+        "generation_mode": generation_mode,
         "markdown_path": str(md_path)
     }
 
@@ -281,4 +297,8 @@ def list_outputs() -> dict:
 
 
 if __name__ == "__main__":
+    mcp.run()
+
+
+def main():
     mcp.run()

@@ -10,3 +10,28 @@
 [14:25:44] START: DNA 스타일 분석 → 블로그 생성 연동 개선
 [14:26:39] DONE: DNA 스타일 가이드 블로그 생성 연동, gemini-2.5-pro 분석 업그레이드
 [15:25:12] DONE: DNA 스타일 미리보기 패널 추가 (blog-dna-select 변경 시 자동 로드)
+[15:34:06] DONE: 블로그 작성 폼 레이아웃 정비 - 스텝 구분, OR 구분선, DNA 미리보기 다크테마 적용
+[15:36:27] START: 크롤러 HTML 스타일 분석 + DNA 시각적 포맷팅 강화
+[15:38:38] DONE: HTML 스타일 크롤링(색상/정렬/폰트/인용) + DNA 분석 시각적 포맷팅 강화
+[15:42:43] START: 네이버 HTML 복사 기능 구현
+[15:44:02] DONE: 네이버 HTML 복사 기능 구현 완료
+[16:05:13] START: 페르소나 분리 및 스타일 템플릿 전환
+[16:16:16] START: app.js persona 관련 코드 제거 및 style templates 추가
+[16:20:09] DONE: app.js persona 코드 제거 및 style templates 기능 추가 완료
+[16:22:22] STEP: 페르소나 분리 완료, 커밋 준비
+[16:22:45] DONE: 페르소나 → 스타일 템플릿 전환 완료, 커밋 푸시됨
+[17:56:51] START: email-persona 웹앱 구축
+[17:59:07] START: email-persona Flask 앱 빌드 (port 5051)
+[18:05:59] DONE: email-persona Flask 앱 빌드 완료 (port 5051) + mcp URL 크롤링 기능 추가
+[18:51:47] START: 블로그 UX 흐름 개선 — 수집→DNA분석→글작성 순서 재정렬
+[18:55:09] DONE: 블로그 UX 흐름 개선 완료 — 수집→DNA분석→글작성 순서, 이력 DNA분석 버튼, 흐름 배너
+[22:32:29] START: 블로그 보정 루프 시스템 구현 (AI글 vs 통과된글 비교→다음 생성에 반영)
+[22:35:59] DONE: 블로그 보정 루프 구현 완료 — 보정등록 버튼, 분석API, 자동반영, 보정기록 관리
+[23:13:37] DONE: 보정 루프 URL 방식으로 전환 — 최근글 비교버튼, URL크롤링, 일치율%
+[23:15:00] START: 보정 빠른 테스트 — 생성 직후 즉시 비교, 빠른비교 패널
+[23:17:46] DONE: 빠른 비교 패널 추가, 생성 직후 저장없이 즉시 비교 가능
+[23:25:49] DONE: fix qc-load-latest to load from /api/mypage/blogs with picker modal
+[23:29:37] DONE: fix Naver blog URL crawling - convert to PostView URL
+[23:33:21] START: checklist-based calibration selection system
+[23:35:29] DONE: checklist calibration - analyze only + manual save with selected items
+[23:47:17] DONE: add 바로 글 쓰기 button after calibration save

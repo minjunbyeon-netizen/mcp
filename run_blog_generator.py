@@ -20,6 +20,9 @@ if sys.platform == 'win32' and not isinstance(sys.stdout, io.TextIOWrapper):
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
 
 from utils import LoadingSpinner, parse_json_response, load_api_key, extract_text_from_file
+from blog_storage import build_blog_package, save_blog_package, sanitize_filename_component
+from material_pipeline import build_material_bundle
+from offline_engines import generate_single_blog_offline
 
 # API 키 로드
 load_api_key("GEMINI_API_KEY")
@@ -644,85 +647,94 @@ def generate_blog_post(client_id: str, press_release: str, target_keywords: list
     spinner = LoadingSpinner("Gemini AI 연결 중")
     spinner.start()
     api_key = os.getenv("GEMINI_API_KEY")
-    if not api_key:
-        spinner.stop("실패")
-        print("GEMINI_API_KEY 환경 변수가 없습니다.")
-        return None
-
-    client = genai.Client(api_key=api_key)
-    spinner.stop("API 연결 완료")
+    client = None
+    if api_key:
+        client = genai.Client(api_key=api_key)
+        spinner.stop("API 연결 완료")
+    else:
+        spinner.stop("오프라인 모드")
+        print("ℹ️ GEMINI_API_KEY가 없어 규칙 기반 초안으로 진행합니다.")
 
     # few_shot_examples 추출 (blog_dna에 있으면 사용, 없으면 빈 리스트)
     blog_dna = persona_data.get("blog_dna", {})
     few_shots = blog_dna.get("few_shot_examples", [])
+    material_bundle = build_material_bundle(direct_text=press_release)
+    prompt_source = material_bundle.get("briefing") or press_release
 
     # 키워드 문자열
     keywords_str = ", ".join(target_keywords) if target_keywords else ""
 
-    # Step 2: 배포자료 분석 (단계 1)
-    print("\n[블로그 생성 2/4] 배포자료 분석")  # [티켓 #T002]
-    spinner = LoadingSpinner("배포자료 핵심 메시지 추출 중")
-    spinner.start()
-    press_analysis = _analyze_press_release(client, press_release)
-    if press_analysis:
-        spinner.stop("배포자료 분석 완료")
-    else:
-        spinner.stop("분석 실패 — 기존 방식으로 진행")
-
-    # Step 3: 블로그 구조 설계 (단계 2) — press_analysis 있을 때만
-    blog_design = None
-    if press_analysis:
-        print("\n[블로그 생성 3/4] 블로그 구조 설계")  # [티켓 #T002]
-        spinner = LoadingSpinner("페르소나 맞춤 블로그 구조 설계 중")
+    if client:
+        # Step 2: 배포자료 분석 (단계 1)
+        print("\n[블로그 생성 2/4] 배포자료 분석")  # [티켓 #T002]
+        spinner = LoadingSpinner("배포자료 핵심 메시지 추출 중")
         spinner.start()
-        blog_design = _design_blog_structure(client, press_analysis, persona_data)
-        if blog_design:
-            spinner.stop("블로그 구조 설계 완료")
+        press_analysis = _analyze_press_release(client, prompt_source)
+        if press_analysis:
+            spinner.stop("배포자료 분석 완료")
         else:
-            spinner.stop("구조 설계 실패 — 원본 배포자료 직접 사용")
-    else:
-        print("\n[블로그 생성 3/4] 블로그 구조 설계 건너뜀")  # [티켓 #T002]
+            spinner.stop("분석 실패 — 기존 방식으로 진행")
 
-    # Step 4: 최종 블로그 생성 (단계 3)
-    print("\n[블로그 생성 4/4] 블로그 글 작성")  # [티켓 #T002]
-    spinner = LoadingSpinner("AI가 페르소나 스타일로 글을 작성하고 있습니다")
-    spinner.start()
-
-    blog_content = _generate_final_blog(
-        client,
-        blog_design,
-        persona_data,
-        keywords_str,
-        few_shots,
-        press_release_fallback=press_release,
-    )
-
-    if not blog_content:
-        spinner.stop("오류 발생")
-        print("\n블로그 생성에 실패했습니다.")
-        return None
-    spinner.stop("블로그 글 생성 완료")
-
-    # title_variants 하위 호환 보정: 없으면 title로 채움
-    if "title_variants" not in blog_content or not isinstance(blog_content.get("title_variants"), list):
-        blog_content["title_variants"] = [blog_content.get("title", ""), "", ""]
-
-    # Step 5: 자기 검토 패스 (단계 4)
-    print("\n  자기 검토 중...")
-    spinner = LoadingSpinner("AI 품질 자기 검토 중")
-    spinner.start()
-    quality_score, revised = _self_review(client, blog_content, persona_data)
-    if quality_score > 0:
-        if quality_score < 70 and revised:
-            spinner.stop(f"자기 검토 완료 (점수: {quality_score}/100) — 수정본 적용")
-            # revised_blog의 title_variants 보정
-            if "title_variants" not in revised or not isinstance(revised.get("title_variants"), list):
-                revised["title_variants"] = [revised.get("title", ""), "", ""]
-            blog_content = revised
+        # Step 3: 블로그 구조 설계 (단계 2) — press_analysis 있을 때만
+        blog_design = None
+        if press_analysis:
+            print("\n[블로그 생성 3/4] 블로그 구조 설계")  # [티켓 #T002]
+            spinner = LoadingSpinner("페르소나 맞춤 블로그 구조 설계 중")
+            spinner.start()
+            blog_design = _design_blog_structure(client, press_analysis, persona_data)
+            if blog_design:
+                spinner.stop("블로그 구조 설계 완료")
+            else:
+                spinner.stop("구조 설계 실패 — 원본 배포자료 직접 사용")
         else:
-            spinner.stop(f"자기 검토 완료 (점수: {quality_score}/100) — 원본 유지")
+            print("\n[블로그 생성 3/4] 블로그 구조 설계 건너뜀")  # [티켓 #T002]
+
+        # Step 4: 최종 블로그 생성 (단계 3)
+        print("\n[블로그 생성 4/4] 블로그 글 작성")  # [티켓 #T002]
+        spinner = LoadingSpinner("AI가 페르소나 스타일로 글을 작성하고 있습니다")
+        spinner.start()
+
+        blog_content = _generate_final_blog(
+            client,
+            blog_design,
+            persona_data,
+            keywords_str,
+            few_shots,
+            press_release_fallback=prompt_source,
+        )
+
+        if not blog_content:
+            spinner.stop("오류 발생")
+            print("\n블로그 생성에 실패했습니다.")
+            return None
+        spinner.stop("블로그 글 생성 완료")
+
+        # title_variants 하위 호환 보정: 없으면 title로 채움
+        if "title_variants" not in blog_content or not isinstance(blog_content.get("title_variants"), list):
+            blog_content["title_variants"] = [blog_content.get("title", ""), "", ""]
+
+        # Step 5: 자기 검토 패스 (단계 4)
+        print("\n  자기 검토 중...")
+        spinner = LoadingSpinner("AI 품질 자기 검토 중")
+        spinner.start()
+        quality_score, revised = _self_review(client, blog_content, persona_data)
+        if quality_score > 0:
+            if quality_score < 70 and revised:
+                spinner.stop(f"자기 검토 완료 (점수: {quality_score}/100) — 수정본 적용")
+                # revised_blog의 title_variants 보정
+                if "title_variants" not in revised or not isinstance(revised.get("title_variants"), list):
+                    revised["title_variants"] = [revised.get("title", ""), "", ""]
+                blog_content = revised
+            else:
+                spinner.stop(f"자기 검토 완료 (점수: {quality_score}/100) — 원본 유지")
+        else:
+            spinner.stop("자기 검토 실패 — 원본 사용")
     else:
-        spinner.stop("자기 검토 실패 — 원본 사용")
+        print("\n[블로그 생성 2/4] 오프라인 자료 요약")
+        spinner = LoadingSpinner("자료에서 핵심 포인트를 정리하고 있습니다")
+        spinner.start()
+        blog_content = generate_single_blog_offline(persona_data, material_bundle, target_keywords)
+        spinner.stop("오프라인 초안 생성 완료")
 
     # title 필드를 title_variants[0]과 일치시킴
     variants = blog_content.get("title_variants", [])
@@ -736,32 +748,33 @@ def generate_blog_post(client_id: str, press_release: str, target_keywords: list
     
     # 저장
     output_id = f"BLOG_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-    blog_data = {
-        "output_id": output_id,
-        "client_id": client_id,
-        "client_name": client_name,
-        "type": "blog",
-        "content": blog_content,
-        "title_variants": blog_content.get("title_variants", []),
-        "created_at": datetime.now().isoformat()
-    }
-    
-    # JSON 저장
-    json_path = OUTPUT_DIR / f"{output_id}.json"
-    with open(json_path, 'w', encoding='utf-8') as f:
-        json.dump(blog_data, f, ensure_ascii=False, indent=2)
-    
-    # 마크다운 파일도 생성
-    md_path = OUTPUT_DIR / f"{output_id}.md"
-    with open(md_path, 'w', encoding='utf-8') as f:
-        f.write(f"# {blog_content['title']}\n\n")
-        f.write(f"{blog_content['content']}\n\n")
-        f.write(f"**태그:** {', '.join(blog_content['tags'])}\n")
+    blog_data = build_blog_package(
+        output_id=output_id,
+        client_id=client_id,
+        client_name=client_name,
+        versions=[{
+            "version_type": "primary",
+            "version_label": "메인",
+            "title": blog_content.get("title", ""),
+            "content": blog_content.get("content", ""),
+            "tags": blog_content.get("tags", []),
+            "meta_description": blog_content.get("meta_description", ""),
+        }],
+        source_bundle=material_bundle,
+        extra={
+            "content": blog_content,
+            "title_variants": blog_content.get("title_variants", []),
+        },
+    )
+
+    # JSON/Markdown 저장
+    json_path, markdown_paths = save_blog_package(blog_data, OUTPUT_DIR)
+    md_path = markdown_paths.get("primary", OUTPUT_DIR / f"{output_id}.md")
     
     # Word 파일 생성 (별도 위치에 페르소나명_제목_날짜 형식으로)
     # 파일명에 사용할 수 없는 문자 제거
-    safe_title = blog_content['title'][:30].replace('/', '_').replace('\\', '_').replace(':', '_').replace('*', '_').replace('?', '_').replace('"', '_').replace('<', '_').replace('>', '_').replace('|', '_').strip()
-    safe_client_name = client_name.replace(' ', '_')
+    safe_title = sanitize_filename_component(blog_content['title'], limit=30)
+    safe_client_name = sanitize_filename_component(client_name, limit=30).replace(' ', '_')
     date_str = datetime.now().strftime('%Y%m%d')
     docx_filename = f"{safe_client_name}_{safe_title}_{date_str}.docx"
     docx_path = WORD_OUTPUT_DIR / docx_filename

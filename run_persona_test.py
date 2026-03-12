@@ -21,6 +21,7 @@ if sys.platform == 'win32':
 sys.path.insert(0, str(Path(__file__).parent / "persona-manager"))
 
 from utils import LoadingSpinner, parse_json_response, load_api_key, extract_text_from_file
+from offline_engines import analyze_persona_offline
 
 
 # ============================================================
@@ -177,16 +178,16 @@ def analyze_persona(client_name: str, organization: str, kakao_chat_log: str, ca
     spinner = LoadingSpinner("Gemini AI 연결 중")
     spinner.start()
     api_key = os.getenv("GEMINI_API_KEY")
-    if not api_key:
-        spinner.stop("실패")
-        print("❌ GEMINI_API_KEY 환경 변수가 없습니다.")
-        return None
-    
-    client = genai.Client(api_key=api_key)
-    spinner.stop("API 연결 완료")
+    client = None
+    if api_key:
+        client = genai.Client(api_key=api_key)
+        spinner.stop("API 연결 완료")
+    else:
+        spinner.stop("오프라인 모드")
+        print("ℹ️ GEMINI_API_KEY가 없어 휴리스틱 분석으로 진행합니다.")
 
     # [M-2] 카카오톡 청크 분할 처리 (8000자 하드코딩 슬라이싱 제거)
-    prepared_text = prepare_kakao_text(client, kakao_chat_log)
+    prepared_text = prepare_kakao_text(client, kakao_chat_log) if client else kakao_chat_log
 
     analysis_prompt = f"""
 당신은 광고/마케팅 에이전시의 시니어 페르소나 분석 전문가입니다.
@@ -386,27 +387,35 @@ def analyze_persona(client_name: str, organization: str, kakao_chat_log: str, ca
     spinner = LoadingSpinner("AI가 대화 패턴을 정밀 분석하고 있습니다")
     spinner.start()
     
-    try:
-        response = client.models.generate_content(
-            model='gemini-2.0-flash',
-            contents=analysis_prompt
-        )
-        spinner.stop("심층 분석 완료")
-        
-        # Step 3: 결과 처리
-        print("\n[3/3] 분석 결과 정리")
-        spinner = LoadingSpinner("프로페셔널 페르소나 프로필 생성 중")
+    if client:
+        try:
+            response = client.models.generate_content(
+                model='gemini-2.0-flash',
+                contents=analysis_prompt
+            )
+            spinner.stop("심층 분석 완료")
+            
+            # Step 3: 결과 처리
+            print("\n[3/3] 분석 결과 정리")
+            spinner = LoadingSpinner("프로페셔널 페르소나 프로필 생성 중")
+            spinner.start()
+            
+            response_text = response.text
+            
+            persona_analysis = parse_json_response(response_text)
+            spinner.stop("프로필 생성 완료")
+            
+        except Exception as e:
+            spinner.stop("AI 실패")
+            print(f"\n⚠️ AI 분석 실패: {e}")
+            print("   오프라인 휴리스틱 분석으로 계속 진행합니다.")
+            persona_analysis = analyze_persona_offline(client_name, organization, kakao_chat_log, category)
+    else:
+        print("\n[2/3] 휴리스틱 페르소나 분석 중")
+        spinner = LoadingSpinner("대화 패턴을 규칙 기반으로 분석하고 있습니다")
         spinner.start()
-        
-        response_text = response.text
-        
-        persona_analysis = parse_json_response(response_text)
-        spinner.stop("프로필 생성 완료")
-        
-    except Exception as e:
-        spinner.stop("오류 발생")
-        print(f"\n❌ 페르소나 분석 실패: {e}")
-        return None
+        persona_analysis = analyze_persona_offline(client_name, organization, kakao_chat_log, category)
+        spinner.stop("오프라인 분석 완료")
     
     # 맞춤 프롬프트 생성 (개선된 버전)
     formality = persona_analysis.get("formality_analysis", {}).get("overall_score", 5)

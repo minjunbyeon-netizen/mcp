@@ -11,6 +11,7 @@ import os
 import re
 import json
 import time
+from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -136,46 +137,108 @@ def get_post_content(blog_id: str, log_no: str) -> str:
     네이버 블로그 포스트 본문 텍스트 반환.
     모바일 뷰 우선, PC 뷰 폴백.
     """
+    result = get_post_content_with_style(blog_id, log_no)
+    return result.get("text", "")
+
+
+def get_post_content_with_style(blog_id: str, log_no: str) -> dict:
+    """
+    본문 텍스트 + 시각적 스타일 메타데이터 반환.
+    반환: {"text": str, "style_meta": dict}
+    """
     session = _make_session(blog_id)
+    soup = None
 
-    # 방법 1: 모바일 뷰
-    mobile_url = f"https://m.blog.naver.com/{blog_id}/{log_no}"
-    try:
-        resp = session.get(mobile_url, timeout=12)
-        resp.raise_for_status()
-        soup = BeautifulSoup(resp.text, "html.parser")
-        content_div = (
-            soup.select_one(".se-main-container")
-            or soup.select_one(".post-view")
-            or soup.select_one("#postViewArea")
-            or soup.select_one(".se_doc_viewer")
-        )
-        if content_div:
-            return _clean_text(content_div.get_text(separator="\n", strip=True))
-    except Exception:
-        pass
+    for fetch_url in [
+        f"https://m.blog.naver.com/{blog_id}/{log_no}",
+        (
+            "https://blog.naver.com/PostView.naver"
+            f"?blogId={blog_id}&logNo={log_no}&redirect=Dlog&widgetTypeCall=true"
+        ),
+    ]:
+        try:
+            resp = session.get(fetch_url, timeout=12)
+            resp.raise_for_status()
+            candidate = BeautifulSoup(resp.text, "html.parser")
+            div = (
+                candidate.select_one(".se-main-container")
+                or candidate.select_one(".post-view")
+                or candidate.select_one("#postViewArea")
+                or candidate.select_one(".se_doc_viewer")
+            )
+            if div:
+                soup = div
+                break
+        except Exception:
+            continue
 
-    # 방법 2: PC PostView
-    pc_url = (
-        "https://blog.naver.com/PostView.naver"
-        f"?blogId={blog_id}&logNo={log_no}&redirect=Dlog&widgetTypeCall=true"
-    )
-    try:
-        session.headers["Referer"] = f"https://blog.naver.com/{blog_id}"
-        resp = session.get(pc_url, timeout=12)
-        resp.raise_for_status()
-        soup = BeautifulSoup(resp.text, "html.parser")
-        content_div = (
-            soup.select_one(".se-main-container")
-            or soup.select_one("#postViewArea")
-            or soup.select_one(".post-view")
-        )
-        if content_div:
-            return _clean_text(content_div.get_text(separator="\n", strip=True))
-    except Exception:
-        pass
+    if not soup:
+        return {"text": "", "style_meta": {}}
 
-    return ""
+    text = _clean_text(soup.get_text(separator="\n", strip=True))
+    style_meta = _extract_style_meta(soup)
+    return {"text": text, "style_meta": style_meta}
+
+
+def _extract_style_meta(content_div) -> dict:
+    """네이버 Smart Editor HTML에서 시각적 스타일 패턴 추출."""
+    all_styles = []
+    all_classes = []
+
+    for el in content_div.find_all(style=True):
+        s = el.get("style", "").strip()
+        if s:
+            all_styles.append(s)
+
+    for el in content_div.find_all(class_=True):
+        for c in el.get("class", []):
+            if c.startswith("se-"):
+                all_classes.append(c)
+
+    combined_style = " ".join(all_styles)
+
+    # 색상 추출
+    colors = re.findall(r'(?<!background-)color\s*:\s*(#[0-9a-fA-F]{3,8})', combined_style)
+    bg_colors = re.findall(r'background-color\s*:\s*(#[0-9a-fA-F]{3,8})', combined_style)
+
+    # 자주 쓰는 텍스트 색상 (흰/검 제외)
+    accent_colors = [c for c in colors if c.lower() not in ("#ffffff", "#000000", "#fff", "#000")]
+    highlight_colors = [c for c in bg_colors if c.lower() not in ("#ffffff", "#fff")]
+
+    # 정렬 패턴
+    center_count = all_classes.count("se-text-paragraph-align-center") + all_classes.count("se-section-align-center")
+    total_para = all_classes.count("se-text-paragraph")
+    center_ratio = round(center_count / total_para, 2) if total_para else 0
+
+    # 폰트 패턴
+    fonts = [c for c in all_classes if c.startswith("se-ff-") and c != "se-ff-"]
+    font_counter = Counter(fonts)
+
+    # 폰트 크기 패턴
+    sizes = [c for c in all_classes if c.startswith("se-fs-")]
+    size_counter = Counter(sizes)
+
+    # 굵기 (볼드)
+    bold_count = len(re.findall(r'font-weight\s*:\s*(bold|700|800|900)', combined_style))
+
+    # 인용구/특수 구조
+    quote_els = content_div.select(".se-quote, .se-quotation, blockquote")
+    has_quote = len(quote_els) > 0
+
+    # 이탤릭
+    italic_count = len(re.findall(r'font-style\s*:\s*italic', combined_style))
+
+    return {
+        "center_align_ratio": center_ratio,         # 0~1, 높을수록 중앙정렬 많이 씀
+        "accent_colors": list(Counter(accent_colors).most_common(5)),   # [(색상, 빈도)]
+        "highlight_colors": list(Counter(highlight_colors).most_common(3)),
+        "dominant_fonts": [f[0].replace("se-ff-", "") for f in font_counter.most_common(3)],
+        "font_sizes": [s[0].replace("se-fs-", "") for s in size_counter.most_common(3)],
+        "bold_count": bold_count,
+        "italic_count": italic_count,
+        "has_quote_block": has_quote,
+        "total_styled_elements": len(all_styles),
+    }
 
 
 def _clean_text(text: str) -> str:
