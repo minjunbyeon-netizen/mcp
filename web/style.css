@@ -930,3 +930,72 @@ textarea { resize: vertical; line-height: 1.6; }
     color: var(--text-muted);
 }
 .error-hint { color: var(--danger); }
+
+/* ── 최종 스타일 모달 ─────────────────────────────────── */
+.final-style-header {
+    margin-bottom: 16px;
+}
+.final-style-blogid {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+.final-style-meta {
+    font-size: 13px;
+    color: var(--text-muted);
+    margin-top: 4px;
+}
+.final-style-desc {
+    font-size: 13px;
+    color: var(--text-secondary);
+    background: var(--bg-secondary);
+    border-radius: var(--radius);
+    padding: 12px 16px;
+    margin-bottom: 24px;
+    line-height: 1.6;
+}
+.final-style-body {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-bottom: 24px;
+}
+.final-style-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+}
+.final-style-cat {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text-muted);
+    min-width: 64px;
+    padding-top: 4px;
+    flex-shrink: 0;
+}
+.final-style-cat.muted {
+    opacity: 0.5;
+}
+.final-style-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+.final-style-inactive {
+    margin-top: 24px;
+    padding-top: 20px;
+    border-top: 1px solid var(--border);
+}
+.final-style-inactive-title {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-bottom: 12px;
+}
+.final-style-footer {
+    margin-top: 24px;
+    display: flex;
+    gap: 8px;
+}

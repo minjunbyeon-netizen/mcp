@@ -468,7 +468,7 @@ function renderWriteResult(data, dnaId) {
                 <span class="version-label">버전 ${i + 1}</span>
                 ${v.title ? `<span class="version-title-text">${v.title}</span>` : ''}
                 <div class="version-actions">
-                    <button class="btn btn-secondary btn-sm" onclick="copyVersion(${i})">복사</button>
+                    <button class="btn btn-secondary btn-sm" onclick="copyVersion(${i})">네이버 복사</button>
                     <button class="btn btn-primary btn-sm" onclick="saveVersion(${i})">저장</button>
                 </div>
             </div>
@@ -484,11 +484,77 @@ function formatBlogContent(text) {
         .split('\n').map(l => `<p>${l || '&nbsp;'}</p>`).join('');
 }
 
-function copyVersion(idx) {
+async function copyVersion(idx) {
     const v = (window._lastVersions || [])[idx];
     if (!v) return;
-    navigator.clipboard.writeText((v.title ? v.title + '\n\n' : '') + (v.content || ''))
-        .then(() => alert('복사되었습니다.'));
+    const title   = v.title   || '';
+    const content = v.content || '';
+    const htmlStr = blogToNaverHTML(title, content);
+    const plain   = (title ? title + '\n\n' : '') + content;
+
+    const btn = document.querySelectorAll('.version-block')[idx]?.querySelector('.btn-secondary');
+    try {
+        if (window.ClipboardItem) {
+            await navigator.clipboard.write([
+                new ClipboardItem({
+                    'text/html' : new Blob([htmlStr], { type: 'text/html'  }),
+                    'text/plain': new Blob([plain],   { type: 'text/plain' })
+                })
+            ]);
+        } else {
+            await navigator.clipboard.writeText(plain);
+        }
+        if (btn) { const orig = btn.textContent; btn.textContent = '복사 완료'; setTimeout(() => btn.textContent = orig, 1500); }
+    } catch {
+        await navigator.clipboard.writeText(plain);
+        if (btn) { const orig = btn.textContent; btn.textContent = '복사 완료'; setTimeout(() => btn.textContent = orig, 1500); }
+    }
+}
+
+// ── Naver Blog 서식 HTML 변환 ──────────────────────────────
+function blogToNaverHTML(title, content) {
+    const ff = "'맑은 고딕', Malgun Gothic, 'Apple SD Gothic Neo', sans-serif";
+    const esc = s => String(s)
+        .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+    // 마크다운 인라인 변환
+    const mdInline = s => s
+        .replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')
+        .replace(/__(.*?)__/g,     '<b>$1</b>');
+
+    let html = `<div style="font-family:${ff};font-size:15px;line-height:1.9;color:#333333;">`;
+
+    if (title) {
+        html += `<p style="font-size:22px;font-weight:bold;line-height:1.4;margin:0 0 28px 0;color:#1a1a1a;">${esc(title)}</p>`;
+    }
+
+    const lines = content.split('\n');
+    for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) {
+            html += `<p style="margin:0;font-size:6px;">&nbsp;</p>`;
+            continue;
+        }
+        // ## Heading
+        if (/^##\s/.test(trimmed)) {
+            const text = esc(trimmed.replace(/^##\s+/, ''));
+            html += `<p style="font-size:17px;font-weight:bold;margin:20px 0 8px 0;color:#1a1a1a;">${text}</p>`;
+        // # Title-level heading
+        } else if (/^#\s/.test(trimmed)) {
+            const text = esc(trimmed.replace(/^#\s+/, ''));
+            html += `<p style="font-size:19px;font-weight:bold;margin:24px 0 10px 0;color:#1a1a1a;">${text}</p>`;
+        // Bullet or numbered list
+        } else if (/^[-*•]\s/.test(trimmed) || /^\d+\.\s/.test(trimmed)) {
+            const text = mdInline(esc(trimmed.replace(/^[-*•]\s|^\d+\.\s/, '')));
+            html += `<p style="margin:0 0 8px 0;font-size:15px;padding-left:18px;">• ${text}</p>`;
+        // Normal paragraph
+        } else {
+            html += `<p style="margin:0 0 14px 0;font-size:15px;">${mdInline(esc(trimmed))}</p>`;
+        }
+    }
+
+    html += '</div>';
+    return html;
 }
 
 async function saveVersion(idx) {
@@ -715,6 +781,9 @@ function renderDBCard(g) {
     const blogCount = g.blogs.length;
     const postCount = col.post_count || 0;
     const lastDate = (col.last_collected_at || '').slice(0, 10);
+    // 가장 최근 DNA (created_at 기준)
+    const latestDna = g.dnas.slice().sort((a,b) =>
+        (b.created_at || '').localeCompare(a.created_at || ''))[0];
 
     const dnaRows = g.dnas.map(d => `
         <div class="db-sub-row">
@@ -761,6 +830,7 @@ function renderDBCard(g) {
                 ${!dnaCount && !blogCount ? `<div class="db-empty-body">수집만 완료. DNA 분석 후 글 작성이 가능합니다.</div>` : ''}
                 <div class="db-card-actions">
                     <button class="btn btn-secondary btn-sm" onclick="goToPanel('collect');document.getElementById('collect-url').value='${g.blog_id}'">재수집</button>
+                    ${latestDna ? `<button class="btn btn-secondary btn-sm" onclick="dbViewFinalStyle('${latestDna.id}')">최종 스타일</button>` : ''}
                     <button class="btn btn-primary btn-sm" onclick="analyzeDNA('${g.blog_id}')">DNA 분석</button>
                 </div>
             </div>
@@ -906,6 +976,74 @@ async function dbSaveTagsFromModal(dnaId) {
         if (btn) { btn.textContent = '저장 완료'; setTimeout(() => { btn.textContent = '태그 저장'; }, 1500); }
     } catch (err) {
         alert(err.message);
+    }
+}
+
+async function dbViewFinalStyle(dnaId) {
+    const modalContent = document.getElementById('detail-modal-content');
+    modalContent.style.maxWidth = '720px';
+    openModal('적용 스타일 최종본', '<div class="loading-hint">불러오는 중...</div>');
+
+    try {
+        const res = await fetch(`${API}/api/mypage/dna/${dnaId}`);
+        const dna = await res.json();
+
+        const allTags = extractPersonaTags(dna);
+        const activeIds = new Set((dna.active_tags || []).map(t => t.id));
+        const totalActive = activeIds.size;
+        const totalAll = allTags.length;
+
+        // 활성 태그 카테고리별 그룹
+        const activeGroups = {};
+        allTags.filter(t => activeIds.has(t.id)).forEach(t => {
+            if (!activeGroups[t.cat]) activeGroups[t.cat] = [];
+            activeGroups[t.cat].push(t);
+        });
+
+        // 비활성 태그
+        const inactiveGroups = {};
+        allTags.filter(t => !activeIds.has(t.id)).forEach(t => {
+            if (!inactiveGroups[t.cat]) inactiveGroups[t.cat] = [];
+            inactiveGroups[t.cat].push(t);
+        });
+
+        let activeSectionHtml;
+        if (Object.keys(activeGroups).length === 0) {
+            activeSectionHtml = `<div class="empty-hint" style="padding:24px 0">활성화된 태그가 없습니다. 태그 편집에서 스타일을 선택하세요.</div>`;
+        } else {
+            activeSectionHtml = Object.entries(activeGroups).map(([cat, tags]) => `
+                <div class="final-style-row">
+                    <span class="final-style-cat">${cat}</span>
+                    <span class="final-style-tags">${tags.map(t => `<span class="tag tag-on">${t.label}</span>`).join('')}</span>
+                </div>`).join('');
+        }
+
+        const inactiveSectionHtml = Object.keys(inactiveGroups).length ? `
+            <div class="final-style-inactive">
+                <div class="final-style-inactive-title">비활성 스타일 (현재 미적용)</div>
+                ${Object.entries(inactiveGroups).map(([cat, tags]) => `
+                    <div class="final-style-row">
+                        <span class="final-style-cat muted">${cat}</span>
+                        <span class="final-style-tags">${tags.map(t => `<span class="tag">${t.label}</span>`).join('')}</span>
+                    </div>`).join('')}
+            </div>` : '';
+
+        const html = `
+            <div class="final-style-header">
+                <div class="final-style-blogid">${dna.blog_id || ''}</div>
+                <div class="final-style-meta">${dna.post_count || 0}개 분석 · ${(dna.created_at || '').slice(0,10)} · 활성 태그 ${totalActive}/${totalAll}개</div>
+            </div>
+            <div class="final-style-desc">현재 설정 그대로 블로그 글을 생성하면 아래 스타일이 AI에게 전달됩니다. 원하는 스타일이 아니면 태그를 수정하세요.</div>
+            <div class="final-style-body">${activeSectionHtml}</div>
+            ${inactiveSectionHtml}
+            <div class="final-style-footer">
+                <button class="btn btn-secondary btn-sm" onclick="closeModal();setTimeout(()=>dbViewDNA('${dnaId}'),50)">태그 편집하기</button>
+            </div>`;
+
+        document.getElementById('detail-modal-title').textContent = `${dna.blog_id} 최종 스타일`;
+        document.getElementById('detail-modal-body').innerHTML = html;
+    } catch (err) {
+        document.getElementById('detail-modal-body').innerHTML = `<div class="error-hint">${err.message}</div>`;
     }
 }
 
