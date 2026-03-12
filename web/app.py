@@ -527,14 +527,16 @@ def blog_dna_preview():
         if special:
             lines.append(f"  특수기호: {', '.join(special)}")
 
+        c11 = dna_analysis.get("c11_length_stats", {})
+        c12 = dna_analysis.get("c12_typography", {})
+        c13 = dna_analysis.get("c13_brackets_quotes", {})
+        c14 = dna_analysis.get("c14_title_patterns", {})
+
         lines.append("")
         lines.append("▌ 시각적 포맷팅 (HTML 분석)")
         lines.append(f"  중앙정렬: {c10.get('center_align', '-')}")
-        lines.append(f"  폰트: {c10.get('font_family', '-')} / 크기: {c10.get('font_size_pattern', '-')}")
         lines.append(f"  볼드 패턴: {c10.get('bold_pattern', '-')}")
         lines.append(f"  이탤릭: {c10.get('italic_usage', '-')}")
-        lines.append(f"  인용/꺽쇠: {c10.get('quote_style', '-')}")
-        lines.append(f"  괄호 사용: {c10.get('bracket_usage', '-')}")
         lines.append(f"  줄바꿈: {c10.get('line_break_style', '-')}")
         if c10.get('text_colors'):
             lines.append(f"  강조 색상: {', '.join(c10['text_colors'][:4])}")
@@ -542,6 +544,49 @@ def blog_dna_preview():
             lines.append(f"  하이라이트: {', '.join(c10['highlight_colors'][:3])}")
         if c10.get('writing_guide'):
             lines.append(f"\n  작성 가이드: {c10['writing_guide']}")
+
+        if c11:
+            lines.append("")
+            lines.append("▌ 글자수/분량")
+            lines.append(f"  글당 평균 글자수: {c11.get('avg_chars_per_post', '-')}")
+            lines.append(f"  평균 문장 수: {c11.get('avg_sentences_per_post', '-')} / 문장당: {c11.get('avg_chars_per_sentence', '-')}")
+            lines.append(f"  서론:본론:결론 = {c11.get('content_ratio', '-')}")
+            if c11.get('writing_density_guide'):
+                lines.append(f"  분량 지침: {c11['writing_density_guide']}")
+
+        if c12:
+            lines.append("")
+            lines.append("▌ 폰트/글꼴 스타일")
+            if c12.get('font_families'):
+                lines.append(f"  폰트: {', '.join(c12['font_families'])}")
+            lines.append(f"  본문 크기: {c12.get('base_font_size', '-')} / 소제목: {c12.get('heading_font_size', '-')}")
+            lines.append(f"  볼드 빈도: {c12.get('bold_frequency', '-')}/10  목적: {c12.get('bold_purpose', '-')}")
+            lines.append(f"  기울임: {c12.get('italic_usage', '-')} / 밑줄: {c12.get('underline_usage', '-')}")
+            if c12.get('font_guide'):
+                lines.append(f"  글꼴 지침: {c12['font_guide']}")
+
+        if c13:
+            lines.append("")
+            lines.append("▌ 꺽쇠/괄호/인용부호")
+            if c13.get('angle_bracket_types'):
+                lines.append(f"  꺽쇠 종류: {', '.join(c13['angle_bracket_types'])}  빈도: {c13.get('angle_bracket_frequency', '-')}")
+                lines.append(f"  꺽쇠 목적: {c13.get('angle_bracket_purpose', '-')}")
+            if c13.get('square_bracket_types'):
+                lines.append(f"  대괄호: {', '.join(c13['square_bracket_types'])}  목적: {c13.get('square_bracket_purpose', '-')}")
+            lines.append(f"  소괄호 패턴: {c13.get('round_bracket_usage', '-')}")
+            lines.append(f"  따옴표 방식: {c13.get('quotation_mark_style', '-')}")
+            if c13.get('examples'):
+                for ex in c13['examples'][:2]:
+                    lines.append(f"    예: {ex}")
+
+        if c14:
+            lines.append("")
+            lines.append("▌ 제목 패턴")
+            lines.append(f"  평균 길이: {c14.get('avg_title_length', '-')}  구조: {c14.get('title_structure', '-')}")
+            lines.append(f"  숫자 활용: {c14.get('number_usage', '-')} / 감정 후크: {c14.get('emotion_hook', '-')}")
+            if c14.get('examples'):
+                for ex in c14['examples'][:3]:
+                    lines.append(f"    {ex}")
 
         lines.append("")
         lines.append("▌ 시그니처 표현")
@@ -769,26 +814,83 @@ def generate_blog():
             dna_parts = []
 
             if dna_analysis:
-                c1 = dna_analysis.get("c1_template_structure", {})
-                c2 = dna_analysis.get("c2_tone_mood", {})
-                c3 = dna_analysis.get("c3_speech_style", {})
-                c5 = dna_analysis.get("c5_frequent_expressions", {})
-                c6 = dna_analysis.get("c6_sentence_patterns", {})
-                c9 = dna_analysis.get("c9_opening_closing", {})
+                c1  = dna_analysis.get("c1_template_structure", {})
+                c2  = dna_analysis.get("c2_tone_mood", {})
+                c3  = dna_analysis.get("c3_speech_style", {})
+                c5  = dna_analysis.get("c5_frequent_expressions", {})
+                c6  = dna_analysis.get("c6_sentence_patterns", {})
+                c9  = dna_analysis.get("c9_opening_closing", {})
                 c10 = dna_analysis.get("c10_visual_formatting", {})
+                c11 = dna_analysis.get("c11_length_stats", {})
+                c12 = dna_analysis.get("c12_typography", {})
+                c13 = dna_analysis.get("c13_brackets_quotes", {})
+                c14 = dna_analysis.get("c14_title_patterns", {})
+                c15 = dna_analysis.get("c15_image_media", {})
 
                 dna_parts.append("【블로그 글쓰기 DNA 스타일 가이드】")
+                # 구조 & 톤
                 dna_parts.append(f"구조 패턴: {c1.get('overall_pattern', '')}")
                 dna_parts.append(f"섹션 흐름: {' → '.join(c1.get('section_flow', []))}")
                 dna_parts.append(f"톤: {c2.get('primary_tone', '')} / 격식도: {c2.get('formality_level', '')}/10")
+                # 어투
                 dna_parts.append(f"종결어미 패턴: {', '.join(c3.get('ending_patterns', []))}")
                 dna_parts.append(f"독자 호칭: {c3.get('reader_address', '')}")
+                # 표현
                 dna_parts.append(f"시그니처 표현: {', '.join(c5.get('signature_phrases', [])[:5])}")
+                dna_parts.append(f"전환 표현: {', '.join(c5.get('transition_words', [])[:4])}")
+                # 문장
                 dna_parts.append(f"문장 길이: {c6.get('avg_length', '')} / 리듬: {c6.get('rhythm', '')}")
+                # 도입/마무리
                 dna_parts.append(f"도입 방식: {', '.join(c9.get('opening_types', []))}")
                 dna_parts.append(f"마무리 방식: {', '.join(c9.get('closing_types', []))}")
+                # 시각 요소
                 dna_parts.append(f"이모지 사용(1-10): {c10.get('emoji_usage', '')} / 자주 쓰는 이모지: {', '.join(c10.get('emoji_types', []))}")
-                dna_parts.append(f"특수 포맷팅: {', '.join(c10.get('special_formatting', []))}")
+                dna_parts.append(f"특수기호: {', '.join(c10.get('special_symbols', []))}")
+                dna_parts.append(f"구분선 스타일: {c10.get('separator_style', '')}")
+                # 글자수/분량 (c11)
+                if c11:
+                    dna_parts.append(f"\n【분량 기준】")
+                    dna_parts.append(f"글당 평균 글자수: {c11.get('avg_chars_per_post', '')}")
+                    dna_parts.append(f"평균 문장 수: {c11.get('avg_sentences_per_post', '')}")
+                    dna_parts.append(f"문장당 평균 글자수: {c11.get('avg_chars_per_sentence', '')}")
+                    dna_parts.append(f"서론:본론:결론 비율: {c11.get('content_ratio', '')}")
+                    if c11.get('writing_density_guide'):
+                        dna_parts.append(f"분량 지침: {c11.get('writing_density_guide', '')}")
+                # 폰트/글꼴 (c12)
+                if c12:
+                    dna_parts.append(f"\n【폰트/글꼴 스타일】")
+                    if c12.get('font_families'):
+                        dna_parts.append(f"사용 폰트: {', '.join(c12.get('font_families', []))}")
+                    dna_parts.append(f"본문 크기: {c12.get('base_font_size', '')} / 소제목 크기: {c12.get('heading_font_size', '')}")
+                    dna_parts.append(f"볼드 빈도(1-10): {c12.get('bold_frequency', '')} / 목적: {c12.get('bold_purpose', '')}")
+                    if c12.get('bold_examples'):
+                        dna_parts.append(f"볼드 예시: {', '.join(c12.get('bold_examples', [])[:3])}")
+                    dna_parts.append(f"기울임꼴: {c12.get('italic_usage', '')} / 밑줄: {c12.get('underline_usage', '')}")
+                    if c12.get('font_guide'):
+                        dna_parts.append(f"글꼴 지침: {c12.get('font_guide', '')}")
+                # 꺽쇠/괄호 (c13)
+                if c13:
+                    dna_parts.append(f"\n【꺽쇠/괄호/인용부호】")
+                    if c13.get('angle_bracket_types'):
+                        dna_parts.append(f"꺽쇠 종류: {', '.join(c13.get('angle_bracket_types', []))} / 목적: {c13.get('angle_bracket_purpose', '')} / 빈도: {c13.get('angle_bracket_frequency', '')}")
+                    if c13.get('square_bracket_types'):
+                        dna_parts.append(f"대괄호 종류: {', '.join(c13.get('square_bracket_types', []))} / 목적: {c13.get('square_bracket_purpose', '')}")
+                    dna_parts.append(f"소괄호 패턴: {c13.get('round_bracket_usage', '')}")
+                    dna_parts.append(f"따옴표 방식: {c13.get('quotation_mark_style', '')}")
+                    if c13.get('examples'):
+                        dna_parts.append(f"꺽쇠/괄호 예시: {' | '.join(c13.get('examples', [])[:3])}")
+                # 제목 패턴 (c14)
+                if c14:
+                    dna_parts.append(f"\n【제목 패턴】")
+                    dna_parts.append(f"평균 제목 길이: {c14.get('avg_title_length', '')} / 구조: {c14.get('title_structure', '')}")
+                    dna_parts.append(f"숫자 활용: {c14.get('number_usage', '')} / 감정 후크: {c14.get('emotion_hook', '')}")
+                    if c14.get('examples'):
+                        dna_parts.append(f"제목 예시: {' | '.join(c14.get('examples', [])[:3])}")
+                # 이미지 (c15)
+                if c15:
+                    dna_parts.append(f"\n【이미지/미디어 패턴】")
+                    dna_parts.append(f"글당 이미지 수: {c15.get('avg_images_per_post', '')} / 배치: {c15.get('image_position', '')}")
+                    dna_parts.append(f"캡션 방식: {c15.get('image_caption_style', '')} / 밀도: {c15.get('media_density', '')}")
 
                 # 도입/마무리 실제 예시
                 if c9.get("opening_examples"):
@@ -1778,12 +1880,13 @@ def analyze_blog_status():
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 【분석 지침】
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-- 10가지 카테고리별로 글에서 실제로 발견한 패턴을 근거(evidence)와 함께 제시
+- 15가지 카테고리별로 글에서 실제로 발견한 패턴을 근거(evidence)와 함께 제시
 - 각 항목의 examples에는 실제 글에서 발췌한 표현을 반드시 포함
 - 블로그 글을 그대로 재현할 수 있을 정도로 구체적으로 분석
+- HTML 소스 분석이 가능한 경우 폰트명·크기·색상·꺽쇠 사용을 실제 값으로 기재
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-【출력 JSON 스키마 (10가지 카테고리)】
+【출력 JSON 스키마 (15가지 카테고리)】
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 {{
@@ -1870,17 +1973,73 @@ def analyze_blog_status():
     "center_align": "중앙정렬 사용 여부 및 빈도 (HTML 분석 기반)",
     "text_colors": ["강조 텍스트 색상 목록 (HTML color 속성 기반)"],
     "highlight_colors": ["배경 하이라이트 색상 (background-color 기반)"],
-    "font_family": "주로 사용하는 폰트명",
-    "font_size_pattern": "주로 쓰는 폰트 크기 패턴",
-    "bold_pattern": "볼드(굵기) 강조 사용 패턴 및 빈도",
-    "italic_usage": "기울임꼴 사용 여부",
-    "quote_style": "인용구/꺽쇠/따옴표 사용 방식 — 실제 예시 포함",
-    "bracket_usage": "괄호 사용 패턴 (소괄호, 대괄호, 꺽쇠 등)",
-    "separator_style": "구분선/구분 요소 스타일",
+    "separator_style": "구분선/구분 요소 스타일 (예: ─────, ===, 빈줄 등)",
     "special_symbols": ["특수기호 사용 패턴 — ✅ 〰️ ➡️ ▼ ⚠️ 등 실제 문자로"],
     "line_break_style": "줄바꿈 패턴 (짧은 줄 중앙정렬형 vs 긴 단락형)",
     "writing_guide": "이 블로그 스타일을 재현하기 위한 구체적 작성 가이드 (3~5문장)",
     "examples": ["포맷팅 특징이 보이는 실제 예시 — 기호/이모지 포함"]
+  }},
+  "c11_length_stats": {{
+    "title": "글자수/분량 통계",
+    "avg_chars_per_post": "글당 평균 글자수 (공백 포함, 예: 약 1200자)",
+    "avg_sentences_per_post": "글당 평균 문장 수 (예: 약 25문장)",
+    "avg_chars_per_sentence": "문장당 평균 글자수 (예: 약 40자)",
+    "avg_paragraphs_per_post": "글당 평균 단락/문단 수",
+    "content_ratio": "서론:본론:결론 분량 비율 (예: 10%:75%:15%)",
+    "length_consistency": "글 길이 일관성 (균일함/편차큼)",
+    "short_post_threshold": "짧은 글의 기준 (예: 500자 미만)",
+    "long_post_threshold": "긴 글의 기준 (예: 2000자 이상)",
+    "writing_density_guide": "분량 재현을 위한 구체적 지침 (예: '한 단락에 2~3문장, 총 5~7단락 구성')"
+  }},
+  "c12_typography": {{
+    "title": "폰트/글꼴 스타일",
+    "font_families": ["실제 사용 폰트명 목록 (HTML font-family 기반, 예: 맑은 고딕, 나눔고딕)"],
+    "base_font_size": "본문 기본 글자 크기 (예: 15px 또는 '보통')",
+    "heading_font_size": "소제목 글자 크기 (예: 18px, 20px 등)",
+    "font_size_variety": "크기 변화 다양성 (단일/2~3종/다양)",
+    "bold_frequency": "볼드 사용 빈도 (1-10)",
+    "bold_purpose": "볼드 사용 목적 (예: 핵심 단어 강조, 소제목 대용, 감탄 표현)",
+    "bold_examples": ["볼드 강조가 사용된 실제 예시 (볼드 단어/구절 포함)"],
+    "italic_usage": "기울임꼴 사용 여부 및 목적",
+    "underline_usage": "밑줄 사용 여부 및 목적",
+    "color_text_examples": ["색상 강조된 텍스트 실제 예시"],
+    "highlight_examples": ["하이라이트(형광펜) 사용 실제 예시"],
+    "font_guide": "이 블로그 글꼴 스타일을 재현하기 위한 구체적 지침"
+  }},
+  "c13_brackets_quotes": {{
+    "title": "꺽쇠/괄호/인용부호 패턴",
+    "angle_bracket_types": ["사용하는 꺽쇠 종류 — 실제 문자로 (예: 《 》, 〈 〉, 「 」, 『 』, ≪ ≫)"],
+    "angle_bracket_purpose": "꺽쇠 사용 목적 (예: 강조, 제목 표시, 카테고리 구분, 섹션 제목)",
+    "angle_bracket_frequency": "꺽쇠 사용 빈도 (없음/가끔/자주/항상)",
+    "square_bracket_types": ["사용하는 대괄호 종류 — 실제 문자로 (예: 【 】, [ ], ［ ］)"],
+    "square_bracket_purpose": "대괄호 사용 목적 (예: 태그 표시, 카테고리, 부연설명)",
+    "round_bracket_usage": "소괄호 () 사용 패턴 (예: 부연설명, 영문 병기, 수치 표시)",
+    "quotation_mark_style": "따옴표 방식 (예: "큰따옴표", '작은따옴표', 「」, 『』)",
+    "bracket_nesting": "괄호 중첩 사용 여부 (예: 《[카테고리] 소제목》)",
+    "examples": ["꺽쇠·괄호가 사용된 실제 문장 발췌 — 반드시 기호 그대로 포함"]
+  }},
+  "c14_title_patterns": {{
+    "title": "제목 작성 패턴",
+    "avg_title_length": "평균 제목 글자수 (예: 약 20자)",
+    "title_structure": "주로 쓰는 제목 구조 (예: [키워드]+[동사형], 의문문형, 숫자+명사형)",
+    "keyword_placement": "키워드 위치 (앞/중간/끝/분산)",
+    "number_usage": "숫자 활용 여부와 방식 (예: TOP 5, 3가지 방법, N번째 등)",
+    "emotion_hook": "감정 유발 단어 패턴 (예: 꼭!, 강추!, 실화?, 미쳤다 등)",
+    "location_brand_pattern": "지명·브랜드명 포함 패턴",
+    "title_keywords": ["자주 등장하는 제목 키워드 목록"],
+    "examples": ["실제 제목 발췌 5개 이상 — 패턴이 잘 드러나는 것 위주"]
+  }},
+  "c15_image_media": {{
+    "title": "이미지/미디어 활용 패턴",
+    "avg_images_per_post": "글당 평균 이미지 수 (예: 약 5장)",
+    "image_position": "이미지 배치 방식 (예: 글 상단 1장+본문 중간 분산, 마지막 정리용 등)",
+    "image_caption_style": "이미지 설명/캡션 방식 (없음/짧게/상세히/이모지 포함)",
+    "image_type": "이미지 종류 (직접 촬영/스크린샷/공식 이미지/혼합)",
+    "image_layout": "이미지 정렬 방식 (좌/중앙/우/전체폭)",
+    "use_tables": "표(table) 사용 여부 및 목적",
+    "use_maps_links": "지도/링크 삽입 여부",
+    "media_density": "글 대비 이미지 비중 (이미지 중심/텍스트 중심/균형)",
+    "examples": ["이미지 활용 특징이 드러나는 설명 또는 캡션 실제 예시"]
   }}
 }}
 

@@ -1233,10 +1233,53 @@ function extractPersonaTags(dna) {
     const vf = dna.c10_visual_formatting || {};
     if (vf.emoji_usage) add('c10_emoji_level', `이모지 ${vf.emoji_usage}/10`, '시각');
     if (vf.center_align) add('c10_center', vf.center_align, '시각');
-    if (vf.bold_pattern) add('c10_bold', vf.bold_pattern, '시각');
+    if (vf.separator_style) add('c10_sep', `구분선: ${vf.separator_style}`, '시각');
     (vf.emoji_types || []).slice(0, 5).forEach((v, i) => add(`c10_emo_${i}`, v, '이모지'));
     (vf.special_symbols || []).slice(0, 5).forEach((v, i) => add(`c10_sym_${i}`, v, '기호'));
     if (vf.writing_guide) add('c10_guide', (vf.writing_guide || '').slice(0, 55), '작성 가이드');
+
+    // c11 — 글자수/분량
+    const ls = dna.c11_length_stats || {};
+    if (ls.avg_chars_per_post) add('c11_chars', ls.avg_chars_per_post, '글자수');
+    if (ls.avg_sentences_per_post) add('c11_sentences', ls.avg_sentences_per_post, '글자수');
+    if (ls.avg_chars_per_sentence) add('c11_sent_len', ls.avg_chars_per_sentence, '글자수');
+    if (ls.content_ratio) add('c11_ratio', `비율: ${ls.content_ratio}`, '글자수');
+    if (ls.writing_density_guide) add('c11_density', (ls.writing_density_guide || '').slice(0, 55), '분량 지침');
+
+    // c12 — 폰트/글꼴
+    const ty = dna.c12_typography || {};
+    (ty.font_families || []).slice(0, 3).forEach((f, i) => add(`c12_font_${i}`, f, '폰트'));
+    if (ty.base_font_size) add('c12_base_size', `본문: ${ty.base_font_size}`, '폰트');
+    if (ty.heading_font_size) add('c12_head_size', `소제목: ${ty.heading_font_size}`, '폰트');
+    if (ty.bold_frequency) add('c12_bold_freq', `볼드 ${ty.bold_frequency}/10`, '글꼴');
+    if (ty.bold_purpose) add('c12_bold_purpose', ty.bold_purpose, '글꼴');
+    if (ty.italic_usage) add('c12_italic', ty.italic_usage, '글꼴');
+    if (ty.underline_usage) add('c12_underline', ty.underline_usage, '글꼴');
+    if (ty.font_guide) add('c12_guide', (ty.font_guide || '').slice(0, 55), '글꼴 지침');
+
+    // c13 — 꺽쇠/괄호
+    const bq = dna.c13_brackets_quotes || {};
+    (bq.angle_bracket_types || []).slice(0, 4).forEach((v, i) => add(`c13_angle_${i}`, v, '꺽쇠'));
+    if (bq.angle_bracket_purpose) add('c13_angle_purpose', bq.angle_bracket_purpose, '꺽쇠');
+    if (bq.angle_bracket_frequency) add('c13_angle_freq', `꺽쇠 빈도: ${bq.angle_bracket_frequency}`, '꺽쇠');
+    (bq.square_bracket_types || []).slice(0, 3).forEach((v, i) => add(`c13_square_${i}`, v, '괄호'));
+    if (bq.round_bracket_usage) add('c13_round', bq.round_bracket_usage, '괄호');
+    if (bq.quotation_mark_style) add('c13_quote', bq.quotation_mark_style, '인용부호');
+
+    // c14 — 제목 패턴
+    const tp = dna.c14_title_patterns || {};
+    if (tp.avg_title_length) add('c14_title_len', tp.avg_title_length, '제목');
+    if (tp.title_structure) add('c14_title_struct', tp.title_structure, '제목');
+    if (tp.number_usage) add('c14_number', tp.number_usage, '제목');
+    if (tp.emotion_hook) add('c14_emotion', tp.emotion_hook, '제목');
+    (tp.title_keywords || []).slice(0, 4).forEach((k, i) => add(`c14_kw_${i}`, k, '제목 키워드'));
+
+    // c15 — 이미지/미디어
+    const im = dna.c15_image_media || {};
+    if (im.avg_images_per_post) add('c15_img_count', im.avg_images_per_post, '이미지');
+    if (im.image_position) add('c15_img_pos', im.image_position, '이미지');
+    if (im.image_caption_style) add('c15_caption', im.image_caption_style, '이미지');
+    if (im.media_density) add('c15_density', im.media_density, '이미지');
 
     return tags;
 }
