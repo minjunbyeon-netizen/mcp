@@ -144,6 +144,16 @@ BUSINESS_DIR.mkdir(parents=True, exist_ok=True)
 CALIBRATIONS_DIR = OUTPUT_DIR / "calibrations"
 CALIBRATIONS_DIR.mkdir(parents=True, exist_ok=True)
 
+# 생성 파일 TTL 정리 (30일 초과 BLOG_*.json/.md 삭제)
+import time as _time_module
+_ttl_cutoff = _time_module.time() - 30 * 86400
+for _f in OUTPUT_DIR.glob("BLOG_*"):
+    try:
+        if _f.stat().st_mtime < _ttl_cutoff:
+            _f.unlink()
+    except Exception:
+        pass
+
 # blog_pull 모듈 경로 추가
 sys.path.insert(0, str(PROJECT_ROOT / "blog_pull"))
 # web/ 폴더도 sys.path에 추가 (run_crawler.py 등 web/ 내 모듈 import용)
@@ -2500,6 +2510,16 @@ def analyze_blog_status():
             _char_counts.append(len(txt))
             _para_counts.append(len([p for p in txt.split('\n') if p.strip()]))
             _sent_counts.append(max(1, txt.count('。') + txt.count('.') + txt.count('!') + txt.count('?')))
+        # 이미지 수 실측 (style_meta.image_count 있으면 사용)
+        _img_counts = [p.get('style_meta', {}).get('image_count', 0) for p in unique_posts]
+        _has_img_data = any(c > 0 for c in _img_counts)
+        _img_line = (
+            f"이미지 수(실측): 평균 {round(_stats.mean(_img_counts), 1)}장 / 최소 {min(_img_counts)}장 / 최대 {max(_img_counts)}장"
+            if _has_img_data else
+            "이미지 수: 실측 데이터 없음 (이전 수집분) — 글 내용에서 추정"
+        )
+        _sorted_chars = sorted(_char_counts)
+        _t1, _t2 = _sorted_chars[len(_sorted_chars)//3], _sorted_chars[2*len(_sorted_chars)//3]
         _measured_stats = f"""
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 【실측 데이터 — 수집된 {len(unique_posts)}개 글 전체 집계 (AI 추정 금지, 이 수치를 그대로 사용)】
@@ -2507,15 +2527,18 @@ def analyze_blog_status():
 글자수(텍스트 기준): 평균 {round(_stats.mean(_char_counts))}자 / 최소 {min(_char_counts)}자 / 최대 {max(_char_counts)}자 / 중앙값 {round(_stats.median(_char_counts))}자
 단락수: 평균 {round(_stats.mean(_para_counts))}개 / 최소 {min(_para_counts)}개 / 최대 {max(_para_counts)}개
 문장수(추정): 평균 {round(_stats.mean(_sent_counts))}개 / 최소 {min(_sent_counts)}개 / 최대 {max(_sent_counts)}개
-분량 분포: 짧은 글({min(_char_counts)}~{sorted(_char_counts)[len(_char_counts)//3]}자) {sum(1 for c in _char_counts if c < sorted(_char_counts)[len(_char_counts)//3])}편 / 중간({sorted(_char_counts)[len(_char_counts)//3]}~{sorted(_char_counts)[2*len(_char_counts)//3]}자) {sum(1 for c in _char_counts if sorted(_char_counts)[len(_char_counts)//3] <= c < sorted(_char_counts)[2*len(_char_counts)//3])}편 / 긴 글({sorted(_char_counts)[2*len(_char_counts)//3]}자~) {sum(1 for c in _char_counts if c >= sorted(_char_counts)[2*len(_char_counts)//3])}편
+{_img_line}
+분량 분포: 짧은 글({min(_char_counts)}~{_t1}자) {sum(1 for c in _char_counts if c < _t1)}편 / 중간({_t1}~{_t2}자) {sum(1 for c in _char_counts if _t1 <= c < _t2)}편 / 긴 글({_t2}자~) {sum(1 for c in _char_counts if c >= _t2)}편
 """
 
         # 블로그 글 요약 텍스트 생성 (통합된 데이터 중 최근 15개 분석)
         blog_summary = ""
         for i, post in enumerate(unique_posts[:15], 1):
             txt = post.get("content", "")
+            img_c = post.get('style_meta', {}).get('image_count', None)
+            img_info = f", 이미지: {img_c}장" if img_c is not None else ""
             content = txt[:1500]
-            blog_summary += f"\n\n--- 글 {i}: {post.get('title', '')} (날짜: {post.get('addDate', '')}, 글자수: {len(txt)}자, 단락수: {len([p for p in txt.split(chr(10)) if p.strip()])}개) ---\n{content}"
+            blog_summary += f"\n\n--- 글 {i}: {post.get('title', '')} (날짜: {post.get('addDate', '')}, 글자수: {len(txt)}자, 단락수: {len([p for p in txt.split(chr(10)) if p.strip()])}개{img_info}) ---\n{content}"
 
         # 시각적 스타일 메타 집계 (HTML에서 추출한 데이터)
         from collections import Counter as _Counter

@@ -11,6 +11,7 @@ import os
 import re
 import json
 import time
+import shutil
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
@@ -228,9 +229,18 @@ def _extract_style_meta(content_div) -> dict:
     # 이탤릭
     italic_count = len(re.findall(r'font-style\s*:\s*italic', combined_style))
 
+    # 이미지 카운트 (네이버 블로그 이미지만, 아이콘/이모지 제외)
+    img_tags = content_div.find_all("img")
+    image_count = 0
+    for img in img_tags:
+        src = img.get("src") or img.get("data-src") or ""
+        # 네이버 블로그 실제 이미지만 카운트 (postfiles, blogfiles, mblogthumb 등)
+        if any(kw in src for kw in ("postfiles", "blogfiles", "mblogthumb", "blogimg")):
+            image_count += 1
+
     return {
-        "center_align_ratio": center_ratio,         # 0~1, 높을수록 중앙정렬 많이 씀
-        "accent_colors": list(Counter(accent_colors).most_common(5)),   # [(색상, 빈도)]
+        "center_align_ratio": center_ratio,
+        "accent_colors": list(Counter(accent_colors).most_common(5)),
         "highlight_colors": list(Counter(highlight_colors).most_common(3)),
         "dominant_fonts": [f[0].replace("se-ff-", "") for f in font_counter.most_common(3)],
         "font_sizes": [s[0].replace("se-fs-", "") for s in size_counter.most_common(3)],
@@ -238,6 +248,7 @@ def _extract_style_meta(content_div) -> dict:
         "italic_count": italic_count,
         "has_quote_block": has_quote,
         "total_styled_elements": len(all_styles),
+        "image_count": image_count,
     }
 
 
@@ -288,4 +299,20 @@ def save_results(blog_id: str, posts: list[dict]) -> str:
             f.write("=" * 60 + "\n\n")
             f.write(post.get("content", ""))
 
+    # 같은 blog_id의 오래된 수집 폴더 정리 (최신 3개만 유지)
+    _cleanup_old_collections(Path(OUTPUT_DIR), blog_id, keep=3)
+
     return str(folder)
+
+
+def _cleanup_old_collections(output_dir: Path, blog_id: str, keep: int = 3):
+    """blog_id에 해당하는 수집 폴더를 최신 keep개만 남기고 삭제."""
+    try:
+        folders = sorted(output_dir.glob(f"{blog_id}_*"))
+        for old in folders[:-keep]:
+            try:
+                shutil.rmtree(old)
+            except Exception:
+                pass
+    except Exception:
+        pass
