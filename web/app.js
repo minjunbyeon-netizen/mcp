@@ -755,6 +755,34 @@ function blogToNaverHTML(title, content, images = []) {
         s = s.replace(/\[첨자아래:([^\]]+)\]/g,
             `<sub style="font-size:0.75em;">$1</sub>`);
 
+        // ─── 10. 추가 6가지 ────────────────────────────────────
+
+        // [링크:url]text[/링크] → 하이퍼링크
+        s = s.replace(/\[링크:([^\]]+)\]([\s\S]+?)\[\/링크\]/g,
+            `<a href="$1" style="color:${acCol};text-decoration:underline;">$2</a>`);
+
+        // [뱃지]text[/뱃지] → 인라인 필 배지 (강조 태그)
+        s = s.replace(/\[뱃지\]([\s\S]+?)\[\/뱃지\]/g,
+            `<span style="display:inline-block;background:${acCol};color:#fff;` +
+            `font-size:11px;font-weight:bold;padding:1px 8px;border-radius:980px;` +
+            `line-height:1.6;vertical-align:middle;">$1</span>`);
+
+        // [밑줄색상:#hex]text[/밑줄색상] → 색상 밑줄 (border-bottom)
+        s = s.replace(/\[밑줄색상:(#[0-9a-fA-F]{3,6})\]([\s\S]+?)\[\/밑줄색상\]/g,
+            `<span style="border-bottom:2px solid $1;padding-bottom:1px;">$2</span>`);
+
+        // [자간:N]text[/자간] → letter-spacing (단위: px)
+        s = s.replace(/\[자간:(\d+(?:\.\d+)?)\]([\s\S]+?)\[\/자간\]/g,
+            (_, n, t) => `<span style="letter-spacing:${n}px;">${t}</span>`);
+
+        // [회색]text[/회색] → 흐린 회색 텍스트 단축어
+        s = s.replace(/\[회색\]([\s\S]+?)\[\/회색\]/g,
+            `<span style="color:#888;">$1</span>`);
+
+        // [흰글자]text[/흰글자] → 흰색 텍스트 (배경색 조합용)
+        s = s.replace(/\[흰글자\]([\s\S]+?)\[\/흰글자\]/g,
+            `<span style="color:#ffffff;">$1</span>`);
+
         return s;
     };
 
