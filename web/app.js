@@ -600,32 +600,59 @@ function blogToNaverHTML(title, content, images = []) {
     const esc = s => String(s)
         .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 
-    // ── 네이버 SE3 폰트 매핑 (한국어 이름 + 내부 ID 모두 지원) ────────────────
+    // ── 네이버 SE3 폰트 동적 로딩 (첫 호출 시 1회만) ─────────────
+    if (!document.getElementById('naver-preview-fonts')) {
+        const s = document.createElement('style');
+        s.id = 'naver-preview-fonts';
+        // Google Fonts (NanumGothic, NanumMyeongjo, NanumSquare 계열)
+        s.textContent = `
+@import url('https://fonts.googleapis.com/css2?family=Nanum+Gothic:wght@400;700;800&family=Nanum+Myeongjo:wght@400;700;800&family=Nanum+Gothic+Coding:wght@400;700&display=swap');
+/* Naver 전용 폰트 — SE3에서만 렌더링, 미리보기는 cursive 근사 */
+@font-face { font-family: 'nanumdasisijaghae'; src: local('나눔다시시작해'), local('nanumdasisijaghae'); }
+@font-face { font-family: 'nanumbareunhipi';   src: local('나눔바른히피'),   local('NanumBarunhiPi'); }
+@font-face { font-family: 'NanumSquareRound';  src: local('나눔스퀘어 라운드'), local('NanumSquareRound'); }
+@font-face { font-family: 'NanumBarunGothic';  src: local('나눔바른고딕'), local('NanumBarunGothic'); }
+@font-face { font-family: 'NanumBrushScript';  src: local('나눔손글씨 붓'), local('NanumBrushScript'); }
+@font-face { font-family: 'NanumPen';          src: local('나눔손글씨 펜'), local('NanumPen'); }`;
+        document.head.appendChild(s);
+    }
+
+    // ── 네이버 SE3 폰트 매핑 (한국어 이름 + 내부 ID 모두 지원) ─────
     const NAVER_FONTS = {
         // 한국어 이름
-        '나눔고딕':       "'NanumGothic','나눔고딕',sans-serif",
-        '나눔명조':       "'NanumMyeongjo','나눔명조',serif",
-        '나눔스퀘어':     "'NanumSquare','나눔스퀘어',sans-serif",
-        '나눔바른히피':   "'nanumbareunhipi','나눔바른히피',cursive",
-        '나눔바른고딕':   "'NanumBarunGothic','나눔바른고딕',sans-serif",
-        '맑은고딕':       "'Malgun Gothic','맑은 고딕',sans-serif",
-        '돋움':           "'Dotum','돋움',sans-serif",
-        '굴림':           "'Gulim','굴림',sans-serif",
-        '바탕':           "'Batang','바탕',serif",
-        // 네이버 SE3 내부 폰트 ID
-        'nanumgothic':         "'NanumGothic','나눔고딕',sans-serif",
-        'nanummyeongjo':       "'NanumMyeongjo','나눔명조',serif",
-        'nanumsquare':         "'NanumSquare','나눔스퀘어',sans-serif",
-        'nanumbareunhipi':     "'nanumbareunhipi','나눔바른히피',cursive",
-        'nanumbarungothic':    "'NanumBarunGothic','나눔바른고딕',sans-serif",
-        'nanumdasisijaghae':   "'nanumdasisijaghae','나눔다시시작해',cursive",
-        'nanumbrush':          "'NanumBrush','나눔손글씨',cursive",
-        'nanumpen':            "'NanumPen','나눔펜',cursive",
-        'malgun':              "'Malgun Gothic','맑은 고딕',sans-serif",
-        'dotum':               "'Dotum','돋움',sans-serif",
-        'gulim':               "'Gulim','굴림',sans-serif",
-        'batang':              "'Batang','바탕',serif",
-        '강조':                hff,  // DNA 두 번째 폰트 (fallback)
+        '나눔고딕':         "'NanumGothic','나눔고딕','Malgun Gothic',sans-serif",
+        '나눔명조':         "'NanumMyeongjo','나눔명조',serif",
+        '나눔스퀘어':       "'NanumSquare','나눔스퀘어','NanumGothic',sans-serif",
+        '나눔스퀘어라운드': "'NanumSquareRound','NanumSquare','NanumGothic',sans-serif",
+        '나눔바른히피':     "'nanumbareunhipi','나눔바른히피','NanumGothic',sans-serif",
+        '나눔바른고딕':     "'NanumBarunGothic','나눔바른고딕','NanumGothic',sans-serif",
+        '나눔다시시작해':   "'nanumdasisijaghae','나눔다시시작해',cursive",
+        '나눔손글씨붓':     "'NanumBrushScript','NanumGothic',cursive",
+        '나눔손글씨펜':     "'NanumPen','NanumGothic',cursive",
+        '맑은고딕':         "'Malgun Gothic','맑은 고딕','Apple SD Gothic Neo',sans-serif",
+        '돋움':             "Dotum,'돋움',sans-serif",
+        '굴림':             "Gulim,'굴림',sans-serif",
+        '바탕':             "Batang,'바탕',serif",
+        '궁서':             "GungsuhChe,'궁서체',serif",
+        // 네이버 SE3 내부 폰트 ID (소문자)
+        'nanumgothic':           "'NanumGothic','나눔고딕','Malgun Gothic',sans-serif",
+        'nanummyeongjo':         "'NanumMyeongjo','나눔명조',serif",
+        'nanumsquare':           "'NanumSquare','나눔스퀘어','NanumGothic',sans-serif",
+        'nanumsquareround':      "'NanumSquareRound','NanumSquare','NanumGothic',sans-serif",
+        'nanumbareunhipi':       "'nanumbareunhipi','나눔바른히피','NanumGothic',sans-serif",
+        'nanumbarungothic':      "'NanumBarunGothic','나눔바른고딕','NanumGothic',sans-serif",
+        'nanumdasisijaghae':     "'nanumdasisijaghae','나눔다시시작해',cursive",
+        'nanumbrush':            "'NanumBrushScript','NanumGothic',cursive",
+        'nanumpen':              "'NanumPen','NanumGothic',cursive",
+        'malgun':                "'Malgun Gothic','맑은 고딕',sans-serif",
+        'dotum':                 "Dotum,'돋움',sans-serif",
+        'gulim':                 "Gulim,'굴림',sans-serif",
+        'batang':                "Batang,'바탕',serif",
+        'gungsuh':               "GungsuhChe,'궁서체',serif",
+        'arial':                 "Arial,Helvetica,sans-serif",
+        'timesnewroman':         "'Times New Roman',Times,serif",
+        'couriernew':            "'Courier New',Courier,monospace",
+        '강조':                  hff,
     };
 
     const mdInline = raw => {
@@ -802,10 +829,10 @@ function blogToNaverHTML(title, content, images = []) {
         return s;
     };
 
-    // 기본 p 태그 생성
+    // 기본 p 태그 생성 (문단 하단 여백 포함)
     const p = (extra, inner) =>
         `<p style="font-family:${ff};font-size:${fs};line-height:${lh};`+
-        `color:${col};margin:0;${extra}">${inner}</p>`;
+        `color:${col};margin:0 0 6px 0;${extra}">${inner}</p>`;
 
     // ── 문단 블록 파싱 (멀티라인 블록 마커 지원) ──────────────
     const blocks = [];
@@ -952,13 +979,13 @@ function blogToNaverHTML(title, content, images = []) {
 
         const b = blocks[i];
         if (b.type === 'gap') {
-            html += `<p style="font-family:${ff};font-size:4px;line-height:1;margin:0;">&nbsp;</p>`;
+            html += `<p style="font-family:${ff};font-size:10px;line-height:1.6;margin:0;">&nbsp;</p>`;
 
         } else if (b.type === 'h2') {
             const hCol   = accentCol || '#1a1a1a';
             const hAlign = centerHeadings ? 'text-align:center;' : '';
             html += `<p style="font-family:${hff};font-size:${hfs};font-weight:bold;`+
-                    `line-height:1.8;color:${hCol};margin:14px 0 4px 0;${hAlign}">`+
+                    `line-height:1.8;color:${hCol};margin:24px 0 8px 0;${hAlign}">`+
                     `${mdInline(esc(b.text))}</p>`;
 
         } else if (b.type === 'h1') {
@@ -966,18 +993,18 @@ function blogToNaverHTML(title, content, images = []) {
             const hCol   = accentCol || '#1a1a1a';
             const hAlign = centerHeadings ? 'text-align:center;' : '';
             html += `<p style="font-family:${hff};font-size:${h1fs};font-weight:bold;`+
-                    `line-height:1.6;color:${hCol};margin:20px 0 6px 0;${hAlign}">`+
+                    `line-height:1.6;color:${hCol};margin:32px 0 10px 0;${hAlign}">`+
                     `${mdInline(esc(b.text))}</p>`;
 
         } else if (b.type === 'li') {
-            html += p('padding-left:18px;', `• ${mdInline(esc(b.text))}`);
+            html += p('padding-left:20px;margin-bottom:4px;', `• ${mdInline(esc(b.text))}`);
 
         } else if (b.type === 'box') {
             // [박스] — 인용구 스타일 박스 (멀티라인 지원)
             const innerHtml = b.text.split('\n').map(l => l.trim())
                 .filter(l => l).map(l => mdInline(esc(l))).join('<br>');
             html += `<p style="font-family:${ff};font-size:${fs};line-height:${lh};color:${col};`+
-                    `margin:8px 0;padding:12px 16px;`+
+                    `margin:14px 0;padding:14px 18px;`+
                     `background:#f8f8f8;border-left:3px solid ${accentCol||'#ccc'};">`+
                     `${innerHtml}</p>`;
 
@@ -986,7 +1013,7 @@ function blogToNaverHTML(title, content, images = []) {
             const innerHtml = b.text.split('\n').map(l => l.trim())
                 .filter(l => l).map(l => mdInline(esc(l))).join('<br>');
             html += `<p style="font-family:${ff};font-size:${fs};line-height:${lh};color:${col};`+
-                    `margin:8px 0;padding:12px 16px;background:${b.bgColor};">`+
+                    `margin:14px 0;padding:14px 18px;background:${b.bgColor};">`+
                     `${innerHtml}</p>`;
 
         } else if (b.type === 'hr') {
