@@ -33,44 +33,38 @@ async function initAuth() {
         const res = await fetch(`${API}/api/auth/status`);
         const data = await res.json();
 
-        // SSO 미설정(로컬 개발) 또는 로그인 완료 → 앱 바로 진입
-        if (data.logged_in || !data.sso_enabled) {
+        if (data.logged_in) {
+            // ── 로그인 상태 → 앱 표시 ──────────────────────────
             document.getElementById('login-gate').classList.add('hidden');
             document.getElementById('app-content').classList.remove('hidden');
             document.getElementById('sb-logged-out').classList.add('hidden');
+            document.getElementById('sb-logged-in').classList.remove('hidden');
 
-            if (data.logged_in && data.user) {
-                document.getElementById('sb-logged-in').classList.remove('hidden');
-                const el = document.getElementById('sb-username');
-                if (el) el.textContent = data.user.name || data.user.email || '';
-                const av = document.getElementById('sb-avatar');
-                if (av && data.user.picture) av.src = data.user.picture;
+            const u = data.user || {};
+            const el = document.getElementById('sb-username');
+            if (el) el.textContent = u.name || u.email || '';
+            const av = document.getElementById('sb-avatar');
+            if (av && u.picture) av.src = u.picture;
 
-                // 우측 상단 topbar 업데이트
-                const tbUser = document.getElementById('topbar-user');
-                if (tbUser) tbUser.classList.remove('hidden');
-                const tbName = document.getElementById('topbar-name');
-                if (tbName) tbName.textContent = data.user.name || data.user.email || '';
-                const tbAv = document.getElementById('topbar-avatar');
-                if (tbAv && data.user.picture) tbAv.src = data.user.picture;
-            } else {
-                // SSO 미설정 → 로그인 영역 숨김
-                document.getElementById('sb-logged-in').classList.add('hidden');
-                document.getElementById('sb-logged-out').classList.add('hidden');
-            }
+            // topbar
+            const tbUser = document.getElementById('topbar-user');
+            if (tbUser) tbUser.classList.remove('hidden');
+            const tbName = document.getElementById('topbar-name');
+            if (tbName) tbName.textContent = u.name || u.email || '';
+            const tbAv = document.getElementById('topbar-avatar');
+            if (tbAv) { if (u.picture) tbAv.src = u.picture; else tbAv.style.display = 'none'; }
 
             loadCollectHistory();
             loadDNAList();
         } else {
+            // ── 비로그인 → 로그인 화면 ─────────────────────────
             document.getElementById('login-gate').classList.remove('hidden');
             document.getElementById('app-content').classList.add('hidden');
         }
     } catch {
-        // 연결 실패 시에도 앱 진입 허용 (로컬 개발 편의)
-        document.getElementById('login-gate').classList.add('hidden');
-        document.getElementById('app-content').classList.remove('hidden');
-        loadCollectHistory();
-        loadDNAList();
+        // 서버 응답 실패 → 로그인 화면 표시
+        document.getElementById('login-gate').classList.remove('hidden');
+        document.getElementById('app-content').classList.add('hidden');
     }
 }
 

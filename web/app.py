@@ -401,9 +401,14 @@ def login_required(f):
 def login():
     """Google 로그인 시작"""
     if not SSO_ENABLED:
-        return jsonify({"error": "SSO가 설정되지 않았습니다."}), 500
+        # Google OAuth 미설정 — 개발 모드: 자동 세션 생성 후 앱 진입
+        session['user'] = {
+            'email': 'dev@localhost',
+            'name': '개발자',
+            'picture': ''
+        }
+        return redirect('/')
     redirect_uri = url_for('callback', _external=True)
-    # access_type=offline → refresh_token 발급, prompt=consent → 재로그인 시에도 refresh_token 재발급
     return google.authorize_redirect(redirect_uri, access_type='offline', prompt='consent')
 
 
