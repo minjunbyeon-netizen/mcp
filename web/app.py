@@ -25,6 +25,9 @@ import requests as http_requests
 import docx
 import fitz  # PyMuPDF
 import re
+import time as _time
+import statistics as _stats
+from collections import Counter as _Counter
 
 # Windows 터미널 UTF-8 출력 설정
 if sys.platform == 'win32' and not isinstance(sys.stdout, io.TextIOWrapper):
@@ -145,8 +148,7 @@ CALIBRATIONS_DIR = OUTPUT_DIR / "calibrations"
 CALIBRATIONS_DIR.mkdir(parents=True, exist_ok=True)
 
 # 생성 파일 TTL 정리 (30일 초과 BLOG_*.json/.md 삭제)
-import time as _time_module
-_ttl_cutoff = _time_module.time() - 30 * 86400
+_ttl_cutoff = _time.time() - 30 * 86400
 for _f in OUTPUT_DIR.glob("BLOG_*"):
     try:
         if _f.stat().st_mtime < _ttl_cutoff:
@@ -497,7 +499,6 @@ def callback():
             'picture': user_info.get('picture', '')
         }
         # Google API 호출을 위한 액세스 토큰 + 갱신 토큰 저장
-        import time as _time
         session['google_token'] = token.get('access_token', '')
         session['google_refresh_token'] = token.get('refresh_token', '')
         session['google_token_expires_at'] = _time.time() + token.get('expires_in', 3600)
@@ -2352,7 +2353,6 @@ except Exception as e:
     BLOG_PULL_AVAILABLE = False
     get_blog_id = get_post_list = get_post_content = get_post_content_with_style = save_results = None
     print(f"[WARN] blog_pull 크롤러를 불러오지 못했습니다: {e}")
-import time as _time
 
 @app.route('/api/blog/collect', methods=['POST'])
 @login_required
@@ -2452,8 +2452,8 @@ def list_blog_collections():
                             blog_map[blog_id]["post_count"] += post_count
                             blog_map[blog_id]["total_chars"] += total_chars
                             # (이미 날짜 역순 정렬이므로 처음 발견된 게 가장 최신일 가능성이 높음)
-                    except:
-                        pass
+                    except Exception as _e:
+                        print(f"[WARN] 수집 폴더 읽기 실패: {item.name} — {_e}")
     
     # 결과를 리스트로 변환
     collections = list(blog_map.values())
@@ -2483,8 +2483,8 @@ def analyze_blog_status():
                             collection = json.load(f)
                         if collection.get("blog_id") == blog_id:
                             all_posts.extend(collection.get("posts", []))
-                    except:
-                        pass
+                    except Exception as _e:
+                        print(f"[WARN] _data.json 읽기 실패: {data_file} — {_e}")
     
     if not all_posts:
         return jsonify({"error": f"'{blog_id}'에 대한 수집 데이터를 찾을 수 없습니다."}), 404
@@ -2497,13 +2497,15 @@ def analyze_blog_status():
         if url and url not in seen_urls:
             seen_urls.add(url)
             unique_posts.append(post)
-    
+
+    if not unique_posts:
+        return jsonify({"error": f"'{blog_id}'에 대한 유효한 글 데이터가 없습니다."}), 404
+
     try:
         # 날짜순 정렬 (최신순)
         unique_posts.sort(key=lambda x: x.get('addDate', ''), reverse=True)
         
         # 글자수/단락/문장 실측 통계 사전 계산
-        import statistics as _stats
         _char_counts, _para_counts, _sent_counts = [], [], []
         for post in unique_posts:
             txt = post.get("content", "")
@@ -2541,7 +2543,6 @@ def analyze_blog_status():
             blog_summary += f"\n\n--- 글 {i}: {post.get('title', '')} (날짜: {post.get('addDate', '')}, 글자수: {len(txt)}자, 단락수: {len([p for p in txt.split(chr(10)) if p.strip()])}개{img_info}) ---\n{content}"
 
         # 시각적 스타일 메타 집계 (HTML에서 추출한 데이터)
-        from collections import Counter as _Counter
         style_metas = [p.get("style_meta", {}) for p in unique_posts if p.get("style_meta")]
         visual_summary = ""
         if style_metas:
@@ -3132,7 +3133,6 @@ def mypage_delete(data_type, item_id):
 
 def _get_valid_google_token():
     """유효한 access_token 반환. 만료 5분 전이면 refresh_token으로 자동 갱신."""
-    import time as _time
     access_token = session.get('google_token', '')
     expires_at = session.get('google_token_expires_at', 0)
     refresh_token = session.get('google_refresh_token', '')
