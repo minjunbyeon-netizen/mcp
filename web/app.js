@@ -483,7 +483,7 @@ function renderWriteResult(data, dnaId) {
     const versions = data.versions || [];
     window._lastVersions = versions;
     window._lastDNAId = dnaId;
-    window._lastImages = (data.images || []).map(url => `http://localhost:5050${url}`);
+    window._lastImages = (data.images || []).map(url => `${API}${url}`);
     window._lastHtmlStyle = data.html_style || null;
 
     const vTypeLabel = { empathy: '독자공감형', info: '핵심정보형', story: '스토리텔링형',
@@ -600,17 +600,32 @@ function blogToNaverHTML(title, content, images = []) {
     const esc = s => String(s)
         .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 
-    // ── 네이버 SE3 폰트 매핑 ────────────────────────────────
+    // ── 네이버 SE3 폰트 매핑 (한국어 이름 + 내부 ID 모두 지원) ────────────────
     const NAVER_FONTS = {
-        '나눔고딕':    "'NanumGothic','나눔고딕',sans-serif",
-        '나눔명조':    "'NanumMyeongjo','나눔명조',serif",
-        '나눔스퀘어':  "'NanumSquare','나눔스퀘어',sans-serif",
-        '나눔바른히피':"'nanumbareunhipi','나눔바른히피',cursive",
-        '맑은고딕':   "'Malgun Gothic','맑은 고딕',sans-serif",
-        '돋움':       "'Dotum','돋움',sans-serif",
-        '굴림':       "'Gulim','굴림',sans-serif",
-        '바탕':       "'Batang','바탕',serif",
-        '강조':       hff,  // DNA 두 번째 폰트
+        // 한국어 이름
+        '나눔고딕':       "'NanumGothic','나눔고딕',sans-serif",
+        '나눔명조':       "'NanumMyeongjo','나눔명조',serif",
+        '나눔스퀘어':     "'NanumSquare','나눔스퀘어',sans-serif",
+        '나눔바른히피':   "'nanumbareunhipi','나눔바른히피',cursive",
+        '나눔바른고딕':   "'NanumBarunGothic','나눔바른고딕',sans-serif",
+        '맑은고딕':       "'Malgun Gothic','맑은 고딕',sans-serif",
+        '돋움':           "'Dotum','돋움',sans-serif",
+        '굴림':           "'Gulim','굴림',sans-serif",
+        '바탕':           "'Batang','바탕',serif",
+        // 네이버 SE3 내부 폰트 ID
+        'nanumgothic':         "'NanumGothic','나눔고딕',sans-serif",
+        'nanummyeongjo':       "'NanumMyeongjo','나눔명조',serif",
+        'nanumsquare':         "'NanumSquare','나눔스퀘어',sans-serif",
+        'nanumbareunhipi':     "'nanumbareunhipi','나눔바른히피',cursive",
+        'nanumbarungothic':    "'NanumBarunGothic','나눔바른고딕',sans-serif",
+        'nanumdasisijaghae':   "'nanumdasisijaghae','나눔다시시작해',cursive",
+        'nanumbrush':          "'NanumBrush','나눔손글씨',cursive",
+        'nanumpen':            "'NanumPen','나눔펜',cursive",
+        'malgun':              "'Malgun Gothic','맑은 고딕',sans-serif",
+        'dotum':               "'Dotum','돋움',sans-serif",
+        'gulim':               "'Gulim','굴림',sans-serif",
+        'batang':              "'Batang','바탕',serif",
+        '강조':                hff,  // DNA 두 번째 폰트 (fallback)
     };
 
     const mdInline = raw => {
@@ -792,37 +807,104 @@ function blogToNaverHTML(title, content, images = []) {
         `<p style="font-family:${ff};font-size:${fs};line-height:${lh};`+
         `color:${col};margin:0;${extra}">${inner}</p>`;
 
-    // ── 문단 블록 파싱 ─────────────────────────────────────
+    // ── 문단 블록 파싱 (멀티라인 블록 마커 지원) ──────────────
     const blocks = [];
-    for (const line of content.split('\n')) {
-        const t = line.trim();
+    const lines = content.split('\n');
+    let i = 0;
+
+    // 멀티라인 블록 누적 헬퍼
+    const collectUntil = (closeRe) => {
+        const acc = [];
+        while (i < lines.length) {
+            const t = lines[i].trim();
+            if (closeRe.test(t)) { i++; break; }
+            acc.push(t);
+            i++;
+        }
+        return acc.join('\n');
+    };
+
+    while (i < lines.length) {
+        const t = lines[i].trim();
+        i++;
+
         if (!t) {
             if (!blocks.length || blocks[blocks.length-1].type !== 'gap')
                 blocks.push({ type: 'gap' });
             continue;
         }
-        if (/^##\s/.test(t))
+
+        // ── 헤딩 / 리스트 ────────────────────────────────────
+        if (/^##\s/.test(t)) {
             blocks.push({ type: 'h2', text: t.replace(/^##\s+/, '') });
-        else if (/^#\s/.test(t))
+        } else if (/^#\s/.test(t)) {
             blocks.push({ type: 'h1', text: t.replace(/^#\s+/, '') });
-        else if (/^[-*•]\s/.test(t) || /^\d+\.\s/.test(t))
+        } else if (/^[-*•]\s/.test(t) || /^\d+\.\s/.test(t)) {
             blocks.push({ type: 'li', text: t.replace(/^[-*•]\s|^\d+\.\s/, '') });
-        // 블록 정렬/스타일 마커 — 줄 전체가 마커로 감싸진 경우
-        else if (/^\[중앙\](.+)\[\/중앙\]$/.test(t))
-            blocks.push({ type: 'p', text: t.replace(/^\[중앙\]|\[\/중앙\]$/g,''), align:'center' });
-        else if (/^\[우측\](.+)\[\/우측\]$/.test(t))
-            blocks.push({ type: 'p', text: t.replace(/^\[우측\]|\[\/우측\]$/g,''), align:'right' });
-        else if (/^\[들여쓰기\](.+)\[\/들여쓰기\]$/.test(t))
-            blocks.push({ type: 'p', text: t.replace(/^\[들여쓰기\]|\[\/들여쓰기\]$/g,''), indent:true });
-        else if (/^\[박스\](.+)\[\/박스\]$/.test(t))
-            blocks.push({ type: 'box', text: t.replace(/^\[박스\]|\[\/박스\]$/g,'') });
-        else if (/^\[박스배경:(#[0-9a-fA-F]{3,6})\](.+)\[\/박스배경\]$/.test(t)) {
-            const m = t.match(/^\[박스배경:(#[0-9a-fA-F]{3,6})\](.+)\[\/박스배경\]$/);
-            blocks.push({ type: 'boxbg', text: m[2], bgColor: m[1] });
-        } else if (/^\[구분선\]$/.test(t))
+
+        // ── 구분선 ───────────────────────────────────────────
+        } else if (/^\[구분선\]$/.test(t)) {
             blocks.push({ type: 'hr' });
-        else
+
+        // ── 박스배경 (단일/멀티라인) ──────────────────────────
+        } else if (/^\[박스배경:(#[0-9a-fA-F]{3,6})\]/.test(t)) {
+            const mSingle = t.match(/^\[박스배경:(#[0-9a-fA-F]{3,6})\](.+)\[\/박스배경\]$/);
+            if (mSingle) {
+                blocks.push({ type: 'boxbg', text: mSingle[2], bgColor: mSingle[1] });
+            } else {
+                const bgColor = t.match(/^\[박스배경:(#[0-9a-fA-F]{3,6})\]/)[1];
+                const inner   = t.replace(/^\[박스배경:#[0-9a-fA-F]{3,6}\]/, '');
+                const rest    = collectUntil(/^\[\/박스배경\]$/);
+                blocks.push({ type: 'boxbg', text: (inner + '\n' + rest).trim(), bgColor });
+            }
+
+        // ── 박스 (단일/멀티라인) ──────────────────────────────
+        } else if (/^\[박스\]/.test(t)) {
+            const mSingle = t.match(/^\[박스\](.+)\[\/박스\]$/);
+            if (mSingle) {
+                blocks.push({ type: 'box', text: mSingle[1] });
+            } else {
+                const inner = t.replace(/^\[박스\]/, '');
+                const rest  = collectUntil(/^\[\/박스\]$/);
+                blocks.push({ type: 'box', text: (inner + '\n' + rest).trim() });
+            }
+
+        // ── 중앙 정렬 (단일/멀티라인) ────────────────────────
+        } else if (/^\[중앙\]/.test(t)) {
+            const mSingle = t.match(/^\[중앙\](.+)\[\/중앙\]$/);
+            if (mSingle) {
+                blocks.push({ type: 'p', text: mSingle[1], align: 'center' });
+            } else {
+                const inner = t.replace(/^\[중앙\]/, '');
+                const rest  = collectUntil(/^\[\/중앙\]$/);
+                blocks.push({ type: 'p', text: (inner + '\n' + rest).trim(), align: 'center' });
+            }
+
+        // ── 우측 정렬 (단일/멀티라인) ────────────────────────
+        } else if (/^\[우측\]/.test(t)) {
+            const mSingle = t.match(/^\[우측\](.+)\[\/우측\]$/);
+            if (mSingle) {
+                blocks.push({ type: 'p', text: mSingle[1], align: 'right' });
+            } else {
+                const inner = t.replace(/^\[우측\]/, '');
+                const rest  = collectUntil(/^\[\/우측\]$/);
+                blocks.push({ type: 'p', text: (inner + '\n' + rest).trim(), align: 'right' });
+            }
+
+        // ── 들여쓰기 (단일/멀티라인) ─────────────────────────
+        } else if (/^\[들여쓰기\]/.test(t)) {
+            const mSingle = t.match(/^\[들여쓰기\](.+)\[\/들여쓰기\]$/);
+            if (mSingle) {
+                blocks.push({ type: 'p', text: mSingle[1], indent: true });
+            } else {
+                const inner = t.replace(/^\[들여쓰기\]/, '');
+                const rest  = collectUntil(/^\[\/들여쓰기\]$/);
+                blocks.push({ type: 'p', text: (inner + '\n' + rest).trim(), indent: true });
+            }
+
+        } else {
             blocks.push({ type: 'p', text: t });
+        }
     }
 
     // ── 이미지 삽입 위치 결정 ──────────────────────────────
@@ -891,27 +973,34 @@ function blogToNaverHTML(title, content, images = []) {
             html += p('padding-left:18px;', `• ${mdInline(esc(b.text))}`);
 
         } else if (b.type === 'box') {
-            // [박스] — 인용구 스타일 박스
+            // [박스] — 인용구 스타일 박스 (멀티라인 지원)
+            const innerHtml = b.text.split('\n').map(l => l.trim())
+                .filter(l => l).map(l => mdInline(esc(l))).join('<br>');
             html += `<p style="font-family:${ff};font-size:${fs};line-height:${lh};color:${col};`+
                     `margin:8px 0;padding:12px 16px;`+
                     `background:#f8f8f8;border-left:3px solid ${accentCol||'#ccc'};">`+
-                    `${mdInline(esc(b.text))}</p>`;
+                    `${innerHtml}</p>`;
 
         } else if (b.type === 'boxbg') {
-            // [박스배경:#hex] — 배경색 박스
+            // [박스배경:#hex] — 배경색 박스 (멀티라인 지원)
+            const innerHtml = b.text.split('\n').map(l => l.trim())
+                .filter(l => l).map(l => mdInline(esc(l))).join('<br>');
             html += `<p style="font-family:${ff};font-size:${fs};line-height:${lh};color:${col};`+
                     `margin:8px 0;padding:12px 16px;background:${b.bgColor};">`+
-                    `${mdInline(esc(b.text))}</p>`;
+                    `${innerHtml}</p>`;
 
         } else if (b.type === 'hr') {
             // [구분선] — 얇은 구분선
             html += `<p style="border-top:1px solid #e0e0e0;margin:12px 0;line-height:0;">&nbsp;</p>`;
 
         } else {
-            // 일반 p — 정렬/들여쓰기 옵션 처리
+            // 일반 p — 정렬/들여쓰기 옵션 처리 (멀티라인 내용은 <br> 연결)
             const alignStyle  = b.align  ? `text-align:${b.align};`   : '';
             const indentStyle = b.indent ? 'padding-left:24px;'        : '';
-            html += p(`${alignStyle}${indentStyle}`, mdInline(esc(b.text)));
+            const innerLines  = b.text.includes('\n')
+                ? b.text.split('\n').map(l => l.trim()).filter(l => l).map(l => mdInline(esc(l))).join('<br>')
+                : mdInline(esc(b.text));
+            html += p(`${alignStyle}${indentStyle}`, innerLines);
         }
     }
     while (imgIdx < images.length) html += imgHtml(images[imgIdx++]);
