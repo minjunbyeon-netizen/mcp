@@ -449,15 +449,75 @@ textarea { resize: vertical; line-height: 1.6; }
     overflow-y: auto;
 }
 .version-content p { margin-bottom: 4px; }
+.version-preview {
+    padding: 32px 40px;
+    background: #fff;
+    max-height: 800px;
+    overflow-y: auto;
+    border-top: 1px solid var(--border);
+    /* 네이버 블로그 본문 영역 너비 모사 */
+    max-width: 860px;
+    margin: 0 auto;
+}
+.version-preview p { margin: 0; }
 
 
 /* ── DNA 태그 (글 작성 패널) ─────────────────────────── */
 .dna-tags-preview {
     margin-top: 10px;
-    padding: 14px;
+}
+
+/* 블로그 작성 패널 — DNA 선택 후 요약 */
+.write-dna-summary {
+    margin-top: 10px;
+    padding: 12px 14px;
     background: var(--bg-secondary);
     border-radius: var(--radius);
 }
+.write-dna-summary-top {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+.write-dna-active-count {
+    font-size: 20px;
+    font-weight: 700;
+    line-height: 1;
+}
+.write-dna-total {
+    font-size: 13px;
+    font-weight: 400;
+    color: var(--text-muted);
+}
+.write-dna-count-label {
+    font-size: 12px;
+    color: var(--text-muted);
+    flex: 1;
+}
+.write-dna-edit-btn {
+    font-size: 12px;
+    margin-left: auto;
+}
+.write-tags-preview {
+    gap: 4px;
+}
+.write-tags-preview .tag {
+    font-size: 11px;
+    padding: 3px 9px;
+}
+.tag-more {
+    display: inline-flex;
+    align-items: center;
+    padding: 3px 9px;
+    font-size: 11px;
+    color: var(--text-muted);
+}
+.write-dna-no-tags {
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
 .tags-title {
     font-size: 12px;
     font-weight: 700;
@@ -469,43 +529,55 @@ textarea { resize: vertical; line-height: 1.6; }
 
 
 /* ── 스타일 업데이트 레이아웃 ─────────────────────────── */
+/* ── 스타일 업데이트 패널 ──────────────────────────────── */
 .style-layout {
     display: flex;
-    gap: 32px;
+    gap: 0;
     min-height: calc(100vh - 160px);
 }
 
 .style-list {
-    width: 240px;
+    width: 220px;
     flex-shrink: 0;
+    padding-right: 24px;
+    border-right: 1px solid var(--border);
+}
+
+.style-list-label {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 12px;
 }
 
 .style-detail {
     flex: 1;
     min-width: 0;
+    padding-left: 32px;
+    position: relative;
+    padding-bottom: 80px;
 }
 
-.dna-card-list { display: flex; flex-direction: column; gap: 8px; }
+/* DNA 카드 */
+.dna-card-list { display: flex; flex-direction: column; gap: 6px; }
 .dna-card {
-    padding: 14px 16px;
+    padding: 12px 14px;
     border-radius: var(--radius);
-    background: var(--bg-secondary);
     cursor: pointer;
     transition: background 150ms;
     border: 1.5px solid transparent;
 }
-.dna-card:hover { background: var(--border); }
+.dna-card:hover { background: var(--bg-secondary); }
 .dna-card.selected {
-    background: var(--bg);
+    background: var(--bg-secondary);
     border-color: #000;
 }
-.dna-card-id { font-size: 14px; font-weight: 700; color: var(--text-primary); }
-.dna-card-meta { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
+.dna-card-id { font-size: 13px; font-weight: 700; color: var(--text-primary); }
+.dna-card-meta { font-size: 11px; color: var(--text-muted); margin-top: 3px; }
 
-.style-detail-header { margin-bottom: 20px; }
-.style-detail-title { font-size: 18px; font-weight: 700; }
-.style-detail-meta { font-size: 13px; color: var(--text-muted); margin-top: 4px; }
-.style-detail-desc { font-size: 13px; color: var(--text-muted); margin-bottom: 24px; line-height: 1.5; }
+/* 선택 전 빈 상태 */
 .style-detail-empty {
     height: 100%;
     min-height: 200px;
@@ -515,8 +587,73 @@ textarea { resize: vertical; line-height: 1.6; }
     color: var(--text-muted);
     font-size: 14px;
 }
-.style-detail-actions { margin-top: 28px; }
 
+/* 패널 헤더 */
+.style-panel-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    margin-bottom: 16px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--border);
+}
+.style-panel-blogid { font-size: 20px; font-weight: 700; }
+.style-panel-meta { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
+.style-panel-counter {
+    text-align: right;
+    flex-shrink: 0;
+}
+.style-panel-counter #style-active-count {
+    font-size: 28px;
+    font-weight: 700;
+    line-height: 1;
+}
+.style-counter-label { font-size: 12px; color: var(--text-muted); display: block; margin-top: 2px; }
+
+/* 전체 켜기/끄기 */
+.style-panel-actions {
+    display: flex;
+    gap: 16px;
+    margin-bottom: 24px;
+}
+
+/* 섹션 */
+.style-section {
+    margin-bottom: 28px;
+}
+.style-section-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 10px;
+}
+.style-section-name {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+.style-section-badge {
+    font-size: 11px;
+    color: var(--text-muted);
+    background: var(--bg-secondary);
+    border-radius: 980px;
+    padding: 2px 8px;
+}
+
+/* 저장 바 (sticky) */
+.style-save-bar {
+    position: sticky;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: var(--bg);
+    padding: 14px 0;
+    border-top: 1px solid var(--border);
+    margin-top: 16px;
+}
+.style-save-bar .btn { min-width: 100px; }
+
+/* 구형 tag-group (모달에서 사용 중이므로 유지) */
 .tag-group { margin-bottom: 20px; }
 .tag-group-label {
     font-size: 11px;
@@ -1015,3 +1152,35 @@ textarea { resize: vertical; line-height: 1.6; }
     display: flex;
     gap: 8px;
 }
+
+/* ── 추출 이미지 패널 ── */
+.extracted-images-panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 16px;
+    margin-bottom: 16px;
+}
+.extracted-images-label {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-bottom: 10px;
+}
+.extracted-images-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+.extracted-thumb {
+    width: 80px;
+    height: 60px;
+    object-fit: cover;
+    border-radius: 5px;
+    border: 1px solid var(--border);
+    cursor: pointer;
+    transition: opacity 0.15s;
+}
+.extracted-thumb:hover { opacity: 0.8; }

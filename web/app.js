@@ -261,27 +261,46 @@ async function analyzeDNA(blogId) {
 
 function renderDNAResult(dna, container) {
     const categories = [
-        { key: 'c1_tone', label: '말투/톤' },
-        { key: 'c2_structure', label: '구조' },
-        { key: 'c3_content', label: '콘텐츠' },
-        { key: 'c4_emotional', label: '감성' },
-        { key: 'c5_expression', label: '표현' },
-        { key: 'c6_sentence_patterns', label: '문장 패턴' },
-        { key: 'c7_vocabulary', label: '어휘' },
-        { key: 'c8_paragraph_composition', label: '단락 구성' },
-        { key: 'c9_opening_closing', label: '도입/마무리' },
-        { key: 'c10_visual_formatting', label: '시각 포맷' },
+        { key: 'c1_template_structure', label: '글 구조' },
+        { key: 'c2_tone_mood', label: '톤/분위기' },
+        { key: 'c3_speech_endings', label: '종결어미' },
+        { key: 'c4_sentence_structure', label: '문장 구조' },
+        { key: 'c5_paragraph_composition', label: '단락 구성' },
+        { key: 'c6_signature_expressions', label: '시그니처 표현' },
+        { key: 'c7_vocabulary_style', label: '어휘 스타일' },
+        { key: 'c8_emoji_symbols', label: '이모지/기호' },
+        { key: 'c9_opening_patterns', label: '도입부' },
+        { key: 'c10_closing_patterns', label: '마무리' },
+        { key: 'c11_visual_symbols', label: '시각 서식' },
+        { key: 'c12_typography', label: '타이포그래피' },
+        { key: 'c13_special_symbols', label: '특수 기호' },
+        { key: 'c14_title_patterns', label: '제목 패턴' },
+        { key: 'c15_post_length', label: '글 분량' },
+        { key: 'c16_image_usage', label: '이미지 활용' },
+        { key: 'c17_cta_patterns', label: 'CTA 패턴' },
+        { key: 'c18_keyword_seo', label: 'SEO/키워드' },
+        { key: 'c19_reader_engagement', label: '독자 참여' },
+        { key: 'c20_interjections_fillers', label: '감탄사/추임새' },
+        { key: 'c21_inline_formatting', label: '인라인 서식(SE3)' },
+        { key: 'c22_content_patterns', label: '콘텐츠 패턴' },
     ];
 
+    const hasC21 = !!dna['c21_inline_formatting'];
+    const hasC22 = !!dna['c22_content_patterns'];
+    const componentCount = categories.filter(c => !!dna[c.key]).length;
+
     let html = `<div class="dna-result">
-        <div class="dna-result-header"><strong>${dna.blog_id || ''}</strong> DNA 분석 완료</div>
+        <div class="dna-result-header">
+            <strong>${dna.blog_id || ''}</strong> DNA 분석 완료
+            <span style="font-size:12px;font-weight:400;color:#6e6e73;margin-left:8px">${componentCount}/22 컴포넌트${!hasC21 || !hasC22 ? ' · <span style="color:#ff3b30">c21/c22 없음 — 재분석 권장</span>' : ''}</span>
+        </div>
         <div class="dna-cats">`;
 
     categories.forEach(cat => {
         const d = dna[cat.key];
         if (!d) return;
         const items = Object.entries(d)
-            .filter(([k]) => !['title','examples','opening_examples','closing_examples'].includes(k))
+            .filter(([k]) => !['title','examples','opening_examples','closing_examples','font_switch_examples','size_switch_examples','color_switch_examples','combined_format_examples'].includes(k))
             .map(([, v]) => Array.isArray(v) ? v.slice(0, 2).join(', ') : String(v))
             .filter(v => v && v.length < 80)
             .slice(0, 3);
@@ -392,27 +411,26 @@ function renderWriteTags(dna) {
     if (!allTags.length) { tagsEl.classList.add('hidden'); return; }
 
     const activeIds = new Set((_activeTags || []).map(t => t.id));
+    const activeTags = allTags.filter(t => activeIds.has(t.id));
+    const activeCount = activeTags.length;
+    const preview = activeTags.slice(0, 5);
+    const moreCount = activeCount - preview.length;
+    const dnaId = dna.dna_id || dna.id || '';
+
     tagsEl.innerHTML = `
-        <div class="tags-title">활성 스타일 태그 <span style="color:var(--text-muted);font-weight:400;font-size:0.8rem">(클릭으로 ON/OFF)</span></div>
-        <div class="tags-wrap">
-            ${allTags.map(t => `
-                <span class="tag ${activeIds.has(t.id) ? 'tag-on' : ''}"
-                      data-tag-id="${t.id}"
-                      data-tag-label="${encodeURIComponent(t.label)}"
-                      data-tag-cat="${t.cat}">${t.label}</span>`).join('')}
+        <div class="write-dna-summary">
+            <div class="write-dna-summary-top">
+                <span class="write-dna-active-count">${activeCount}<span class="write-dna-total">/${allTags.length}</span></span>
+                <span class="write-dna-count-label">스타일 적용 중</span>
+                <button class="btn-link write-dna-edit-btn" onclick="loadStyleDetail('${dnaId}');goToPanel('style')">편집</button>
+            </div>
+            ${activeCount > 0 ? `
+            <div class="tags-wrap write-tags-preview">
+                ${preview.map(t => `<span class="tag tag-on">${t.label}</span>`).join('')}
+                ${moreCount > 0 ? `<span class="tag-more">+${moreCount}개</span>` : ''}
+            </div>` : `<div class="write-dna-no-tags">활성 태그 없음 — <button class="btn-link" onclick="loadStyleDetail('${dnaId}');goToPanel('style')">스타일 편집</button>에서 설정하세요</div>`}
         </div>`;
     tagsEl.classList.remove('hidden');
-
-    tagsEl.querySelectorAll('.tag').forEach(el => {
-        el.addEventListener('click', () => {
-            el.classList.toggle('tag-on');
-            _activeTags = Array.from(tagsEl.querySelectorAll('.tag.tag-on')).map(t => ({
-                id: t.dataset.tagId,
-                label: decodeURIComponent(t.dataset.tagLabel),
-                cat: t.dataset.tagCat
-            }));
-        });
-    });
 }
 
 async function generateBlog() {
@@ -461,106 +479,411 @@ function renderWriteResult(data, dnaId) {
     const versions = data.versions || [];
     window._lastVersions = versions;
     window._lastDNAId = dnaId;
+    window._lastImages = (data.images || []).map(url => `http://localhost:5050${url}`);
+    window._lastHtmlStyle = data.html_style || null;
 
     const vTypeLabel = { empathy: '독자공감형', info: '핵심정보형', story: '스토리텔링형',
                           formal: '포멀', balanced: '밸런스', casual: '캐주얼' };
-    document.getElementById('write-versions').innerHTML = versions.map((v, i) => {
+
+    const container = document.getElementById('write-versions');
+    container.innerHTML = '';
+
+    versions.forEach((v, i) => {
         const typeLabel = v.version_label || vTypeLabel[v.version_type] || `버전 ${i + 1}`;
-        return `
-        <div class="version-block">
-            <div class="version-header">
-                <div class="version-label-row">
-                    <span class="version-badge">${typeLabel}</span>
-                    ${v.title ? `<span class="version-title-text">${v.title}</span>` : ''}
-                </div>
-                <div class="version-actions">
-                    <button class="btn btn-secondary btn-sm" onclick="copyVersion(${i})">네이버 복사</button>
-                    <button class="btn btn-primary btn-sm" onclick="saveVersion(${i})">저장</button>
-                </div>
+
+        const block = document.createElement('div');
+        block.className = 'version-block';
+
+        // 헤더
+        const header = document.createElement('div');
+        header.className = 'version-header';
+        header.innerHTML = `
+            <div class="version-label-row">
+                <span class="version-badge">${typeLabel}</span>
             </div>
-            <div class="version-content">${formatBlogContent(v.content || '')}</div>
-        </div>`;
-    }).join('');
+            <div class="version-actions">
+                <button class="btn btn-secondary btn-sm" onclick="copyVersion(${i})">네이버 복사</button>
+                <button class="btn btn-primary btn-sm" onclick="saveVersion(${i})">저장</button>
+            </div>`;
+
+        // 미리보기: blogToNaverHTML 렌더링 (DNA 스타일 + 이미지 위치 포함)
+        const preview = document.createElement('div');
+        preview.className = 'version-preview';
+        preview.id = `preview-${i}`;
+        preview.style.cssText = 'padding:24px;background:#fff;border-radius:8px;overflow:auto;max-height:800px;';
+        preview.innerHTML = blogToNaverHTML(v.title || '', v.content || '', window._lastImages);
+
+        block.appendChild(header);
+        block.appendChild(preview);
+        container.appendChild(block);
+    });
 
     document.getElementById('write-preview-result').classList.remove('hidden');
 }
 
 function formatBlogContent(text) {
-    return text
-        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-        .split('\n').map(l => `<p>${l || '&nbsp;'}</p>`).join('');
+    const esc = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    const mdInline = s => s
+        .replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')
+        .replace(/__(.+?)__/g, '<b>$1</b>');
+    return text.split('\n').map(line => {
+        const t = line.trim();
+        if (!t) return '<p style="margin:0;min-height:1.2em">&nbsp;</p>';
+        if (/^##\s/.test(t))
+            return `<p style="font-weight:bold;font-size:1.05em;margin:10px 0 3px">${mdInline(esc(t.replace(/^##\s+/,'')))}</p>`;
+        if (/^#\s/.test(t))
+            return `<p style="font-weight:bold;font-size:1.15em;margin:14px 0 5px">${mdInline(esc(t.replace(/^#\s+/,'')))}</p>`;
+        if (/^[-*•]\s/.test(t) || /^\d+\.\s/.test(t))
+            return `<p style="margin:0 0 3px;padding-left:14px">• ${mdInline(esc(t.replace(/^[-*•]\s|^\d+\.\s/,'')))}</p>`;
+        return `<p style="margin:0 0 6px">${mdInline(esc(t))}</p>`;
+    }).join('');
 }
 
 async function copyVersion(idx) {
-    const v = (window._lastVersions || [])[idx];
-    if (!v) return;
-    const title   = v.title   || '';
-    const content = v.content || '';
-    const htmlStr = blogToNaverHTML(title, content);
-    const plain   = (title ? title + '\n\n' : '') + content;
-
+    const previewEl = document.getElementById(`preview-${idx}`);
     const btn = document.querySelectorAll('.version-block')[idx]?.querySelector('.btn-secondary');
+
+    // 렌더링된 미리보기 div를 직접 선택 → execCommand('copy')
+    // → 태그 없이 실제 DOM 서식 그대로 clipboard에 올라감
     try {
-        if (window.ClipboardItem) {
-            await navigator.clipboard.write([
-                new ClipboardItem({
-                    'text/html' : new Blob([htmlStr], { type: 'text/html'  }),
-                    'text/plain': new Blob([plain],   { type: 'text/plain' })
-                })
-            ]);
-        } else {
-            await navigator.clipboard.writeText(plain);
-        }
-        if (btn) { const orig = btn.textContent; btn.textContent = '복사 완료'; setTimeout(() => btn.textContent = orig, 1500); }
+        if (!previewEl) throw new Error('no preview');
+        const range = document.createRange();
+        range.selectNodeContents(previewEl);
+        const sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(range);
+        const ok = document.execCommand('copy');
+        sel.removeAllRanges();
+        if (!ok) throw new Error('execCommand failed');
     } catch {
-        await navigator.clipboard.writeText(plain);
-        if (btn) { const orig = btn.textContent; btn.textContent = '복사 완료'; setTimeout(() => btn.textContent = orig, 1500); }
+        // fallback: ClipboardItem
+        const v = (window._lastVersions || [])[idx];
+        if (v) {
+            const htmlStr = blogToNaverHTML(v.title || '', v.content || '', window._lastImages || []);
+            try {
+                const full = `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body>${htmlStr}</body></html>`;
+                await navigator.clipboard.write([new ClipboardItem({
+                    'text/html' : new Blob([full],          { type: 'text/html'  }),
+                    'text/plain': new Blob([v.content || ''], { type: 'text/plain' })
+                })]);
+            } catch {
+                await navigator.clipboard.writeText((v.title ? v.title + '\n\n' : '') + (v.content || ''));
+            }
+        }
     }
+    if (btn) { const orig = btn.textContent; btn.textContent = '복사 완료'; setTimeout(() => btn.textContent = orig, 1500); }
 }
 
-// ── Naver Blog 서식 HTML 변환 ──────────────────────────────
-function blogToNaverHTML(title, content) {
-    const ff = "'맑은 고딕', Malgun Gothic, 'Apple SD Gothic Neo', sans-serif";
+// ── Naver Blog 서식 HTML 변환 (Naver Smart Editor 3 호환) ──────────────────────────────
+function blogToNaverHTML(title, content, images = []) {
+    // ── DNA 기반 스타일 전체 적용 ───────────────────────────
+    const st   = window._lastHtmlStyle || {};
+    const ff   = st.font_family         || "'NanumGothic','나눔고딕','Malgun Gothic',sans-serif";
+    const hff  = st.heading_font_family || ff;           // 소제목용 폰트 (두 번째 DNA 폰트)
+    const fs   = st.base_font_size      || "15px";
+    const hfs  = st.heading_font_size   || (parseInt(fs) + 2) + "px";
+    const sfs  = st.small_font_size     || "13px";       // 작은 글씨 크기
+    const lfs  = (parseInt(fs) + 4) + "px";             // [크게] 마커용 크기
+    const lh   = st.line_height         || "2.2";
+    const col  = "#333333";
+    const accentCol        = st.accent_color       || "";
+    const inlineAccentCol  = st.inline_accent_color || accentCol;
+    const hlCol            = st.highlight_color    || "";
+    const boldAllowed      = st.bold_allowed !== false;
+    const centerHeadings   = !!st.center_headings;
+    const inlineFontSwitch = !!st.inline_font_switch;  // c21: 인라인 폰트 전환 여부
+
     const esc = s => String(s)
         .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 
-    // 마크다운 인라인 변환
-    const mdInline = s => s
-        .replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')
-        .replace(/__(.*?)__/g,     '<b>$1</b>');
+    // ── 네이버 SE3 폰트 매핑 ────────────────────────────────
+    const NAVER_FONTS = {
+        '나눔고딕':    "'NanumGothic','나눔고딕',sans-serif",
+        '나눔명조':    "'NanumMyeongjo','나눔명조',serif",
+        '나눔스퀘어':  "'NanumSquare','나눔스퀘어',sans-serif",
+        '나눔바른히피':"'nanumbareunhipi','나눔바른히피',cursive",
+        '맑은고딕':   "'Malgun Gothic','맑은 고딕',sans-serif",
+        '돋움':       "'Dotum','돋움',sans-serif",
+        '굴림':       "'Gulim','굴림',sans-serif",
+        '바탕':       "'Batang','바탕',serif",
+        '강조':       hff,  // DNA 두 번째 폰트
+    };
 
-    let html = `<div style="font-family:${ff};font-size:15px;line-height:1.9;color:#333333;">`;
+    const mdInline = raw => {
+        let s = raw;
 
-    if (title) {
-        html += `<p style="font-size:22px;font-weight:bold;line-height:1.4;margin:0 0 28px 0;color:#1a1a1a;">${esc(title)}</p>`;
-    }
+        // ─── 1. 볼드 (**text** / __text__) ───────────────────
+        if (boldAllowed) {
+            s = s.replace(/\*\*(.+?)\*\*/g, `<span style="font-weight:bold;">$1</span>`);
+            s = s.replace(/__(.*?)__/g,      `<span style="font-weight:bold;">$1</span>`);
+        } else {
+            s = s.replace(/\*\*(.+?)\*\*/g, '$1').replace(/__(.*?)__/g, '$1');
+        }
 
-    const lines = content.split('\n');
-    for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed) {
-            html += `<p style="margin:0;font-size:6px;">&nbsp;</p>`;
+        // ─── 2. 기울임 (*text* / _text_) ──────────────────────
+        s = s.replace(/\*([^*\n]+?)\*/g, `<span style="font-style:italic;">$1</span>`);
+        s = s.replace(/_([^_\n]+?)_/g,   `<span style="font-style:italic;">$1</span>`);
+
+        // ─── 3. 취소선 (~~text~~) ─────────────────────────────
+        s = s.replace(/~~(.+?)~~/g, `<span style="text-decoration:line-through;color:#888;">$1</span>`);
+
+        // ─── 4. 형광펜 (==text==) ─────────────────────────────
+        const hlColor = hlCol || '#fff9a0';
+        s = s.replace(/==(.+?)==/g,
+            `<span style="background-color:${hlColor};padding:0 2px;">$1</span>`);
+
+        // ─── 5. 액센트 색상 ({{text}}) ────────────────────────
+        if (accentCol) {
+            s = s.replace(/\{\{(.+?)\}\}/g,
+                `<span style="color:${accentCol};">$1</span>`);
+        }
+
+        // ─── 6. esc() 이후 패턴 ───────────────────────────────
+        const acCol = accentCol || '#0078cb';
+
+        // 꺽쇠 &lt; 텍스트 &gt;
+        s = s.replace(/&lt; ([^&<>]+?) &gt;/g,
+            `<span style="color:${acCol};font-weight:bold;">&lt; $1 &gt;</span>`);
+        s = s.replace(/&lt;([\uAC00-\uD7A3a-zA-Z0-9\s·]{2,25})&gt;/g,
+            `<span style="color:${acCol};font-weight:bold;">&lt;$1&gt;</span>`);
+
+        // 《》 한국어 꺽쇠
+        s = s.replace(/《([^》]+)》/g,
+            `<span style="color:${acCol};font-weight:bold;">《$1》</span>`);
+        // 【】 대괄호
+        s = s.replace(/【([^】]+)】/g,
+            `<span style="font-weight:bold;">【$1】</span>`);
+        // 「」 홑꺽쇠
+        s = s.replace(/「([^」]+)」/g,
+            `<span style="color:#555;">「$1」</span>`);
+        // ≪≫ 이중 꺽쇠
+        s = s.replace(/≪([^≫]+)≫/g,
+            `<span style="color:${acCol};font-weight:bold;">≪$1≫</span>`);
+
+        // 유니코드 큰따옴표 " "
+        s = s.replace(/\u201c([^\u201d]+)\u201d/g,
+            `<span style="color:#555;">\u201c$1\u201d</span>`);
+        // 유니코드 작은따옴표 ' '
+        s = s.replace(/\u2018([^\u2019]+)\u2019/g,
+            `<span style="color:#555;">\u2018$1\u2019</span>`);
+
+        // ─── 7. 브라켓 마커 ([ ]/[/ ] 형식) ──────────────────
+
+        // 글꼴 크기 — 네이버 SE3 fs 단위
+        s = s.replace(/\[fs(\d+)\]([\s\S]+?)\[\/fs\1\]/g,
+            (_, n, t) => `<span style="font-size:${n}px;">${t}</span>`);
+        // 또는 [크기:N] 형식
+        s = s.replace(/\[크기:(\d+)\]([\s\S]+?)\[\/크기\]/g,
+            (_, n, t) => `<span style="font-size:${n}px;">${t}</span>`);
+
+        // [작게] / [크게] 단축어
+        s = s.replace(/\[작게\]([\s\S]+?)\[\/작게\]/g,
+            `<span style="font-size:${sfs};color:#666;">$1</span>`);
+        s = s.replace(/\[크게\]([\s\S]+?)\[\/크게\]/g,
+            `<span style="font-size:${lfs};font-weight:bold;">$1</span>`);
+        // [매우크게] → fs28
+        s = s.replace(/\[매우크게\]([\s\S]+?)\[\/매우크게\]/g,
+            `<span style="font-size:28px;font-weight:bold;">$1</span>`);
+        // [아주작게] → fs11
+        s = s.replace(/\[아주작게\]([\s\S]+?)\[\/아주작게\]/g,
+            `<span style="font-size:11px;color:#999;">$1</span>`);
+
+        // [진하게]...[/진하게] → 굵게 (bold)
+        s = s.replace(/\[진하게\]([\s\S]+?)\[\/진하게\]/g,
+            `<span style="font-weight:bold;">$1</span>`);
+
+        // 기울임 마커
+        s = s.replace(/\[기울임\]([\s\S]+?)\[\/기울임\]/g,
+            `<span style="font-style:italic;">$1</span>`);
+
+        // 밑줄 마커
+        s = s.replace(/\[밑줄\]([\s\S]+?)\[\/밑줄\]/g,
+            `<span style="text-decoration:underline;">$1</span>`);
+
+        // 취소선 마커
+        s = s.replace(/\[취소선\]([\s\S]+?)\[\/취소선\]/g,
+            `<span style="text-decoration:line-through;color:#888;">$1</span>`);
+
+        // 색상 마커
+        s = s.replace(/\[색상:(#[0-9a-fA-F]{3,6})\]([\s\S]+?)\[\/색상\]/g,
+            `<span style="color:$1;">$2</span>`);
+
+        // 배경색 마커
+        s = s.replace(/\[배경:(#[0-9a-fA-F]{3,6})\]([\s\S]+?)\[\/배경\]/g,
+            `<span style="background-color:$1;padding:0 2px;">$2</span>`);
+        // [형광펜] 단축어 (DNA highlight_color 사용)
+        s = s.replace(/\[형광펜\]([\s\S]+?)\[\/형광펜\]/g,
+            `<span style="background-color:${hlColor};padding:0 2px;">$1</span>`);
+
+        // 폰트 마커 [폰트:나눔고딕]...[/폰트:나눔고딕] 또는 [폰트:강조]...[/폰트]
+        s = s.replace(/\[폰트:([^\]]+)\]([\s\S]+?)\[\/폰트(?::[^\]]+)?\]/g, (_, name, text) => {
+            const fontCss = NAVER_FONTS[name] || hff;
+            return `<span style="font-family:${fontCss};">${text}</span>`;
+        });
+
+        // ─── 8. 복합 서식 ─────────────────────────────────────
+
+        // [강조] → bold + accent color (가장 많이 쓰는 복합 서식)
+        s = s.replace(/\[강조\]([\s\S]+?)\[\/강조\]/g,
+            `<span style="color:${acCol};font-weight:bold;">$1</span>`);
+
+        // [볼드밑줄]
+        s = s.replace(/\[볼드밑줄\]([\s\S]+?)\[\/볼드밑줄\]/g,
+            `<span style="font-weight:bold;text-decoration:underline;">$1</span>`);
+
+        // [기울임색상:#hex]
+        s = s.replace(/\[기울임색상:(#[0-9a-fA-F]{3,6})\]([\s\S]+?)\[\/기울임색상\]/g,
+            `<span style="font-style:italic;color:$1;">$2</span>`);
+
+        // [크게색상:#hex]
+        s = s.replace(/\[크게색상:(#[0-9a-fA-F]{3,6})\]([\s\S]+?)\[\/크게색상\]/g,
+            `<span style="font-size:${lfs};font-weight:bold;color:$1;">$2</span>`);
+
+        // [인라인강조] → inline_accent_color + bold
+        s = s.replace(/\[인라인강조\]([\s\S]+?)\[\/인라인강조\]/g,
+            `<span style="color:${inlineAccentCol || acCol};font-weight:bold;">$1</span>`);
+
+        // ─── 9. 기타 특수 마커 ────────────────────────────────
+
+        // [첨자위:text] → 위 첨자
+        s = s.replace(/\[첨자위:([^\]]+)\]/g,
+            `<sup style="font-size:0.75em;">$1</sup>`);
+        // [첨자아래:text] → 아래 첨자
+        s = s.replace(/\[첨자아래:([^\]]+)\]/g,
+            `<sub style="font-size:0.75em;">$1</sub>`);
+
+        return s;
+    };
+
+    // 기본 p 태그 생성
+    const p = (extra, inner) =>
+        `<p style="font-family:${ff};font-size:${fs};line-height:${lh};`+
+        `color:${col};margin:0;${extra}">${inner}</p>`;
+
+    // ── 문단 블록 파싱 ─────────────────────────────────────
+    const blocks = [];
+    for (const line of content.split('\n')) {
+        const t = line.trim();
+        if (!t) {
+            if (!blocks.length || blocks[blocks.length-1].type !== 'gap')
+                blocks.push({ type: 'gap' });
             continue;
         }
-        // ## Heading
-        if (/^##\s/.test(trimmed)) {
-            const text = esc(trimmed.replace(/^##\s+/, ''));
-            html += `<p style="font-size:17px;font-weight:bold;margin:20px 0 8px 0;color:#1a1a1a;">${text}</p>`;
-        // # Title-level heading
-        } else if (/^#\s/.test(trimmed)) {
-            const text = esc(trimmed.replace(/^#\s+/, ''));
-            html += `<p style="font-size:19px;font-weight:bold;margin:24px 0 10px 0;color:#1a1a1a;">${text}</p>`;
-        // Bullet or numbered list
-        } else if (/^[-*•]\s/.test(trimmed) || /^\d+\.\s/.test(trimmed)) {
-            const text = mdInline(esc(trimmed.replace(/^[-*•]\s|^\d+\.\s/, '')));
-            html += `<p style="margin:0 0 8px 0;font-size:15px;padding-left:18px;">• ${text}</p>`;
-        // Normal paragraph
+        if (/^##\s/.test(t))
+            blocks.push({ type: 'h2', text: t.replace(/^##\s+/, '') });
+        else if (/^#\s/.test(t))
+            blocks.push({ type: 'h1', text: t.replace(/^#\s+/, '') });
+        else if (/^[-*•]\s/.test(t) || /^\d+\.\s/.test(t))
+            blocks.push({ type: 'li', text: t.replace(/^[-*•]\s|^\d+\.\s/, '') });
+        // 블록 정렬/스타일 마커 — 줄 전체가 마커로 감싸진 경우
+        else if (/^\[중앙\](.+)\[\/중앙\]$/.test(t))
+            blocks.push({ type: 'p', text: t.replace(/^\[중앙\]|\[\/중앙\]$/g,''), align:'center' });
+        else if (/^\[우측\](.+)\[\/우측\]$/.test(t))
+            blocks.push({ type: 'p', text: t.replace(/^\[우측\]|\[\/우측\]$/g,''), align:'right' });
+        else if (/^\[들여쓰기\](.+)\[\/들여쓰기\]$/.test(t))
+            blocks.push({ type: 'p', text: t.replace(/^\[들여쓰기\]|\[\/들여쓰기\]$/g,''), indent:true });
+        else if (/^\[박스\](.+)\[\/박스\]$/.test(t))
+            blocks.push({ type: 'box', text: t.replace(/^\[박스\]|\[\/박스\]$/g,'') });
+        else if (/^\[박스배경:(#[0-9a-fA-F]{3,6})\](.+)\[\/박스배경\]$/.test(t)) {
+            const m = t.match(/^\[박스배경:(#[0-9a-fA-F]{3,6})\](.+)\[\/박스배경\]$/);
+            blocks.push({ type: 'boxbg', text: m[2], bgColor: m[1] });
+        } else if (/^\[구분선\]$/.test(t))
+            blocks.push({ type: 'hr' });
+        else
+            blocks.push({ type: 'p', text: t });
+    }
+
+    // ── 이미지 삽입 위치 결정 ──────────────────────────────
+    const imgInsertAt = new Set();
+    if (images.length > 0) {
+        const gapAfterH = [], plainGap = [];
+        for (let i = 0; i < blocks.length; i++) {
+            if (blocks[i].type === 'gap') {
+                const prev = i > 0 ? blocks[i-1].type : '';
+                (prev === 'h1' || prev === 'h2' ? gapAfterH : plainGap).push(i);
+            }
+        }
+        const cands = [...gapAfterH, ...plainGap];
+        if (cands.length >= images.length) {
+            const step = cands.length / images.length;
+            for (let k = 0; k < images.length; k++)
+                imgInsertAt.add(cands[Math.min(Math.round(k * step), cands.length-1)]);
         } else {
-            html += `<p style="margin:0 0 14px 0;font-size:15px;">${mdInline(esc(trimmed))}</p>`;
+            cands.forEach(c => imgInsertAt.add(c));
+            const rem = images.length - imgInsertAt.size;
+            const step = Math.floor(blocks.length / (rem + 1));
+            for (let k = 1; k <= rem; k++)
+                imgInsertAt.add(Math.min(k * step, blocks.length - 1));
         }
     }
 
-    html += '</div>';
+    const imgHtml = url =>
+        `<p style="text-align:center;margin:16px 0;line-height:1;">` +
+        `<img src="${url}" style="max-width:100%;height:auto;" /></p>`;
+
+    // ── HTML 조립 ──────────────────────────────────────────
+    let html = '';
+
+    if (title) {
+        const tfs = (parseInt(fs) + 6) + 'px';
+        const tAlign = centerHeadings ? 'text-align:center;' : '';
+        html += `<p style="font-family:${ff};font-size:${tfs};font-weight:bold;`+
+                `line-height:1.5;color:#1a1a1a;margin:0 0 18px 0;${tAlign}">${esc(title)}</p>`;
+    }
+
+    let imgIdx = 0;
+    for (let i = 0; i < blocks.length; i++) {
+        if (imgInsertAt.has(i) && imgIdx < images.length)
+            html += imgHtml(images[imgIdx++]);
+
+        const b = blocks[i];
+        if (b.type === 'gap') {
+            html += `<p style="font-family:${ff};font-size:4px;line-height:1;margin:0;">&nbsp;</p>`;
+
+        } else if (b.type === 'h2') {
+            const hCol   = accentCol || '#1a1a1a';
+            const hAlign = centerHeadings ? 'text-align:center;' : '';
+            html += `<p style="font-family:${hff};font-size:${hfs};font-weight:bold;`+
+                    `line-height:1.8;color:${hCol};margin:14px 0 4px 0;${hAlign}">`+
+                    `${mdInline(esc(b.text))}</p>`;
+
+        } else if (b.type === 'h1') {
+            const h1fs   = (parseInt(hfs) + 2) + 'px';
+            const hCol   = accentCol || '#1a1a1a';
+            const hAlign = centerHeadings ? 'text-align:center;' : '';
+            html += `<p style="font-family:${hff};font-size:${h1fs};font-weight:bold;`+
+                    `line-height:1.6;color:${hCol};margin:20px 0 6px 0;${hAlign}">`+
+                    `${mdInline(esc(b.text))}</p>`;
+
+        } else if (b.type === 'li') {
+            html += p('padding-left:18px;', `• ${mdInline(esc(b.text))}`);
+
+        } else if (b.type === 'box') {
+            // [박스] — 인용구 스타일 박스
+            html += `<p style="font-family:${ff};font-size:${fs};line-height:${lh};color:${col};`+
+                    `margin:8px 0;padding:12px 16px;`+
+                    `background:#f8f8f8;border-left:3px solid ${accentCol||'#ccc'};">`+
+                    `${mdInline(esc(b.text))}</p>`;
+
+        } else if (b.type === 'boxbg') {
+            // [박스배경:#hex] — 배경색 박스
+            html += `<p style="font-family:${ff};font-size:${fs};line-height:${lh};color:${col};`+
+                    `margin:8px 0;padding:12px 16px;background:${b.bgColor};">`+
+                    `${mdInline(esc(b.text))}</p>`;
+
+        } else if (b.type === 'hr') {
+            // [구분선] — 얇은 구분선
+            html += `<p style="border-top:1px solid #e0e0e0;margin:12px 0;line-height:0;">&nbsp;</p>`;
+
+        } else {
+            // 일반 p — 정렬/들여쓰기 옵션 처리
+            const alignStyle  = b.align  ? `text-align:${b.align};`   : '';
+            const indentStyle = b.indent ? 'padding-left:24px;'        : '';
+            html += p(`${alignStyle}${indentStyle}`, mdInline(esc(b.text)));
+        }
+    }
+    while (imgIdx < images.length) html += imgHtml(images[imgIdx++]);
+
     return html;
 }
 
@@ -592,13 +915,23 @@ async function loadDNAList() {
         const res = await fetch(`${API}/api/mypage/dna`);
         const data = await res.json();
         const items = data.items || [];
+
+        // 블로그별 최신 DNA만 유지
+        const blogMap = {};
+        items.forEach(item => {
+            if (!blogMap[item.blog_id] || (item.created_at || '') > (blogMap[item.blog_id].created_at || '')) {
+                blogMap[item.blog_id] = item;
+            }
+        });
+        const latest = Object.values(blogMap).sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
+
         const sel = document.getElementById('write-dna-select');
         const current = sel.value;
-        sel.innerHTML = `<option value="">DNA 미적용 (기본 스타일)</option>`;
-        items.forEach(item => {
+        sel.innerHTML = `<option value="">스타일 미적용</option>`;
+        latest.forEach(item => {
             const opt = document.createElement('option');
             opt.value = item.id;
-            opt.textContent = `${item.blog_id} (${(item.created_at || '').slice(0, 10)})`;
+            opt.textContent = item.blog_id;
             sel.appendChild(opt);
         });
         if (current) sel.value = current;
@@ -620,11 +953,22 @@ function renderStyleDNAList(items) {
         listEl.innerHTML = `<div class="empty-hint">수집된 DNA가 없습니다.<br>먼저 블로그를 수집하고 DNA 분석을 실행하세요.</div>`;
         return;
     }
-    listEl.innerHTML = items.map(item => `
+    // 블로그별 최신 DNA만 표시
+    const blogMap = {};
+    items.forEach(item => {
+        if (!blogMap[item.blog_id] || (item.created_at || '') > (blogMap[item.blog_id].created_at || '')) {
+            blogMap[item.blog_id] = item;
+        }
+    });
+    const latest = Object.values(blogMap).sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
+    listEl.innerHTML = latest.map(item => {
+        const needsUpgrade = !item.has_c21;
+        return `
         <div class="dna-card" data-dna-id="${item.id}" onclick="loadStyleDetail('${item.id}')">
-            <div class="dna-card-id">${item.blog_id || ''}</div>
+            <div class="dna-card-id">${item.blog_id || ''}${needsUpgrade ? ' <span style="font-size:10px;color:#ff3b30;font-weight:400">업그레이드 필요</span>' : ''}</div>
             <div class="dna-card-meta">${item.post_count || 0}개 분석 · ${(item.created_at || '').slice(0, 10)}</div>
-        </div>`).join('');
+        </div>`;
+    }).join('');
 }
 
 async function loadStyleDetail(dnaId) {
@@ -645,29 +989,68 @@ async function loadStyleDetail(dnaId) {
     }
 }
 
+const STYLE_SECTIONS = [
+    { name: '글쓰기 스타일', cats: ['말투', '구조', '콘텐츠', '감성'] },
+    { name: '어휘 & 표현', cats: ['시그니처', '전환어', '어휘', '특징어', '감탄사', '추임새'] },
+    { name: '문장 & 단락', cats: ['문장', '단락', '글자수', '분량 지침'] },
+    { name: '도입 & 마무리', cats: ['도입', '마무리'] },
+    { name: '시각 포맷', cats: ['시각', '이모지', '기호', '폰트', '글꼴', '글꼴 지침', '작성 가이드'] },
+    { name: '특수 기호', cats: ['꺽쇠', '괄호', '인용부호', '문장부호', '숫자 표현'] },
+    { name: '제목', cats: ['제목', '제목 키워드'] },
+    { name: '독자 소통', cats: ['독자 참여', '이미지'] },
+];
+
 function renderStyleDetail(dna) {
     const detailEl = document.getElementById('style-detail');
     const allTags = extractPersonaTags(dna);
     const activeIds = new Set((dna.active_tags || []).map(t => t.id));
+    const activeCount = allTags.filter(t => activeIds.has(t.id)).length;
 
-    const groups = {};
+    // 카테고리별 그룹핑
+    const catGroups = {};
     allTags.forEach(t => {
-        if (!groups[t.cat]) groups[t.cat] = [];
-        groups[t.cat].push(t);
+        if (!catGroups[t.cat]) catGroups[t.cat] = [];
+        catGroups[t.cat].push(t);
     });
 
-    let html = `
-        <div class="style-detail-header">
-            <div class="style-detail-title">${dna.blog_id || ''}</div>
-            <div class="style-detail-meta">${dna.post_count || 0}개 분석 · ${(dna.created_at || '').slice(0, 10)}</div>
-        </div>
-        <p class="style-detail-desc">태그를 켜면 글 생성 시 해당 스타일 특징이 강조 반영됩니다.</p>`;
+    // 섹션에 배정된 카테고리 추적
+    const assignedCats = new Set(STYLE_SECTIONS.flatMap(s => s.cats));
+    const remainingCats = Object.keys(catGroups).filter(c => !assignedCats.has(c));
+    const sections = remainingCats.length
+        ? [...STYLE_SECTIONS, { name: '기타', cats: remainingCats }]
+        : STYLE_SECTIONS;
 
-    Object.entries(groups).forEach(([cat, tags]) => {
-        html += `<div class="tag-group">
-            <div class="tag-group-label">${cat}</div>
+    const dnaFileId = dna.dna_id || dna.id || '';
+
+    let html = `
+        <div class="style-panel-header">
+            <div class="style-panel-info">
+                <div class="style-panel-blogid">${dna.blog_id || ''}</div>
+                <div class="style-panel-meta">${dna.post_count || 0}개 분석 · ${(dna.created_at || '').slice(0, 10)}</div>
+            </div>
+            <div class="style-panel-counter">
+                <span id="style-active-count">${activeCount}</span>
+                <span class="style-counter-label">/ ${allTags.length}개 활성</span>
+            </div>
+        </div>
+        <div class="style-panel-actions">
+            <button class="btn-link" onclick="styleToggleAll(true)">전체 켜기</button>
+            <button class="btn-link" onclick="styleToggleAll(false)">전체 끄기</button>
+        </div>`;
+
+    sections.forEach(sec => {
+        const sectionTags = sec.cats.flatMap(cat => catGroups[cat] || []);
+        if (!sectionTags.length) return;
+        const secActive = sectionTags.filter(t => activeIds.has(t.id)).length;
+
+        html += `
+        <div class="style-section">
+            <div class="style-section-head">
+                <span class="style-section-name">${sec.name}</span>
+                <span class="style-section-badge">${secActive}/${sectionTags.length}</span>
+            </div>
             <div class="tags-wrap">
-                ${tags.map(t => `
+                ${sectionTags.map(t => `
                     <span class="tag ${activeIds.has(t.id) ? 'tag-on' : ''}"
                           data-tag-id="${t.id}"
                           data-tag-label="${encodeURIComponent(t.label)}"
@@ -676,15 +1059,42 @@ function renderStyleDetail(dna) {
         </div>`;
     });
 
-    const dnaFileId = dna.dna_id || dna.id || '';
-    html += `<div class="style-detail-actions">
-        <button class="btn btn-primary" onclick="saveStyleTags('${dnaFileId}')">태그 저장</button>
-    </div>`;
+    const hasNew = !!(dna['c21_inline_formatting'] && dna['c22_content_patterns']);
+    html += `
+        <div class="style-save-bar">
+            <button class="btn btn-primary" id="style-save-btn" onclick="saveStyleTags('${dnaFileId}')">저장</button>
+            <button class="btn" style="border:1px solid #000;background:#fff;color:#000;border-radius:980px" onclick="reanalyzeDNA('${dna.blog_id || ''}')" title="${hasNew ? 'DNA 재분석 (22 컴포넌트)' : 'c21/c22 없음 — 재분석 필요'}">
+                ${hasNew ? 'DNA 재분석' : 'DNA 업그레이드 (c21/c22 없음)'}
+            </button>
+        </div>`;
 
     detailEl.innerHTML = html;
     detailEl.querySelectorAll('.tag').forEach(el => {
-        el.addEventListener('click', () => el.classList.toggle('tag-on'));
+        el.addEventListener('click', () => {
+            el.classList.toggle('tag-on');
+            updateStyleActiveCount();
+        });
     });
+}
+
+function updateStyleActiveCount() {
+    const all = document.querySelectorAll('#style-detail .tag').length;
+    const active = document.querySelectorAll('#style-detail .tag.tag-on').length;
+    const el = document.getElementById('style-active-count');
+    if (el) el.textContent = active;
+    // Update section badges
+    document.querySelectorAll('.style-section').forEach(sec => {
+        const badge = sec.querySelector('.style-section-badge');
+        if (!badge) return;
+        const total = sec.querySelectorAll('.tag').length;
+        const on = sec.querySelectorAll('.tag.tag-on').length;
+        badge.textContent = `${on}/${total}`;
+    });
+}
+
+function styleToggleAll(on) {
+    document.querySelectorAll('#style-detail .tag').forEach(t => t.classList.toggle('tag-on', on));
+    updateStyleActiveCount();
 }
 
 async function saveStyleTags(dnaId) {
@@ -694,15 +1104,26 @@ async function saveStyleTags(dnaId) {
         label: decodeURIComponent(el.dataset.tagLabel),
         cat: el.dataset.tagCat
     }));
+    const btn = document.getElementById('style-save-btn');
     try {
+        if (btn) { btn.disabled = true; btn.textContent = '저장 중...'; }
         const res = await fetch(`${API}/api/mypage/dna/${dnaId}/tags`, {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ active_tags: activeTags })
         });
         if (!res.ok) throw new Error('저장 실패');
-        alert(`태그 ${activeTags.length}개가 저장되었습니다.`);
+        if (btn) {
+            btn.textContent = '저장됨';
+            btn.style.background = '#1a8a1a';
+            setTimeout(() => {
+                btn.textContent = '저장';
+                btn.style.background = '';
+                btn.disabled = false;
+            }, 1500);
+        }
     } catch (err) {
+        if (btn) { btn.textContent = '저장'; btn.disabled = false; }
         alert(err.message);
     }
 }
@@ -838,7 +1259,7 @@ function renderDBCard(g) {
                 <div class="db-card-actions">
                     <button class="btn btn-secondary btn-sm" onclick="goToPanel('collect');document.getElementById('collect-url').value='${g.blog_id}'">재수집</button>
                     ${latestDna ? `<button class="btn btn-secondary btn-sm" onclick="dbViewFinalStyle('${latestDna.id}')">최종 스타일</button>` : ''}
-                    <button class="btn btn-primary btn-sm" onclick="analyzeDNA('${g.blog_id}')">DNA 분석</button>
+                    <button class="btn btn-primary btn-sm" onclick="analyzeDNAFromDB('${g.blog_id}')">DNA 분석</button>
                 </div>
             </div>
         </div>`;
@@ -1074,6 +1495,45 @@ async function dbViewBlog(blogId) {
             html += `<div style="font-size:14px;line-height:1.8;color:var(--text-secondary);white-space:pre-wrap">${data.content.replace(/</g,'&lt;')}</div>`;
         }
         document.getElementById('detail-modal-body').innerHTML = html;
+    } catch (err) {
+        document.getElementById('detail-modal-body').innerHTML = `<div class="error-hint">${err.message}</div>`;
+    }
+}
+
+async function reanalyzeDNA(blogId) {
+    if (!blogId) return alert('blog_id를 찾을 수 없습니다.');
+    if (!confirm(`${blogId} 블로그를 22컴포넌트 DNA로 재분석합니다.\n기존 DNA는 유지되고 새 DNA가 추가됩니다. 계속하시겠습니까?`)) return;
+    await analyzeDNAFromDB(blogId);
+}
+
+async function analyzeDNAFromDB(blogId) {
+    openModal('DNA 분석', `
+        <div style="padding:32px 0;text-align:center">
+            <div style="font-size:32px;margin-bottom:16px">분석 중</div>
+            <div style="font-size:14px;color:var(--text-muted);margin-bottom:8px"><strong>${blogId}</strong> 블로그를 분석하고 있어요</div>
+            <div style="font-size:13px;color:var(--text-muted)">30~60초 정도 소요됩니다</div>
+        </div>`);
+    try {
+        const res = await fetch(`${API}/api/blog/analyze-status`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ blog_id: blogId })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || '분석 실패');
+        const container = document.getElementById('detail-modal-body');
+        renderDNAResult(data, container);
+        // 상단에 완료 메시지 추가
+        container.insertAdjacentHTML('afterbegin', `
+            <div style="margin-bottom:20px;padding:12px 16px;background:var(--bg-secondary);border-radius:var(--radius);display:flex;align-items:center;gap:12px">
+                <span style="font-size:20px">완료</span>
+                <div>
+                    <div style="font-weight:700;font-size:14px">${data.blog_id} DNA 분석 완료</div>
+                    <div style="font-size:12px;color:var(--text-muted)">${data.post_count || 0}개 글 · DNA ID: ${data.dna_id || ''}</div>
+                </div>
+            </div>`);
+        loadDNAList();
+        loadDBPanel();
     } catch (err) {
         document.getElementById('detail-modal-body').innerHTML = `<div class="error-hint">${err.message}</div>`;
     }
