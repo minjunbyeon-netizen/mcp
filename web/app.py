@@ -2859,7 +2859,7 @@ def analyze_blog_status():
 반드시 유효한 JSON으로만 응답하세요. 다른 텍스트는 포함하지 마세요."""
 
         response = client.models.generate_content(
-            model="gemini-2.5-pro",
+            model="gemini-2.0-flash",
             contents=analysis_prompt
         )
         
