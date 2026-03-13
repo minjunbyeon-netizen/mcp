@@ -9,3 +9,10 @@
 [15:02:57] STEP: app.js 이미지마커+고아블록제거+폰트, app.py 폰트맵+프롬프트 수정
 [15:03:52] DONE: 이미지마커 렌더링, 고아블록마커 제거, 폰트선호도 수정 완료. VPS 배포 OK
 [15:39:38] DONE: DNA 분석 글자수/이미지 스키마 강화 + 실측통계 주입 완료
+[16:39:23] START: 이미지 카운트 수집 + 파일 자동정리 작업
+[16:42:27] START: syntax OK, committing changes
+[16:43:13] DONE: deployed to VPS successfully
+[17:23:25] START: 이미지 중복 삽입 버그 수정 (app.js)
+[17:24:15] DONE: 이미지 중복 버그 수정 완료, VPS 배포
+[18:04:14] START: minor 버그 4건 수정
+[18:06:35] DONE: minor 버그 4건 수정 완료, VPS 배포
