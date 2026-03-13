@@ -677,6 +677,10 @@ function blogToNaverHTML(title, content, images = []) {
     const mdInline = raw => {
         let s = raw;
 
+        // ─── 0. 고아 블록 마커 제거 (박스/정렬 마커가 inline 컨텍스트에 노출될 때) ──
+        s = s.replace(/\[\/?(중앙|우측|들여쓰기)\]/g, '');
+        s = s.replace(/\[\/?(박스배경(?::#[0-9a-fA-F]{3,6})?|박스)\]/g, '');
+
         // ─── 1. 볼드 (**text** / __text__) ───────────────────
         if (boldAllowed) {
             s = s.replace(/\*\*(.+?)\*\*/g, `<span style="font-weight:bold;">$1</span>`);
@@ -948,6 +952,12 @@ function blogToNaverHTML(title, content, images = []) {
                 blocks.push({ type: 'p', text: (inner + '\n' + rest).trim(), indent: true });
             }
 
+        // ── 이미지 마커 [이미지] 또는 [이미지:N] ────────────
+        } else if (/^\[이미지(?::\d+)?\]$/.test(t)) {
+            const m = t.match(/^\[이미지(?::(\d+))?\]$/);
+            const idx = m[1] ? parseInt(m[1]) - 1 : -1; // -1 = 순서대로
+            blocks.push({ type: 'img', idx });
+
         } else {
             blocks.push({ type: 'p', text: t });
         }
@@ -992,6 +1002,7 @@ function blogToNaverHTML(title, content, images = []) {
     }
 
     let imgIdx = 0;
+    let imgBlockSeq = 0; // [이미지] 마커 순차 인덱스
     for (let i = 0; i < blocks.length; i++) {
         if (imgInsertAt.has(i) && imgIdx < images.length)
             html += imgHtml(images[imgIdx++]);
@@ -1034,6 +1045,11 @@ function blogToNaverHTML(title, content, images = []) {
             html += `<p style="font-family:${ff};font-size:${fs};line-height:${lh};color:${col};`+
                     `margin:14px 0;padding:14px 18px;background:${b.bgColor};">`+
                     `${innerHtml}</p>`;
+
+        } else if (b.type === 'img') {
+            // [이미지] / [이미지:N] — 명시적 이미지 삽입
+            const imgSrc = b.idx >= 0 ? images[b.idx] : images[imgBlockSeq++];
+            if (imgSrc) html += imgHtml(imgSrc);
 
         } else if (b.type === 'hr') {
             // [구분선] — 얇은 구분선
