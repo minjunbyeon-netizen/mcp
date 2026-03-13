@@ -420,7 +420,7 @@ def login():
             'name': '개발자',
             'picture': ''
         }
-        return redirect('/')
+        return redirect(url_for('index'))
     redirect_uri = url_for('callback', _external=True)
     return google.authorize_redirect(redirect_uri, access_type='offline', prompt='consent')
 
@@ -429,7 +429,7 @@ def login():
 def callback():
     """Google 로그인 콜백"""
     if not SSO_ENABLED:
-        return redirect('/')
+        return redirect(url_for('index'))
     
     try:
         token = google.authorize_access_token()
@@ -491,7 +491,7 @@ def callback():
         session['google_token_expires_at'] = _time.time() + token.get('expires_in', 3600)
         
         print(f"[OK] 로그인 성공: {email}")
-        return redirect('/')
+        return redirect(url_for('index'))
         
     except Exception as e:
         print(f"[ERROR] 로그인 실패: {e}")
@@ -504,7 +504,7 @@ def logout():
     user_email = session.get('user', {}).get('email', 'unknown')
     session.pop('user', None)
     print(f"[INFO] 로그아웃: {user_email}")
-    return redirect('/')
+    return redirect(url_for('index'))
 
 
 @app.route('/api/auth/status')
