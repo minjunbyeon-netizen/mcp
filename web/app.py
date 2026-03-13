@@ -146,6 +146,8 @@ CALIBRATIONS_DIR.mkdir(parents=True, exist_ok=True)
 
 # blog_pull 모듈 경로 추가
 sys.path.insert(0, str(PROJECT_ROOT / "blog_pull"))
+# web/ 폴더도 sys.path에 추가 (run_crawler.py 등 web/ 내 모듈 import용)
+sys.path.insert(0, str(Path(__file__).parent))
 
 # 스타일 템플릿 로드
 _STYLE_TEMPLATES_PATH = Path(__file__).parent / "style_templates.json"
