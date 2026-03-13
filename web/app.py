@@ -9,8 +9,11 @@ import os
 import json
 import io
 import tempfile
-import truststore
-truststore.inject_into_ssl()
+try:
+    import truststore
+    truststore.inject_into_ssl()
+except ImportError:
+    pass  # Linux/Mac — 시스템 인증서 사용
 from pathlib import Path
 from datetime import datetime
 from flask import Flask, request, jsonify, send_from_directory, session, redirect, url_for
