@@ -59,6 +59,16 @@ except ImportError:
 app = Flask(__name__, static_folder='.', static_url_path='')
 CORS(app)
 
+# 리버스 프록시 서브패스 지원 (nginx /mcp/ → 앱 내부 경로 보정)
+from werkzeug.middleware.proxy_fix import ProxyFix
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
+
+# APPLICATION_ROOT 환경변수로 서브패스 설정 가능 (예: /mcp)
+_app_root = os.getenv('APPLICATION_ROOT', '').rstrip('/')
+if _app_root:
+    app.config['APPLICATION_ROOT'] = _app_root
+    app.config['SESSION_COOKIE_PATH'] = _app_root + '/'
+
 # 세션 시크릿 키 (SSO용)
 app.secret_key = os.getenv('FLASK_SECRET_KEY', 'dev-secret-key-change-in-production')
 
@@ -3220,12 +3230,13 @@ if __name__ == '__main__':
     print("  페르소나 도구 웹 대시보드")
     print("=" * 60)
     print("  블로그 자동화 도구")
-    print(f"  서버: http://localhost:5050")
+    port = int(os.getenv('PORT', 5050))
+    print(f"  서버: http://localhost:{port}")
     print(f"  출력 폴더: {OUTPUT_DIR}")
     print(f"  스타일 템플릿: {len(STYLE_TEMPLATES)}개")
     print("=" * 60)
-    
+
     from waitress import serve
     print("  WSGI: waitress (production)")
-    serve(app, host='0.0.0.0', port=5050, threads=4)
+    serve(app, host='0.0.0.0', port=port, threads=4)
 

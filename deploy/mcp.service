@@ -1,0 +1,16 @@
+[Unit]
+Description=MCP Auto-Blog Web App
+After=network.target
+
+[Service]
+User=dev
+WorkingDirectory=/home/dev/work/mcp
+EnvironmentFile=/home/dev/work/mcp/.env
+ExecStart=/home/dev/work/mcp/.venv/bin/python web/app.py
+Restart=always
+RestartSec=5
+StandardOutput=append:/home/dev/work/mcp/logs/web-app.out.log
+StandardError=append:/home/dev/work/mcp/logs/web-app.err.log
+
+[Install]
+WantedBy=multi-user.target
