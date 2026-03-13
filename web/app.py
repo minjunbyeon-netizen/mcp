@@ -2492,11 +2492,30 @@ def analyze_blog_status():
         # 날짜순 정렬 (최신순)
         unique_posts.sort(key=lambda x: x.get('addDate', ''), reverse=True)
         
+        # 글자수/단락/문장 실측 통계 사전 계산
+        import statistics as _stats
+        _char_counts, _para_counts, _sent_counts = [], [], []
+        for post in unique_posts:
+            txt = post.get("content", "")
+            _char_counts.append(len(txt))
+            _para_counts.append(len([p for p in txt.split('\n') if p.strip()]))
+            _sent_counts.append(max(1, txt.count('。') + txt.count('.') + txt.count('!') + txt.count('?')))
+        _measured_stats = f"""
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+【실측 데이터 — 수집된 {len(unique_posts)}개 글 전체 집계 (AI 추정 금지, 이 수치를 그대로 사용)】
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+글자수(텍스트 기준): 평균 {round(_stats.mean(_char_counts))}자 / 최소 {min(_char_counts)}자 / 최대 {max(_char_counts)}자 / 중앙값 {round(_stats.median(_char_counts))}자
+단락수: 평균 {round(_stats.mean(_para_counts))}개 / 최소 {min(_para_counts)}개 / 최대 {max(_para_counts)}개
+문장수(추정): 평균 {round(_stats.mean(_sent_counts))}개 / 최소 {min(_sent_counts)}개 / 최대 {max(_sent_counts)}개
+분량 분포: 짧은 글({min(_char_counts)}~{sorted(_char_counts)[len(_char_counts)//3]}자) {sum(1 for c in _char_counts if c < sorted(_char_counts)[len(_char_counts)//3])}편 / 중간({sorted(_char_counts)[len(_char_counts)//3]}~{sorted(_char_counts)[2*len(_char_counts)//3]}자) {sum(1 for c in _char_counts if sorted(_char_counts)[len(_char_counts)//3] <= c < sorted(_char_counts)[2*len(_char_counts)//3])}편 / 긴 글({sorted(_char_counts)[2*len(_char_counts)//3]}자~) {sum(1 for c in _char_counts if c >= sorted(_char_counts)[2*len(_char_counts)//3])}편
+"""
+
         # 블로그 글 요약 텍스트 생성 (통합된 데이터 중 최근 15개 분석)
         blog_summary = ""
         for i, post in enumerate(unique_posts[:15], 1):
-            content = post.get("content", "")[:1500]
-            blog_summary += f"\n\n--- 글 {i}: {post.get('title', '')} (날짜: {post.get('addDate', '')}) ---\n{content}"
+            txt = post.get("content", "")
+            content = txt[:1500]
+            blog_summary += f"\n\n--- 글 {i}: {post.get('title', '')} (날짜: {post.get('addDate', '')}, 글자수: {len(txt)}자, 단락수: {len([p for p in txt.split(chr(10)) if p.strip()])}개) ---\n{content}"
 
         # 시각적 스타일 메타 집계 (HTML에서 추출한 데이터)
         from collections import Counter as _Counter
@@ -2542,6 +2561,7 @@ def analyze_blog_status():
 이 블로거의 글쓰기 스타일을 **100% 재현**할 수 있을 만큼 철저하게 분석하세요.
 목표: 이 분석 결과만 보고 AI가 써도 원본 블로거와 구분이 안 될 정도로 완벽한 스타일 복제.
 
+{_measured_stats}
 {blog_summary}
 {visual_summary}
 
@@ -2557,6 +2577,8 @@ def analyze_blog_status():
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 【출력 JSON 스키마 (22가지 카테고리 — 완전 심층 분석)】
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+★ c14(글자수/분량): 위 실측 데이터 수치를 그대로 사용. AI 임의 추정 금지.
+★ c16(이미지): 각 글의 내용을 읽고 이미지 삽입 맥락(캡션, 이미지 설명 등)에서 이미지 수를 최대한 정밀하게 추정.
 
 {{
   "c1_template_structure": {{
@@ -2726,16 +2748,23 @@ def analyze_blog_status():
     "examples": ["모든 유형 괄호 사용 실제 예시 — 기호 반드시 그대로 포함"]
   }},
   "c14_length_stats": {{
-    "title": "글자수/분량 통계",
-    "avg_chars_per_post": "평균 글자수 (공백 포함, 숫자로)",
-    "min_chars": "최소 글자수",
-    "max_chars": "최대 글자수",
-    "avg_sentences_per_post": "평균 문장 수 (숫자로)",
-    "avg_paragraphs_per_post": "평균 단락 수 (숫자로)",
+    "title": "글자수/분량 통계 — 위 실측 데이터를 기반으로 정확히 기재",
+    "avg_chars_per_post": "평균 글자수 (위 실측 데이터 그대로 사용)",
+    "min_chars": "최소 글자수 (위 실측 데이터 그대로 사용)",
+    "max_chars": "최대 글자수 (위 실측 데이터 그대로 사용)",
+    "median_chars": "중앙값 글자수 (위 실측 데이터 그대로 사용)",
+    "avg_paragraphs_per_post": "평균 단락 수 (위 실측 데이터 그대로 사용)",
+    "min_paragraphs": "최소 단락 수",
+    "max_paragraphs": "최대 단락 수",
+    "avg_sentences_per_post": "평균 문장 수 (위 실측 데이터 그대로 사용)",
     "avg_sentences_per_paragraph": "단락당 평균 문장 수 (숫자로)",
+    "avg_chars_per_sentence": "문장당 평균 글자수 (숫자로)",
     "content_ratio": "서론:본론:결론 분량 비율 (예: '15%:70%:15%')",
-    "length_consistency": "분량 일관성 (높음/보통/낮음)",
-    "density_guide": "분량 재현 지침 — 구체적으로 (예: '단락 1개 = 2~3문장, 총 10~12단락, 약 1500자 목표')"
+    "length_consistency": "분량 일관성 (높음/보통/낮음) + 근거",
+    "short_post_pattern": "짧은 글의 특징 — 어떤 주제/상황일 때 짧게 씀",
+    "long_post_pattern": "긴 글의 특징 — 어떤 주제/상황일 때 길게 씀",
+    "density_guide": "분량 재현 지침 — 구체적으로 (예: '단락 1개 = 2~3문장, 총 10~12단락, 약 1500자 목표')",
+    "writing_volume_summary": "한 줄 요약 (예: '평균 1,983자 / 약 15단락 / 단락당 2~3문장 — 중간 밀도')"
   }},
   "c15_title_patterns": {{
     "title": "제목 작성 패턴",
@@ -2754,16 +2783,25 @@ def analyze_blog_status():
     "examples": ["실제 제목 7개 이상 — 패턴이 다양하게 드러나는 것"]
   }},
   "c16_image_media": {{
-    "title": "이미지/미디어 활용",
-    "avg_images_per_post": "글당 평균 이미지 수 (숫자)",
+    "title": "이미지/미디어 활용 — 글 내용/패턴에서 이미지 수를 최대한 추정하여 기재",
+    "avg_images_per_post": "글당 평균 이미지 수 추정 (숫자, 예: 5)",
+    "min_images_per_post": "가장 적은 글의 이미지 수 추정 (숫자)",
+    "max_images_per_post": "가장 많은 글의 이미지 수 추정 (숫자)",
+    "image_count_range": "이미지 수 범위 한 줄 요약 (예: '3~10장, 평균 5장')",
     "image_placement": "이미지 배치 패턴 — 구체적으로 (예: '본문 사이사이 1~2장씩', '글 상단 대표 1장+중간 분산')",
+    "opening_image_count": "도입부 이미지 수 패턴 (예: '대표 이미지 1장으로 시작')",
+    "body_image_distribution": "본문 이미지 분산 방식 (예: '단락 2~3개마다 1장 삽입')",
+    "closing_image_count": "마무리부 이미지 수 패턴",
     "caption_style": "캡션 스타일 (없음/짧은 설명/이모지+설명/상세 설명)",
+    "caption_examples": ["실제 캡션 텍스트 예시 3개 이상"],
     "image_types": "이미지 종류 (직접 촬영/스크린샷/공식 홍보 이미지/혼합)",
     "layout": "이미지 정렬 (좌정렬/중앙/전체폭/혼합)",
+    "consecutive_images": "이미지 연속 배치 여부 (예: '2~3장 연속 배치 자주 함')",
     "use_tables": "표 사용 여부/빈도/목적",
     "use_maps_links": "지도/외부링크 삽입 여부",
     "media_density": "텍스트 대비 이미지 비중 (이미지 중심/균형/텍스트 중심)",
     "thumbnail_pattern": "대표 이미지/썸네일 패턴",
+    "image_text_ratio": "텍스트 1000자당 이미지 몇 장 비율 추정 (예: '1000자당 약 2.5장')",
     "examples": ["이미지 활용 특징이 드러나는 캡션/설명 실제 예시"]
   }},
   "c17_punctuation": {{
