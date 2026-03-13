@@ -6,3 +6,30 @@
 [11:55:03] DONE: 네이버 블로그 검색 자동완성 기능 추가 완료
 [11:59:54] START: DB관리 패널 추가 + 블로그 생성 로딩 모달 구현
 [12:03:05] DONE: DB관리 패널 + 블로그 생성 로딩 모달 완료
+[12:07:08] DONE: DB관리 상세보기/삭제 추가 완료
+[12:11:23] DONE: DB관리 DNA 상세 탭 통합 (스타일태그+분석상세)
+[12:17:00] START: DB관리 최종 스타일 보기 + 네이버 블로그 HTML 복사 기능 추가
+[12:18:31] DONE: DB관리 최종 스타일 보기 + 네이버 블로그 HTML 복사 기능 추가 완료
+[13:15:22] START: DNA 분석 카테고리 c10→c15 확장
+[13:19:03] DONE: DNA 분석 카테고리 c10→c15 확장 (글자수/폰트/꺽쇠/제목/이미지 추가)
+[13:43:12] START: DNA 20카테고리 심층 확장
+[13:49:26] DONE: DNA 20카테고리 심층 확장 완료 (c17 문장부호, c18 숫자, c19 독자참여, c20 감탄사 추가)
+[13:52:58] START: 블로그 생성 프롬프트 DNA 중심 완전 재설계
+[13:55:48] DONE: 블로그 생성 프롬프트 DNA 중심 재설계 완료
+[14:06:31] START: 실제 블로그 3개 end-to-end 테스트
+[14:08:15] START: 실제 블로그 3개 end-to-end 테스트
+[14:12:32] STEP: 3개 블로그 수집 완료, DNA 분석 시작 - jeonju_city, bsbukgusns, gwangju_city
+[14:20:22] STEP: 3개 블로그 DNA 분석 완료, 블로그 생성 테스트 시작
+[14:28:57] DONE: 3개 블로그 end-to-end 테스트 완료 - jeonju_city/bsbukgusns/gwangju_city DNA+생성 검증
+[14:37:13] START: 스타일 업데이트 패널 UI 재설계 + DB 관리 버튼 버그 수정
+[14:39:50] DONE: 스타일 업데이트 패널 UI 재설계 + DB 관리 버튼 버그 수정 완료
+[14:51:40] DONE: 블로그 작성 DNA 선택 드롭다운 정리 - 중복제거 + 태그 요약
+[14:58:29] START: 네이버 복사 서식 100% 보존 수정
+[15:04:47] DONE: 네이버 복사 마크다운 보존 + blogToNaverHTML SE3 강화
+[15:25:17] DONE: 이미지 추출 및 네이버 복사 삽입 기능 구현 완료
+[15:35:45] DONE: 1버전/DNA html_style/이미지/볼드 전면 수정 완료
+[15:45:09] STEP: DNA accent color fix - skip gray hex values, pick first colorful non-default
+[15:45:45] DONE: DNA 스타일 추출 완전 검증 및 accent color gray 필터 추가, 서버 재시작
+[22:28:16] DONE: 미리보기 WYSIWYG 전환 - blogToNaverHTML 직접 렌더링 + execCommand copy from preview div
+[22:37:00] DONE: 500 에러 3종 수정 - dna_analysis 미초기화, DNA 파일 직접로드, c11->c14 변수명
+[22:42:43] DONE: HTML 태그 금지 프롬프트 추가 + content HTML 자동 스트립 필터
