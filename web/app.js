@@ -45,6 +45,14 @@ async function initAuth() {
                 if (el) el.textContent = data.user.name || data.user.email || '';
                 const av = document.getElementById('sb-avatar');
                 if (av && data.user.picture) av.src = data.user.picture;
+
+                // 우측 상단 topbar 업데이트
+                const tbUser = document.getElementById('topbar-user');
+                if (tbUser) tbUser.classList.remove('hidden');
+                const tbName = document.getElementById('topbar-name');
+                if (tbName) tbName.textContent = data.user.name || data.user.email || '';
+                const tbAv = document.getElementById('topbar-avatar');
+                if (tbAv && data.user.picture) tbAv.src = data.user.picture;
             } else {
                 // SSO 미설정 → 로그인 영역 숨김
                 document.getElementById('sb-logged-in').classList.add('hidden');
