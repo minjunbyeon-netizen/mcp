@@ -964,8 +964,10 @@ function blogToNaverHTML(title, content, images = []) {
     }
 
     // ── 이미지 삽입 위치 결정 ──────────────────────────────
+    // 명시적 [이미지] 마커가 하나라도 있으면 자동 배치 비활성화 (중복 방지)
+    const hasExplicitImgBlock = blocks.some(b => b.type === 'img');
     const imgInsertAt = new Set();
-    if (images.length > 0) {
+    if (images.length > 0 && !hasExplicitImgBlock) {
         const gapAfterH = [], plainGap = [];
         for (let i = 0; i < blocks.length; i++) {
             if (blocks[i].type === 'gap') {
@@ -1065,7 +1067,8 @@ function blogToNaverHTML(title, content, images = []) {
             html += p(`${alignStyle}${indentStyle}`, innerLines);
         }
     }
-    while (imgIdx < images.length) html += imgHtml(images[imgIdx++]);
+    if (!hasExplicitImgBlock)
+        while (imgIdx < images.length) html += imgHtml(images[imgIdx++]);
 
     return html;
 }
