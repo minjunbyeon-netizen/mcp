@@ -602,18 +602,37 @@ function blogToNaverHTML(title, content, images = []) {
 
     // ── 네이버 SE3 폰트 동적 로딩 (첫 호출 시 1회만) ─────────────
     if (!document.getElementById('naver-preview-fonts')) {
+        // 1) Google Fonts — NanumGothic, NanumMyeongjo, NanumBrushScript, NanumPenScript
+        const gfLink = document.createElement('link');
+        gfLink.rel = 'stylesheet';
+        gfLink.href = 'https://fonts.googleapis.com/css2?family=Nanum+Gothic:wght@400;700;800&family=Nanum+Myeongjo:wght@400;700;800&family=Nanum+Brush+Script&family=Nanum+Pen+Script&display=swap';
+        document.head.appendChild(gfLink);
+
+        // 2) 네이버 CDN — 나눔다시시작해, 나눔바른히피, 나눔스퀘어, 나눔바른고딕 등
+        const nvLink = document.createElement('link');
+        nvLink.rel = 'stylesheet';
+        nvLink.href = 'https://hangeul.pstatic.net/hangeul_static/css/nanum-font.css';
+        document.head.appendChild(nvLink);
+
+        // 3) @font-face alias — 네이버 내부 ID → 실제 font-family 연결
         const s = document.createElement('style');
         s.id = 'naver-preview-fonts';
-        // Google Fonts (NanumGothic, NanumMyeongjo, NanumSquare 계열)
         s.textContent = `
-@import url('https://fonts.googleapis.com/css2?family=Nanum+Gothic:wght@400;700;800&family=Nanum+Myeongjo:wght@400;700;800&family=Nanum+Gothic+Coding:wght@400;700&display=swap');
-/* Naver 전용 폰트 — SE3에서만 렌더링, 미리보기는 cursive 근사 */
-@font-face { font-family: 'nanumdasisijaghae'; src: local('나눔다시시작해'), local('nanumdasisijaghae'); }
-@font-face { font-family: 'nanumbareunhipi';   src: local('나눔바른히피'),   local('NanumBarunhiPi'); }
-@font-face { font-family: 'NanumSquareRound';  src: local('나눔스퀘어 라운드'), local('NanumSquareRound'); }
-@font-face { font-family: 'NanumBarunGothic';  src: local('나눔바른고딕'), local('NanumBarunGothic'); }
-@font-face { font-family: 'NanumBrushScript';  src: local('나눔손글씨 붓'), local('NanumBrushScript'); }
-@font-face { font-family: 'NanumPen';          src: local('나눔손글씨 펜'), local('NanumPen'); }`;
+@font-face { font-family: 'nanumdasisijaghae'; src: local('NanumDasiSijaghae'), local('나눔다시시작해'),
+  url('https://hangeul.pstatic.net/hangeul_static/webfont/NanumFont/NanumDasiSijaghae.woff2') format('woff2'),
+  url('https://hangeul.pstatic.net/hangeul_static/webfont/NanumFont/NanumDasiSijaghae.woff')  format('woff'); }
+@font-face { font-family: 'nanumbareunhipi'; src: local('NanumBarunhiPi'), local('나눔바른히피'),
+  url('https://hangeul.pstatic.net/hangeul_static/webfont/NanumFont/NanumBarunhiPi.woff2') format('woff2'),
+  url('https://hangeul.pstatic.net/hangeul_static/webfont/NanumFont/NanumBarunhiPi.woff')  format('woff'); }
+@font-face { font-family: 'NanumSquare'; src: local('NanumSquare'), local('나눔스퀘어'),
+  url('https://hangeul.pstatic.net/hangeul_static/webfont/NanumFont/NanumSquareR.woff2') format('woff2'),
+  url('https://hangeul.pstatic.net/hangeul_static/webfont/NanumFont/NanumSquareR.woff')  format('woff'); }
+@font-face { font-family: 'NanumSquareRound'; src: local('NanumSquareRound'), local('나눔스퀘어 라운드'),
+  url('https://hangeul.pstatic.net/hangeul_static/webfont/NanumFont/NanumSquareRoundR.woff2') format('woff2'),
+  url('https://hangeul.pstatic.net/hangeul_static/webfont/NanumFont/NanumSquareRoundR.woff')  format('woff'); }
+@font-face { font-family: 'NanumBarunGothic'; src: local('NanumBarunGothic'), local('나눔바른고딕'),
+  url('https://hangeul.pstatic.net/hangeul_static/webfont/NanumFont/NanumBarunGothic.woff2') format('woff2'),
+  url('https://hangeul.pstatic.net/hangeul_static/webfont/NanumFont/NanumBarunGothic.woff')  format('woff'); }`;
         document.head.appendChild(s);
     }
 
