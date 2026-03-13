@@ -1184,3 +1184,52 @@ textarea { resize: vertical; line-height: 1.6; }
     transition: opacity 0.15s;
 }
 .extracted-thumb:hover { opacity: 0.8; }
+
+/* ── 접근 관리 패널 ─────────────────────────────── */
+.admin-section { max-width: 560px; }
+
+.admin-add-row {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 24px;
+}
+.admin-email-input {
+    flex: 1;
+    padding: 10px 14px;
+    font-size: 14px;
+    font-family: inherit;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    outline: none;
+    transition: border-color 0.15s;
+}
+.admin-email-input:focus {
+    border-color: #000;
+    box-shadow: 0 0 0 2px rgba(0,0,0,0.08);
+}
+
+.admin-count {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-bottom: 12px;
+}
+
+.admin-email-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 0;
+    border-bottom: 1px solid var(--border);
+}
+.admin-email-row:last-child { border-bottom: none; }
+
+.admin-email-addr {
+    font-size: 14px;
+    color: var(--text-primary);
+}
+
+.btn-danger {
+    color: #ff3b30;
+    font-size: 13px;
+}
+.btn-danger:hover { color: #c00; }

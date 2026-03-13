@@ -20,6 +20,7 @@ document.addEventListener('DOMContentLoaded', () => {
     initWritePanel();
     initStylePanel();
     initDBPanel();
+    initAdminPanel();
     initModal();
 });
 
@@ -1624,7 +1625,79 @@ function hideLoadingModal() {
 
 
 // ═══════════════════════════════════════════════════════════
-// 9. 상세보기 모달
+// 9. 접근 관리 패널
+// ═══════════════════════════════════════════════════════════
+function initAdminPanel() {
+    document.querySelector('.nav-item[data-panel="admin"]')
+        .addEventListener('click', loadAdminEmails);
+}
+
+async function loadAdminEmails() {
+    const el = document.getElementById('admin-email-list');
+    el.innerHTML = `<div class="loading-hint">불러오는 중...</div>`;
+    try {
+        const res = await fetch(`${API}/api/admin/allowed-emails`);
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || '조회 실패');
+        renderAdminEmailList(data.emails || []);
+    } catch (err) {
+        el.innerHTML = `<div class="error-hint">${err.message}</div>`;
+    }
+}
+
+function renderAdminEmailList(emails) {
+    const el = document.getElementById('admin-email-list');
+    if (!emails.length) {
+        el.innerHTML = `<div class="empty-hint">등록된 이메일이 없습니다.<br>이메일을 추가하면 해당 구글 계정만 로그인할 수 있습니다.<br><small style="color:#999">목록이 비어있으면 누구나 로그인 가능합니다.</small></div>`;
+        return;
+    }
+    el.innerHTML = `
+        <div class="admin-count">${emails.length}개 계정 등록됨</div>
+        ${emails.map(email => `
+        <div class="admin-email-row">
+            <span class="admin-email-addr">${email}</span>
+            <button class="btn-link btn-danger" onclick="adminDeleteEmail('${email}', this)">제거</button>
+        </div>`).join('')}`;
+}
+
+async function adminAddEmail() {
+    const input = document.getElementById('admin-email-input');
+    const email = input.value.trim();
+    if (!email) return;
+    try {
+        const res = await fetch(`${API}/api/admin/allowed-emails`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || '추가 실패');
+        input.value = '';
+        renderAdminEmailList(data.emails || []);
+    } catch (err) {
+        alert(err.message);
+    }
+}
+
+async function adminDeleteEmail(email, btn) {
+    if (!confirm(`${email} 을(를) 접근 목록에서 제거하시겠습니까?`)) return;
+    btn.disabled = true;
+    try {
+        const res = await fetch(`${API}/api/admin/allowed-emails/${encodeURIComponent(email)}`, {
+            method: 'DELETE'
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || '제거 실패');
+        renderAdminEmailList(data.emails || []);
+    } catch (err) {
+        alert(err.message);
+        btn.disabled = false;
+    }
+}
+
+
+// ═══════════════════════════════════════════════════════════
+// 10. 상세보기 모달
 // ═══════════════════════════════════════════════════════════
 function initModal() {
     document.getElementById('detail-modal-close').addEventListener('click', closeModal);

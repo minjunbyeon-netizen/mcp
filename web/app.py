@@ -93,6 +93,32 @@ else:
 ALLOWED_DOMAINS = os.getenv('ALLOWED_DOMAINS', '').split(',')
 ALLOWED_DOMAINS = [d.strip() for d in ALLOWED_DOMAINS if d.strip()]
 
+# 허용된 이메일 목록 — 환경변수 + allowed_emails.txt 파일 병합
+_ALLOWED_EMAILS_FILE = PROJECT_ROOT / "allowed_emails.txt"
+
+def _load_allowed_emails() -> set:
+    """환경변수 ALLOWED_EMAILS + allowed_emails.txt 를 합쳐 반환 (소문자 정규화)"""
+    emails = set()
+    # 1) 환경변수
+    for e in os.getenv('ALLOWED_EMAILS', '').split(','):
+        e = e.strip().lower()
+        if e:
+            emails.add(e)
+    # 2) 파일
+    if _ALLOWED_EMAILS_FILE.exists():
+        for line in _ALLOWED_EMAILS_FILE.read_text(encoding='utf-8').splitlines():
+            e = line.strip().lower()
+            if e and not e.startswith('#'):
+                emails.add(e)
+    return emails
+
+def _save_allowed_emails(emails: set):
+    """allowed_emails.txt 에 현재 목록 저장"""
+    lines = sorted(emails)
+    _ALLOWED_EMAILS_FILE.write_text('\n'.join(lines) + '\n', encoding='utf-8')
+
+ALLOWED_EMAILS: set = _load_allowed_emails()  # 시작 시 1회 로드
+
 # 경로 설정
 OUTPUT_DIR = Path.home() / "mcp-data" / "outputs"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -392,20 +418,47 @@ def callback():
         user_info = token.get('userinfo', {})
         
         email = user_info.get('email', '')
+        email_lower = email.lower()
         domain = email.split('@')[-1] if '@' in email else ''
-        
-        # 도메인 검증 (ALLOWED_DOMAINS가 설정된 경우만)
-        if ALLOWED_DOMAINS and domain not in ALLOWED_DOMAINS:
-            return f'''
-            <html>
-            <body style="font-family: Arial; text-align: center; padding: 50px;">
-                <h2>❌ 접근 거부</h2>
-                <p>허용되지 않은 도메인입니다: <strong>{domain}</strong></p>
-                <p>허용 도메인: {', '.join(ALLOWED_DOMAINS)}</p>
-                <a href="/">돌아가기</a>
-            </body>
-            </html>
-            ''', 403
+
+        # ── 접근 제어 ──────────────────────────────────────────
+        # 최신 허용 목록 다시 로드 (파일이 변경될 수 있음)
+        current_allowed = _load_allowed_emails()
+
+        # 허용 조건: 이메일 목록에 있거나 / 도메인 목록에 있거나 / 둘 다 미설정(오픈)
+        email_ok   = bool(current_allowed) and email_lower in current_allowed
+        domain_ok  = bool(ALLOWED_DOMAINS) and domain in ALLOWED_DOMAINS
+        lists_empty = not current_allowed and not ALLOWED_DOMAINS  # 제한 없음
+
+        if not lists_empty and not email_ok and not domain_ok:
+            print(f"[DENY] 접근 거부: {email}")
+            return f'''<!doctype html>
+<html lang="ko">
+<head><meta charset="utf-8"><title>접근 거부</title>
+<style>
+  body{{font-family:-apple-system,Helvetica Neue,sans-serif;
+       display:flex;align-items:center;justify-content:center;
+       min-height:100vh;margin:0;background:#f5f5f7;}}
+  .card{{background:#fff;border-radius:12px;padding:48px 40px;
+         text-align:center;max-width:400px;box-shadow:0 1px 4px rgba(0,0,0,.08);}}
+  h2{{font-size:20px;font-weight:700;color:#1d1d1f;margin:0 0 12px}}
+  p{{font-size:14px;color:#6e6e73;margin:0 0 8px;line-height:1.6}}
+  .email{{font-weight:700;color:#1d1d1f}}
+  a{{display:inline-block;margin-top:24px;padding:10px 24px;
+     background:#000;color:#fff;text-decoration:none;
+     border-radius:980px;font-size:14px;}}
+</style>
+</head>
+<body>
+<div class="card">
+  <h2>접근 권한 없음</h2>
+  <p>이 서비스에 접근 권한이 없는 계정입니다.</p>
+  <p class="email">{email}</p>
+  <p>서비스 관리자에게 접근 권한을 요청하세요.</p>
+  <a href="/">돌아가기</a>
+</div>
+</body>
+</html>''', 403
         
         # 세션에 사용자 정보 저장
         session['user'] = {
@@ -451,6 +504,54 @@ def auth_status():
             "sso_enabled": SSO_ENABLED,
             "allowed_domains": ALLOWED_DOMAINS
         })
+
+
+# ── 허용 이메일 관리 API ─────────────────────────────────────
+
+@app.route('/api/admin/allowed-emails', methods=['GET'])
+@login_required
+def get_allowed_emails():
+    """허용 이메일 목록 조회 (로그인한 사용자 누구나 조회 가능)"""
+    emails = _load_allowed_emails()
+    return jsonify({
+        "emails": sorted(emails),
+        "count": len(emails),
+        "domains": ALLOWED_DOMAINS,
+    })
+
+
+@app.route('/api/admin/allowed-emails', methods=['POST'])
+@login_required
+def add_allowed_email():
+    """허용 이메일 추가"""
+    data = request.json or {}
+    new_email = data.get('email', '').strip().lower()
+    if not new_email or '@' not in new_email:
+        return jsonify({"error": "유효한 이메일 주소를 입력하세요."}), 400
+    emails = _load_allowed_emails()
+    if new_email in emails:
+        return jsonify({"message": "이미 등록된 이메일입니다.", "emails": sorted(emails)})
+    emails.add(new_email)
+    _save_allowed_emails(emails)
+    print(f"[ADMIN] 허용 이메일 추가: {new_email} (by {session['user']['email']})")
+    return jsonify({"message": f"{new_email} 추가됨", "emails": sorted(emails)})
+
+
+@app.route('/api/admin/allowed-emails/<path:email>', methods=['DELETE'])
+@login_required
+def delete_allowed_email(email):
+    """허용 이메일 제거"""
+    email = email.strip().lower()
+    emails = _load_allowed_emails()
+    if email not in emails:
+        return jsonify({"error": "등록되지 않은 이메일입니다."}), 404
+    # 자기 자신은 제거 불가
+    if email == session.get('user', {}).get('email', '').lower():
+        return jsonify({"error": "자신의 이메일은 제거할 수 없습니다."}), 400
+    emails.discard(email)
+    _save_allowed_emails(emails)
+    print(f"[ADMIN] 허용 이메일 제거: {email} (by {session['user']['email']})")
+    return jsonify({"message": f"{email} 제거됨", "emails": sorted(emails)})
 
 
 # ============================================================
