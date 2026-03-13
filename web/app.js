@@ -964,8 +964,12 @@ function blogToNaverHTML(title, content, images = []) {
     }
 
     // ── 이미지 삽입 위치 결정 ──────────────────────────────
+    // 명시적 [이미지] 블록(인덱스 미지정)이 소비하는 이미지 수를 먼저 확보
+    // → 자동배치는 images 앞부분, 명시적 블록은 뒷부분에서 소비해 중복 방지
+    const seqExplicitImgCount = blocks.filter(b => b.type === 'img' && b.idx < 0).length;
+    const autoImgCount = Math.max(0, images.length - seqExplicitImgCount);
     const imgInsertAt = new Set();
-    if (images.length > 0) {
+    if (autoImgCount > 0) {
         const gapAfterH = [], plainGap = [];
         for (let i = 0; i < blocks.length; i++) {
             if (blocks[i].type === 'gap') {
@@ -974,13 +978,13 @@ function blogToNaverHTML(title, content, images = []) {
             }
         }
         const cands = [...gapAfterH, ...plainGap];
-        if (cands.length >= images.length) {
-            const step = cands.length / images.length;
-            for (let k = 0; k < images.length; k++)
+        if (cands.length >= autoImgCount) {
+            const step = cands.length / autoImgCount;
+            for (let k = 0; k < autoImgCount; k++)
                 imgInsertAt.add(cands[Math.min(Math.round(k * step), cands.length-1)]);
         } else {
             cands.forEach(c => imgInsertAt.add(c));
-            const rem = images.length - imgInsertAt.size;
+            const rem = autoImgCount - imgInsertAt.size;
             const step = Math.floor(blocks.length / (rem + 1));
             for (let k = 1; k <= rem; k++)
                 imgInsertAt.add(Math.min(k * step, blocks.length - 1));
@@ -1002,9 +1006,9 @@ function blogToNaverHTML(title, content, images = []) {
     }
 
     let imgIdx = 0;
-    let imgBlockSeq = 0; // [이미지] 마커 순차 인덱스
+    let imgBlockSeq = 0; // [이미지] 마커 순차 인덱스 (autoImgCount 이후부터 소비)
     for (let i = 0; i < blocks.length; i++) {
-        if (imgInsertAt.has(i) && imgIdx < images.length)
+        if (imgInsertAt.has(i) && imgIdx < autoImgCount)
             html += imgHtml(images[imgIdx++]);
 
         const b = blocks[i];
@@ -1048,7 +1052,8 @@ function blogToNaverHTML(title, content, images = []) {
 
         } else if (b.type === 'img') {
             // [이미지] / [이미지:N] — 명시적 이미지 삽입
-            const imgSrc = b.idx >= 0 ? images[b.idx] : images[imgBlockSeq++];
+            // 인덱스 지정: images[N-1] 직접 참조 / 순차: autoImgCount 이후부터 소비
+            const imgSrc = b.idx >= 0 ? images[b.idx] : images[autoImgCount + imgBlockSeq++];
             if (imgSrc) html += imgHtml(imgSrc);
 
         } else if (b.type === 'hr') {
@@ -1065,7 +1070,7 @@ function blogToNaverHTML(title, content, images = []) {
             html += p(`${alignStyle}${indentStyle}`, innerLines);
         }
     }
-    while (imgIdx < images.length) html += imgHtml(images[imgIdx++]);
+    while (imgIdx < autoImgCount) html += imgHtml(images[imgIdx++]);
 
     return html;
 }
